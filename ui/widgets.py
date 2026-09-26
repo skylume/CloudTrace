@@ -6,16 +6,29 @@ from typing import List, Tuple
 
 from PySide6.QtWidgets import (
     QLayout, QFrame, QLabel, QPushButton, QPlainTextEdit,
-    QHBoxLayout, QVBoxLayout, QWidget, QButtonGroup,
+    QHBoxLayout, QVBoxLayout, QWidget, QButtonGroup, QSizePolicy,
+    QGraphicsDropShadowEffect,
 )
 from PySide6.QtCore import Qt, QRect, QSize, QPoint, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor
 
 from core.constants import FONT_FAMILY
 from ui.styles import (
     SIDEBAR_STYLE, CARD_STYLE, TERMINAL_STYLE, CHIP_STYLE, SEG_STYLE,
-    FONT_SMALL, FONT_BTN, C_BLUE, C_MUTED, C_GREEN, C_ORANGE, C_RED,
+    STAT_CARD_STYLE, EMPTY_STATE_STYLE, BADGE_STYLE,
+    FONT_SMALL, FONT_BTN, FONT_METRIC,
+    C_BLUE, C_MUTED, C_GREEN, C_ORANGE, C_RED, C_MUTED_LIGHT, C_TEXT,
 )
+
+
+def apply_shadow(widget: QWidget, blur: int = 18, alpha: int = 26, dy: int = 2):
+    """给控件加轻微投影（QSS 不支持 box-shadow，只能用图形效果）。"""
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur)
+    effect.setOffset(0, dy)
+    effect.setColor(QColor(15, 23, 42, alpha))
+    widget.setGraphicsEffect(effect)
+    return effect
 
 
 class FlowLayout(QLayout):
@@ -72,7 +85,6 @@ class FlowLayout(QLayout):
         right = rect.right() - m.right()
 
         for item in self._items:
-            wid = item.widget()
             space_x = self._h_space
             space_y = self._v_space
             next_x = x + item.sizeHint().width() + space_x
@@ -88,7 +100,23 @@ class FlowLayout(QLayout):
         return y + line_height - rect.y() + m.bottom()
 
 
-from PySide6.QtCore import QPoint  # noqa: E402
+def clear_layout(layout: QLayout):
+    """安全清空布局：先脱离父级再延迟销毁。
+
+    只 `takeAt` + `deleteLater` 会让控件在事件循环处理销毁前仍挂在原位置，
+    连续刷新时叠出「重影」。必须先 setParent(None) 把它从父级摘掉。
+    """
+    while layout.count():
+        item = layout.takeAt(0)
+        w = item.widget()
+        if w is not None:
+            w.setParent(None)
+            w.deleteLater()
+            continue
+        child = item.layout()
+        if child is not None:
+            clear_layout(child)
+            child.deleteLater()
 
 
 class Segmented(QWidget):
@@ -105,8 +133,8 @@ class Segmented(QWidget):
         frame = QFrame()
         frame.setObjectName("segGroup")
         lay = QHBoxLayout(frame)
-        lay.setContentsMargins(2, 2, 2, 2)
-        lay.setSpacing(0)
+        lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(2)
         for i, text in enumerate(items):
             btn = QPushButton(text)
             btn.setCheckable(True)
@@ -116,7 +144,11 @@ class Segmented(QWidget):
             lay.addWidget(btn)
             self._group.addButton(btn, i)
             self._buttons.append(btn)
-            btn.clicked.connect(lambda _c, idx=i: self.indexChanged.emit(idx))
+            # 注意：PySide6 的 clicked 只有 clicked()/clicked(bool) 两个重载。
+            # 带 2 个参数的 lambda 匹配不到重载，会退化为无参调用并抛
+            # TypeError(<lambda>() missing 1 required positional argument: '_c')，
+            # 且回调完全不执行。因此首参必须带默认值。
+            btn.clicked.connect(lambda _c=False, idx=i: self.indexChanged.emit(idx))
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -137,22 +169,113 @@ class Segmented(QWidget):
 
 
 class Card(QFrame):
-    """白色圆角卡片容器。"""
+    """白色圆角卡片容器，支持标题 / 副标题 / 右侧操作区。"""
 
-    def __init__(self, title: str = "", parent=None):
+    def __init__(self, title: str = "", subtitle: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("card")
         self.setStyleSheet(CARD_STYLE)
+        apply_shadow(self)
+
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(16, 14, 16, 14)
-        self._layout.setSpacing(10)
-        self._title = QLabel(title) if title else None
-        if self._title:
+        self._layout.setContentsMargins(18, 16, 18, 16)
+        self._layout.setSpacing(12)
+
+        self._header = QHBoxLayout()
+        self._header.setSpacing(10)
+        self._title_box = QVBoxLayout()
+        self._title_box.setSpacing(2)
+        self._title: QLabel = None
+        self._subtitle: QLabel = None
+        if title:
+            self._title = QLabel(title)
             self._title.setObjectName("cardTitle")
-            self._layout.addWidget(self._title)
+            self._title_box.addWidget(self._title)
+        if subtitle:
+            self._subtitle = QLabel(subtitle)
+            self._subtitle.setObjectName("cardSubtitle")
+            self._subtitle.setWordWrap(True)
+            self._title_box.addWidget(self._subtitle)
+        if title or subtitle:
+            self._header.addLayout(self._title_box)
+            self._header.addStretch()
+            self._layout.addLayout(self._header)
 
     def body(self) -> QVBoxLayout:
         return self._layout
+
+    def add_action(self, widget: QWidget):
+        """把控件放到标题行右侧（例如「全选 / 清空」按钮）。"""
+        self._header.addWidget(widget)
+
+    def set_subtitle(self, text: str):
+        if self._subtitle is None:
+            self._subtitle = QLabel(text)
+            self._subtitle.setObjectName("cardSubtitle")
+            self._title_box.addWidget(self._subtitle)
+        self._subtitle.setText(text)
+
+
+class StatCard(QFrame):
+    """指标小卡：大号数值 + 单位 + 说明文字。"""
+
+    def __init__(self, label: str, value: str = "—", unit: str = "", parent=None):
+        super().__init__(parent)
+        self.setObjectName("statCard")
+        self.setStyleSheet(STAT_CARD_STYLE)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 11, 14, 11)
+        lay.setSpacing(2)
+
+        self._label = QLabel(label)
+        self._label.setObjectName("statLabel")
+        lay.addWidget(self._label)
+
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.setContentsMargins(0, 0, 0, 0)
+        self._value = QLabel(value)
+        self._value.setObjectName("statValue")
+        self._value.setFont(FONT_METRIC)
+        row.addWidget(self._value)
+        self._unit = QLabel(unit)
+        self._unit.setObjectName("statUnit")
+        row.addWidget(self._unit, 0, Qt.AlignBottom)
+        row.addStretch()
+        lay.addLayout(row)
+
+    def set_value(self, value, unit: str = None, color: str = None):
+        self._value.setText(str(value))
+        if unit is not None:
+            self._unit.setText(unit)
+        self._value.setStyleSheet(
+            f"color: {color};" if color else f"color: {C_TEXT};"
+        )
+
+
+class EmptyState(QWidget):
+    """统一空状态：图标 + 文案（+ 可选操作按钮）。"""
+
+    def __init__(self, text: str, icon: str = "📭", parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 22, 0, 22)
+        lay.setSpacing(6)
+        ico = QLabel(icon)
+        ico.setAlignment(Qt.AlignCenter)
+        ico.setFont(QFont(FONT_FAMILY, 24))
+        ico.setStyleSheet("background: transparent; border: none;")
+        lay.addWidget(ico)
+        lbl = QLabel(text)
+        lbl.setObjectName("emptyState")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        lay.addWidget(lbl)
+
+    def add_widget(self, widget: QWidget):
+        self.layout().addWidget(widget, 0, Qt.AlignCenter)
 
 
 class RegionChips(QWidget):
@@ -166,14 +289,13 @@ class RegionChips(QWidget):
         self.setLayout(self._flow)
         self._selected: set = set()
         self._codes: List[str] = []
+        self._buttons: dict = {}
 
     def set_stats(self, stats: List[dict]):
         """stats: [{'code','name','count'}]"""
-        while self._flow.count():
-            item = self._flow.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+        # 先脱离父级再延迟销毁，否则旧芯片会叠出新芯片（重影）
+        clear_layout(self._flow)
+        self._buttons.clear()
         self._codes = [s['code'] for s in stats]
         # 清掉已不存在的选中项
         self._selected &= set(self._codes)
@@ -186,8 +308,9 @@ class RegionChips(QWidget):
             btn.setFont(QFont(FONT_FAMILY, 9))
             btn.setStyleSheet(CHIP_STYLE)
             btn.setChecked(s['code'] in self._selected)
-            btn.clicked.connect(lambda _c, code=s['code']: self._toggle(code))
+            btn.clicked.connect(lambda _c=False, code=s['code']: self._toggle(code))
             self._flow.addWidget(btn)
+            self._buttons[s['code']] = btn
 
     def _toggle(self, code: str):
         if code in self._selected:
@@ -201,53 +324,77 @@ class RegionChips(QWidget):
 
     def clear_selection(self):
         self._selected.clear()
+        self._sync_checked()
         self.selection_changed.emit([])
 
     def select_all(self):
         self._selected = set(self._codes)
+        self._sync_checked()
         self.selection_changed.emit(self.selected_codes())
+
+    def _sync_checked(self):
+        for code, btn in self._buttons.items():
+            btn.setChecked(code in self._selected)
 
 
 class FunnelBar(QWidget):
-    """漏斗统计条：生成 → 延迟达标 → 地区解析 → 完成。"""
+    """漏斗统计条：生成 → 延迟达标 → 地区解析 → 可用。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
-        self._layout.addStretch()
-        self._labels: List[QLabel] = []
+        self._widgets: List[QWidget] = []
+        self.set_steps([])   # 初始就渲染占位，避免卡片空着
+
+    def _make_step(self, text: str) -> QLabel:
+        lab = QLabel(text)
+        lab.setFont(QFont(FONT_FAMILY, 10))
+        lab.setStyleSheet(
+            "background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF;"
+            "border-radius: 9px; padding: 6px 12px; font-family: '%s';" % FONT_FAMILY
+        )
+        return lab
 
     def set_steps(self, steps: List[Tuple[str, object]]):
-        """steps: [(label, value)]；value 为 None 时不显示数值。"""
-        while self._labels:
-            lab = self._labels.pop()
-            self._layout.removeWidget(lab)
-            lab.deleteLater()
+        """steps: [(label, value)]；value 为 None 时不显示数值。
 
-        for i, (label, value) in enumerate(steps):
-            if i > 0:
-                arr = QLabel("→")
-                arr.setStyleSheet(f"color: #9CA3AF; font-size: 13px; border: none; background: transparent;")
-                self._layout.insertWidget(self._layout.count() - 1, arr)
-                self._labels.append(arr)
-            text = label if value is None else f"{label} {value}"
-            lab = QLabel(text)
-            lab.setFont(QFont(FONT_FAMILY, 10))
-            lab.setStyleSheet(
-                "background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF;"
-                "border-radius: 8px; padding: 5px 11px; font-family: '%s';" % FONT_FAMILY
-            )
-            self._layout.insertWidget(self._layout.count() - 1, lab)
-            self._labels.append(lab)
+        注意：clear_layout 会连末尾的 stretch 一并移除，所以这里必须
+        全部用 addWidget 顺序追加、最后再补一个 stretch。
+        早期版本用 `insertWidget(self._layout.count() - 1, ...)`，
+        在 stretch 被移除后索引算错，会把步骤插成
+        「延迟达标 → 地区解析 → 可用 生成」这种错乱顺序。
+        """
+        clear_layout(self._layout)
+        self._widgets.clear()
+
+        if not steps:
+            lab = self._make_step("等待开始")
+            self._layout.addWidget(lab)
+            self._widgets.append(lab)
+        else:
+            for i, (label, value) in enumerate(steps):
+                if i > 0:
+                    arr = QLabel("→")
+                    arr.setStyleSheet(
+                        f"color: {C_MUTED_LIGHT}; font-size: 13px; border: none; background: transparent;")
+                    self._layout.addWidget(arr)
+                    self._widgets.append(arr)
+                text = label if value is None else f"{label} {value}"
+                lab = self._make_step(text)
+                self._layout.addWidget(lab)
+                self._widgets.append(lab)
+
+        # 末尾补 stretch，让步骤整体靠左
+        self._layout.addStretch()
 
     def clear(self):
         self.set_steps([])
 
 
 class LogTerminal(QWidget):
-    """深色终端日志（可折叠）。"""
+    """深色终端日志（可折叠 / 可清空 / 可复制全部）。"""
 
     def __init__(self, title: str = "运行日志", parent=None):
         super().__init__(parent)
@@ -257,46 +404,61 @@ class LogTerminal(QWidget):
         head.setSpacing(8)
         self._title = QLabel(title)
         self._title.setObjectName("cardTitle")
-        self._toggle_btn = QPushButton("收起")
-        self._toggle_btn.setFixedSize(56, 24)
-        self._toggle_btn.setCursor(Qt.PointingHandCursor)
-        self._toggle_btn.setFont(QFont(FONT_FAMILY, 9))
+        self._count = QLabel("0 行")
+        self._count.setObjectName("cardSubtitle")
+        self._copy_btn = QPushButton("复制")
         self._clear_btn = QPushButton("清空")
-        self._clear_btn.setFixedSize(56, 24)
-        self._clear_btn.setCursor(Qt.PointingHandCursor)
-        self._clear_btn.setFont(QFont(FONT_FAMILY, 9))
+        self._toggle_btn = QPushButton("收起")
         btn_style = (
-            "QPushButton { background: white; border: 1px solid #D1D5DB; border-radius: 6px;"
-            " color: #6B7280; } QPushButton:hover { background: #F3F4F6; }"
+            "QPushButton { background: white; border: 1px solid #D3DAE3; border-radius: 7px;"
+            " color: #475569; font-size: 11px; padding: 2px 9px; }"
+            "QPushButton:hover { background: #F1F5F9; }"
         )
-        self._toggle_btn.setStyleSheet(btn_style)
-        self._clear_btn.setStyleSheet(btn_style)
+        for b in (self._copy_btn, self._clear_btn, self._toggle_btn):
+            b.setFixedHeight(24)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFont(QFont(FONT_FAMILY, 9))
+            b.setStyleSheet(btn_style)
         head.addWidget(self._title)
+        head.addWidget(self._count)
         head.addStretch()
+        head.addWidget(self._copy_btn)
         head.addWidget(self._clear_btn)
         head.addWidget(self._toggle_btn)
 
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
         self.output.setStyleSheet(TERMINAL_STYLE)
-        self.output.setMinimumHeight(90)
+        self.output.setMinimumHeight(96)
+        self.output.setLineWrapMode(QPlainTextEdit.NoWrap)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(7)
         lay.addLayout(head)
         lay.addWidget(self.output)
 
         self._toggle_btn.clicked.connect(self._toggle)
-        self._clear_btn.clicked.connect(self.output.clear)
+        self._clear_btn.clicked.connect(self.clear)
+        self._copy_btn.clicked.connect(self._copy_all)
 
     def _toggle(self):
         collapsed = self.output.isVisible()
         self.output.setVisible(not collapsed)
         self._toggle_btn.setText("展开" if collapsed else "收起")
 
+    def _copy_all(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.output.toPlainText())
+
+    def clear(self):
+        self.output.clear()
+        self._update_count()
+
+    def _update_count(self):
+        self._count.setText(f"{self.output.document().blockCount()} 行")
+
     def append_line(self, msg: str):
-        at_bottom = True
         sb = self.output.verticalScrollBar()
         at_bottom = sb.value() >= sb.maximum() - 4
         stamp = datetime.now().strftime("[%H:%M:%S] ")
@@ -309,6 +471,7 @@ class LogTerminal(QWidget):
             )
         if at_bottom:
             sb.setValue(sb.maximum())
+        self._update_count()
 
 
 class SideNav(QFrame):
@@ -320,19 +483,24 @@ class SideNav(QFrame):
         """items: [(icon_text, label)]"""
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(112)
+        self.setFixedWidth(118)
         self.setStyleSheet(SIDEBAR_STYLE)
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 16, 10, 12)
-        lay.setSpacing(4)
+        lay.setContentsMargins(11, 18, 11, 14)
+        lay.setSpacing(5)
 
         logo = QLabel("☁\nCloudTrace")
         logo.setAlignment(Qt.AlignCenter)
-        logo.setFont(QFont(FONT_FAMILY, 12))
-        logo.setStyleSheet("color: white; background: transparent; border: none; font-weight: bold;")
+        logo.setFont(QFont(FONT_FAMILY, 13))
+        logo.setStyleSheet(
+            "color: white; background: transparent; border: none; font-weight: bold; line-height: 1.25;")
         lay.addWidget(logo)
-        lay.addSpacing(10)
+        sub = QLabel("云迹 · 扫描面板")
+        sub.setAlignment(Qt.AlignCenter)
+        sub.setStyleSheet("color: rgba(255,255,255,120); font-size: 10px; background: transparent; border: none;")
+        lay.addWidget(sub)
+        lay.addSpacing(14)
 
         self._buttons: List[QPushButton] = []
         self._group = QButtonGroup(self)
@@ -340,19 +508,19 @@ class SideNav(QFrame):
         for i, (icon, label) in enumerate(items):
             btn = QPushButton(f"{icon}\n{label}")
             btn.setCheckable(True)
-            btn.setFixedHeight(56)
+            btn.setFixedHeight(58)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setFont(QFont(FONT_FAMILY, 9))
             btn.setProperty("class", "nav")
             lay.addWidget(btn)
             self._group.addButton(btn, i)
             self._buttons.append(btn)
-            btn.clicked.connect(lambda _c, idx=i: self.pageChanged.emit(idx))
+            btn.clicked.connect(lambda _c=False, idx=i: self.pageChanged.emit(idx))
 
         lay.addStretch()
         footer = QLabel("v" + _safe_version())
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("color: rgba(255,255,255,100); font-size: 10px; background: transparent; border: none;")
+        footer.setStyleSheet("color: rgba(255,255,255,110); font-size: 10px; background: transparent; border: none;")
         lay.addWidget(footer)
 
         self.set_active(0)

@@ -28,31 +28,44 @@ def create_scanner(params: Dict) -> object:
     """按统一参数字典构建扫描器（Qt 与 HTTP API 共用）。
 
     params: {
-        ip_version, source_mode(仅官方/仅自定义/官方+自定义/非标列表),
-        cidrs[], entries[], port, workers, threshold, sample_max,
-        ping_times(0=自动), scan_mode(tcping/httping)
+        ip_version, source_mode(仅官方/仅自定义/官方+自定义),
+        cidrs[](网段，采样), entries[](逐条直测节点),
+        port, workers, threshold, sample_max, ping_times(0=自动),
+        scan_mode(tcping/httping), pre_filter_ports, remote_fetch(callable|None)
     }
     """
+    from core.utils import to_int
     common = dict(
-        port=int(params.get("port", 443)),
-        max_workers=int(params.get("workers", 200)),
-        latency_threshold=int(params.get("threshold", 230)),
-        sample_max=int(params.get("sample_max", 5000)),
+        port=to_int(params.get("port", 443), 443, 1, 65535),
+        max_workers=to_int(params.get("workers", 200), 200, 1, 2000),
+        latency_threshold=to_int(params.get("threshold", 230), 230, 1, 60000),
+        sample_max=to_int(params.get("sample_max", 5000), 5000, 1, 200000),
         scan_mode=params.get("scan_mode", "tcping"),
+        pre_filter_ports=params.get("pre_filter_ports") or [],
+        remote_fetch=params.get("remote_fetch"),
     )
-    ping_times = int(params.get("ping_times", 0) or 0)
+    ping_times = to_int(params.get("ping_times", 0), 0, 0, 20)
     if ping_times > 0:
         common["ping_times"] = ping_times
 
     source_mode = params.get("source_mode", "仅官方")
-    if source_mode == "非标列表":
-        return ImportedScanner(entries=params.get("entries") or [], **common)
+    if source_mode not in ("仅官方", "仅自定义", "官方+自定义"):
+        source_mode = "仅官方"
+    ip_version = to_int(params.get("ip_version", 4), 4)
+    cidrs = [c for c in (params.get("cidrs") or []) if c]
+    entries = list(params.get("entries") or [])
 
-    custom = None
-    if source_mode != "仅官方":
-        custom = {"mode": source_mode, "list": params.get("cidrs") or []}
-    cls = IPv4Scanner if int(params.get("ip_version", 4)) == 4 else IPv6Scanner
-    return cls(custom_cidrs=custom, **common)
+    if source_mode == "仅官方":
+        cls = IPv4Scanner if ip_version == 4 else IPv6Scanner
+        return cls(**common)
+
+    if not cidrs and entries:
+        # 纯直测列表：不采样，允许 v4/v6 混合
+        return ImportedScanner(entries=entries, **common)
+
+    custom = {"mode": source_mode, "list": cidrs}
+    cls = IPv4Scanner if ip_version == 4 else IPv6Scanner
+    return cls(custom_cidrs=custom, custom_entries=entries, **common)
 
 
 def create_speed_task(scan_results: List[Dict], opts: Dict, settings: Dict) -> SpeedTestTask:
@@ -62,21 +75,25 @@ def create_speed_task(scan_results: List[Dict], opts: Dict, settings: Dict) -> S
         region_code, selected_ips[], count, current_port,
         speed_url, min_speed, label
     }
-    settings: 应用设置 dict（评分权重/验证开关/间隔）
+    settings: 应用设置 dict（评分权重/验证开关/间隔/并发/结果上限/分地区TopN）
     """
+    from core.utils import to_int, to_float
     return SpeedTestTask(
         scan_results,
         region_code=opts.get("region_code"),
-        max_test_count=int(opts.get("count", 10)),
-        current_port=int(opts.get("current_port", 443)),
+        max_test_count=to_int(opts.get("count", 10), 10, 1, 500),
+        current_port=to_int(opts.get("current_port", 443), 443, 1, 65535),
         speed_url=opts.get("speed_url") or "auto",
-        min_speed=float(opts.get("min_speed") or 0),
+        min_speed=to_float(opts.get("min_speed") or 0, 0.0),
         selected_ips=opts.get("selected_ips"),
         verify_nodes=bool(settings.get("verify_nodes", True)),
         score_weights={
-            "speed": settings.get("score_speed_weight", 3.0),
-            "latency": settings.get("score_latency_weight", 3.0),
+            "speed": to_float(settings.get("score_speed_weight", 3.0), 3.0),
+            "latency": to_float(settings.get("score_latency_weight", 3.0), 3.0),
         },
-        download_interval=int(settings.get("download_interval", 3)),
+        download_interval=to_int(settings.get("download_interval", 3), 3, 0, 60),
         label=opts.get("label"),
+        speed_workers=to_int(settings.get("speed_workers", 1), 1, 1, 16),
+        result_limit=to_int(settings.get("speed_result_limit", 0), 0, 0, 10000),
+        per_region_topn=to_int(settings.get("per_region_topn", 0), 0, 0, 100),
     )

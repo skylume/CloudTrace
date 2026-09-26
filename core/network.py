@@ -7,15 +7,31 @@ import time
 import asyncio
 import aiohttp
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 from core.compat import IS_WIN7
-from core.constants import AIRPORT_CODES
+from core.constants import AIRPORT_CODES, PORT_OPTIONS
 
 
 logger = logging.getLogger("CloudTrace")
 
 DEFAULT_TEST_HOST = "speed.cloudflare.com"
+
+# Cloudflare 常用 HTTPS 端口集合：决定探测/测速时是否走 TLS
+HTTPS_PORTS = {int(p) for p in PORT_OPTIONS}  # 443/2053/2083/2087/2096/8443
+
+
+def port_uses_tls(port: int, default: bool = True) -> bool:
+    """按端口判断是否走 TLS；非标准端口默认按调用方给的 default 处理。"""
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return default
+    if port in HTTPS_PORTS:
+        return True
+    if port in (80, 8080, 8880, 2052, 2082, 2086, 2095):
+        return False
+    return default
 
 
 def create_compat_ssl_context():
@@ -55,38 +71,47 @@ def create_probe_ssl_context():
     return ctx
 
 
-def _probe_trace(ip: str, timeout: int = 3, test_host: str = DEFAULT_TEST_HOST):
-    """同步请求 /cdn-cgi/trace。
+def _connect_raw(ip: str, port: int, timeout: float):
+    """按地址族建立裸 TCP 连接（支持 IPv6 字面量）。"""
+    if ':' in ip:
+        addrinfo = socket.getaddrinfo(ip, port, socket.AF_INET6, socket.SOCK_STREAM)
+        family, socktype, proto, _canon, sockaddr = addrinfo[0]
+        sock = socket.socket(family, socktype, proto)
+        sock.settimeout(timeout)
+        sock.connect(sockaddr)
+        return sock
+    return socket.create_connection((ip, port), timeout=timeout)
 
+
+def _probe_trace(ip: str, timeout: float = 3, test_host: str = DEFAULT_TEST_HOST,
+                 port: Optional[int] = None, use_tls: Optional[bool] = None):
+    """同步请求 `/cdn-cgi/trace`。
+
+    - 指定 port 时只探测该端口（按 port_uses_tls 决定 scheme，失败再试另一 scheme）
+    - 未指定 port 时依次尝试 443(https) / 80(http)
     返回 (status, headers小写字典, body)，失败返回 (0, {}, b"")。
     """
-    if ':' in ip:
-        urls = [f"https://[{ip}]/cdn-cgi/trace", f"http://[{ip}]/cdn-cgi/trace"]
+    if port is not None:
+        first_tls = port_uses_tls(port) if use_tls is None else bool(use_tls)
+        candidates = [(first_tls, int(port)), (not first_tls, int(port))]
     else:
-        urls = [f"https://{ip}/cdn-cgi/trace", f"http://{ip}/cdn-cgi/trace"]
+        candidates = [(True, 443), (False, 80)]
 
-    for url in urls:
+    for tls, port_num in candidates:
         s = None
         try:
-            ctx = create_compat_ssl_context()
-            use_ssl = url.startswith('https://')
-            host = url[8:] if use_ssl else url[7:]
-            host = host.split('/')[0].strip('[]')
-            port = 443 if use_ssl else 80
+            host_header = f"[{ip}]" if ':' in ip else ip
+            request = (
+                f"GET /cdn-cgi/trace HTTP/1.1\r\n"
+                f"Host: {test_host}\r\n"
+                f"User-Agent: Mozilla/5.0\r\n"
+                f"Connection: close\r\n\r\n"
+            ).encode()
 
-            if ':' in host:
-                addrinfo = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
-                family, socktype, proto, canonname, sockaddr = addrinfo[0]
-                s = socket.socket(family, socktype, proto)
-                s.settimeout(timeout)
-                s.connect(sockaddr)
-            else:
-                s = socket.create_connection((host, port), timeout=timeout)
-
-            if use_ssl:
+            s = _connect_raw(ip, port_num, timeout)
+            if tls:
+                ctx = create_compat_ssl_context()
                 s = ctx.wrap_socket(s, server_hostname=test_host)
-
-            request = f"GET /cdn-cgi/trace HTTP/1.1\r\nHost: {test_host}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n".encode()
             s.sendall(request)
 
             data = b""
@@ -99,7 +124,7 @@ def _probe_trace(ip: str, timeout: int = 3, test_host: str = DEFAULT_TEST_HOST):
             if b"\r\n\r\n" not in data:
                 continue
 
-            header_raw, body = data.split(b"\r\n\r\n", 1)
+            header_raw, _body = data.split(b"\r\n\r\n", 1)
             status_line = header_raw.split(b"\r\n", 1)[0].decode('latin-1', errors='ignore')
             parts = status_line.split()
             status = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
@@ -136,8 +161,9 @@ def _probe_trace(ip: str, timeout: int = 3, test_host: str = DEFAULT_TEST_HOST):
     return 0, {}, b""
 
 
-def get_iata_code_from_ip(ip: str, timeout: int = 3) -> Optional[str]:
-    status, headers, body = _probe_trace(ip, timeout)
+def get_iata_code_from_ip(ip: str, timeout: int = 3,
+                          port: Optional[int] = None) -> Optional[str]:
+    status, headers, body = _probe_trace(ip, timeout, port=port)
     if status != 200:
         return None
 
@@ -157,20 +183,49 @@ def get_iata_code_from_ip(ip: str, timeout: int = 3) -> Optional[str]:
     return None
 
 
-def verify_cloudflare(ip: str, timeout: int = 3) -> bool:
+def probe_cloudflare(ip: str, timeout: int = 3,
+                     port: Optional[int] = None) -> Dict:
+    """探测节点并返回明细，供可用性验证与结果展示复用。
+
+    判定（对齐 cfnb `check_http_server()` 的双重校验，任一命中即通过）：
+      1. HTTP 400 且 `Server` 以 `cloudflare` 开头
+         —— CF 对「Host 不属于本站」的标准回应，是最干净的证据；
+      2. HTTP 200 且响应体带 `colo=` 或响应头带 `CF-RAY`
+         —— 探测时用的 Host 是 speed.cloudflare.com，正常情况走这条。
+
+    注意：仅凭 `Server: cloudflare*` 但状态码既不是 200 也不是 400（例如
+    403/503）不再算通过 —— 那类节点往往是「能连上但不是干净 CF 回源」，
+    放进来只会污染测速结果。
+    """
+    status, headers, body = _probe_trace(ip, timeout, port=port)
+    server = headers.get('server', '')
+    ok = False
+    reason = "无响应"
+    if status != 0:
+        if status == 400 and server.startswith('cloudflare'):
+            ok, reason = True, "HTTP 400 + Cloudflare Server 头"
+        elif status == 200 and (b'colo=' in body or 'cf-ray' in headers):
+            ok, reason = True, "HTTP 200 + trace/CF-RAY 特征"
+        elif server.startswith('cloudflare'):
+            reason = f"HTTP {status} 带 Cloudflare 头但状态码非 200/400，判为可疑"
+        else:
+            reason = f"HTTP {status} 且无 Cloudflare 特征"
+    return {"ok": ok, "status": status, "server": server, "body": body, "reason": reason}
+
+
+def verify_cloudflare(ip: str, timeout: int = 3, port: Optional[int] = None) -> bool:
     """可用性验证：确认该 IP 当前确实由 Cloudflare 承载（防劫持/非CF节点）。"""
-    status, headers, body = _probe_trace(ip, timeout)
-    if status == 0:
-        return False
-    if 'cloudflare' in headers.get('server', ''):
-        return True
-    # Server 头缺失时用 trace 特征兜底
-    return b'colo=' in body and (b'fl=' in body or b'h=' in body)
+    return probe_cloudflare(ip, timeout, port=port)["ok"]
 
 
-async def get_iata_code_async(session: aiohttp.ClientSession, ip: str, timeout: int = 3) -> Optional[str]:
+async def get_iata_code_async(session: aiohttp.ClientSession, ip: str,
+                              timeout: int = 3, port: Optional[int] = None) -> Optional[str]:
     test_host = DEFAULT_TEST_HOST
-    if ':' in ip:
+    if port is not None:
+        brackets = f"[{ip}]" if ':' in ip else ip
+        schemes = ["https", "http"] if port_uses_tls(port) else ["http", "https"]
+        urls = [f"{sch}://{brackets}:{int(port)}/cdn-cgi/trace" for sch in schemes]
+    elif ':' in ip:
         urls = [f"https://[{ip}]/cdn-cgi/trace", f"http://[{ip}]/cdn-cgi/trace"]
     else:
         urls = [f"https://{ip}/cdn-cgi/trace", f"http://{ip}/cdn-cgi/trace"]
@@ -219,13 +274,17 @@ async def async_tcp_ping(ip: str, port: int, timeout: float = 1.0) -> Optional[f
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
         latency = (time.monotonic() - start_time) * 1000
         writer.close()
-        await writer.wait_closed()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
         return round(latency, 2)
     except Exception:
         return None
 
 
-async def measure_tcp_latency(ip: str, port: int, ping_times: int = 4, timeout: float = 1.0) -> Optional[float]:
+async def measure_tcp_latency(ip: str, port: int, ping_times: int = 4,
+                              timeout: float = 1.0) -> Optional[float]:
     """TCP 握手延迟：多次探测并发发起，取最小值。"""
     if ping_times <= 0:
         return None
@@ -287,16 +346,19 @@ def _decode_chunked(buf: bytes) -> Tuple[int, bytes]:
 def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
                    path: str = "/__down?bytes=50000000",
                    time_limit: float = 3.0,
-                   should_continue=None) -> Tuple[float, Optional[str]]:
+                   should_continue=None,
+                   use_tls: bool = True) -> Tuple[float, Optional[str], int]:
     """向指定 IP 实测下载速度 (MB/s)。
 
-    - 校验 HTTP 状态码（非 200 记 0）
+    - `use_tls` 由调用方按端口决定：非标列表里的 `http://` 节点（如 80 端口）
+      必须走明文，否则握手必然失败、速度恒为 0。
+    - 校验 HTTP 状态码（非 200 记 0），并把状态码一并返回，供上层识别 429 限速。
     - 响应头收到后才开始计时（不含建连时间）
     - 支持 chunked 解码（不会把块长度算进速度）
     - 字节数异常少 / 时间异常短视为失败，防止假高速
-    返回 (speed, error_message|None)。
+    返回 (speed, error_message|None, http_status)。
     """
-    ctx = create_probe_ssl_context()
+    ctx = create_probe_ssl_context() if use_tls else None
     req = (
         f"GET {path} HTTP/1.1\r\n"
         f"Host: {host}\r\n"
@@ -306,17 +368,15 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
     ).encode()
 
     sock = None
+    ss = None
     try:
-        if ':' in ip:
-            addrinfo = socket.getaddrinfo(ip, port, socket.AF_INET6, socket.SOCK_STREAM)
-            family, socktype, proto, canonname, sockaddr = addrinfo[0]
-            sock = socket.socket(family, socktype, proto)
-            sock.settimeout(3)
-            sock.connect(sockaddr)
+        sock = _connect_raw(ip, int(port), 3)
+        if use_tls:
+            ss = ctx.wrap_socket(sock, server_hostname=host)
+            sock = None
         else:
-            sock = socket.create_connection((ip, port), timeout=3)
-        ss = ctx.wrap_socket(sock, server_hostname=host)
-        sock = None
+            ss = sock
+            sock = None
         ss.settimeout(1.0)
         ss.sendall(req)
 
@@ -326,17 +386,17 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
         while b"\r\n\r\n" not in header_buf:
             if should_continue and not should_continue():
                 ss.close()
-                return 0.0, "用户中止"
+                return 0.0, "用户中止", 0
             if time.time() > header_deadline:
                 ss.close()
-                return 0.0, "等待响应头超时"
+                return 0.0, "等待响应头超时", 0
             try:
                 chunk = ss.recv(4096)
             except socket.timeout:
                 continue
             if not chunk:
                 ss.close()
-                return 0.0, "连接被关闭（无响应头）"
+                return 0.0, "连接被关闭（无响应头）", 0
             header_buf += chunk
 
         header_raw, body_buf = header_buf.split(b"\r\n\r\n", 1)
@@ -345,7 +405,7 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
         status = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
         if status != 200:
             ss.close()
-            return 0.0, f"HTTP 状态码 {status}"
+            return 0.0, f"HTTP 状态码 {status}", status
 
         header_map = {}
         for line in header_raw.split(b"\r\n")[1:]:
@@ -378,17 +438,20 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
             else:
                 body += len(data)
         ss.close()
+        ss = None
 
         dur = time.time() - start
         if body < 16 * 1024:
-            return 0.0, "下载数据量过少"
+            return 0.0, "下载数据量过少", status
         if dur < 0.3 and body < 1024 * 1024:
-            return 0.0, "连接过早结束"
-        return round((body / 1024 / 1024) / max(dur, 0.1), 2), None
+            return 0.0, "连接过早结束", status
+        return round((body / 1024 / 1024) / max(dur, 0.1), 2), None, status
     except Exception as e:
-        if sock is not None:
-            try:
-                sock.close()
-            except Exception:
-                pass
-        return 0.0, str(e)
+        return 0.0, str(e), 0
+    finally:
+        for s in (sock, ss):
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass

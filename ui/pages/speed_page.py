@@ -12,16 +12,21 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor
 
 from core.constants import FONT_FAMILY, AIRPORT_CODES
-from ui.widgets import Card, LogTerminal
+from core.speed_url import (
+    SPEED_URL_PRESETS, CUSTOM_SPEED_URL, CF_SPEED_URL, url_to_preset_value,
+)
+from core.utils import to_float
+from ui.widgets import Card, LogTerminal, StatCard, EmptyState
 from ui.styles import (
-    FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_ORANGE, C_GREEN,
+    FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
+    C_GREEN, C_GREEN_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
     btn_stylesheet, ghost_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
 
 
 class SpeedPage(QWidget):
-    """测速页：控制工具栏 + 排名表格 + 日志。"""
+    """测速页：统计卡 + 控制工具栏 + 排名表格 + 日志。"""
 
     start_region_requested = Signal()
     start_full_requested = Signal()
@@ -35,11 +40,22 @@ class SpeedPage(QWidget):
 
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(18, 16, 18, 16)
-        outer.setSpacing(12)
+        outer.setContentsMargins(20, 16, 20, 18)
+        outer.setSpacing(14)
+
+        # ---- 统计卡 ----
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(12)
+        self.stat_best = StatCard("最快下载", "—", "MB/s")
+        self.stat_avg = StatCard("平均下载", "—", "MB/s")
+        self.stat_pass = StatCard("合格节点", "0")
+        self.stat_count = StatCard("结果总数", "0")
+        for c in (self.stat_best, self.stat_avg, self.stat_pass, self.stat_count):
+            stats_row.addWidget(c)
+        outer.addLayout(stats_row)
 
         # ---- 工具栏 ----
-        card = Card("测速控制")
+        card = Card("测速控制", "基于扫描结果下载实测；测速间隔越小越快，但更易触发限速")
         bar = QHBoxLayout()
         bar.setSpacing(10)
 
@@ -54,8 +70,8 @@ class SpeedPage(QWidget):
             return box
 
         self.input_region = QLineEdit()
-        self.input_region.setFixedWidth(70)
-        self.input_region.setFixedHeight(28)
+        self.input_region.setFixedWidth(72)
+        self.input_region.setFixedHeight(30)
         self.input_region.setAlignment(Qt.AlignCenter)
         self.input_region.setPlaceholderText("HKG")
         self.input_region.textChanged.connect(self._auto_uppercase)
@@ -64,35 +80,32 @@ class SpeedPage(QWidget):
         self.spin_count = QSpinBox()
         self.spin_count.setRange(1, 50)
         self.spin_count.setValue(10)
-        self.spin_count.setFixedHeight(28)
-        self.spin_count.setFixedWidth(64)
+        self.spin_count.setFixedHeight(30)
+        self.spin_count.setFixedWidth(68)
         bar.addLayout(labeled("数量", self.spin_count))
 
         self.combo_speed_url = QComboBox()
-        self.combo_speed_url.addItems(["自动测速地址", "手动输入"])
-        self.combo_speed_url.setFixedHeight(28)
-        self.combo_speed_url.setMinimumWidth(130)
-        saved_url = self.app_settings.get("speed_url", "auto")
-        self.combo_speed_url.setCurrentText("手动输入" if saved_url not in ("auto", "") else "自动测速地址")
+        for label, value in SPEED_URL_PRESETS:
+            self.combo_speed_url.addItem(label, value)
+        self.combo_speed_url.setFixedHeight(30)
+        self.combo_speed_url.setMinimumWidth(200)
         bar.addLayout(labeled("测速地址", self.combo_speed_url))
 
         self.input_speed_url = QLineEdit()
-        self.input_speed_url.setFixedHeight(28)
-        self.input_speed_url.setMinimumWidth(230)
+        self.input_speed_url.setFixedHeight(30)
+        self.input_speed_url.setMinimumWidth(240)
         self.input_speed_url.setPlaceholderText("speed.cloudflare.com/__down?bytes=99999999")
-        self.input_speed_url.setText("" if saved_url in ("auto", "") else saved_url)
         bar.addWidget(self.input_speed_url)
-        self.combo_speed_url.currentTextChanged.connect(
-            lambda t: self.input_speed_url.setVisible(t == "手动输入"))
-        self.input_speed_url.setVisible(self.combo_speed_url.currentText() == "手动输入")
+        self.combo_speed_url.currentIndexChanged.connect(self._on_speed_url_preset_changed)
+        self._apply_speed_url_to_ui(self.app_settings.get("speed_url", "auto"))
 
         self.chk_min_speed = QCheckBox("隐藏低于")
         self.spin_min_speed = QDoubleSpinBox()
         self.spin_min_speed.setRange(0, 200)
         self.spin_min_speed.setDecimals(1)
         self.spin_min_speed.setSuffix(" MB/s")
-        self.spin_min_speed.setFixedHeight(28)
-        self.spin_min_speed.setFixedWidth(110)
+        self.spin_min_speed.setFixedHeight(30)
+        self.spin_min_speed.setFixedWidth(116)
         bar.addWidget(self.chk_min_speed)
         bar.addWidget(self.spin_min_speed)
 
@@ -101,15 +114,13 @@ class SpeedPage(QWidget):
         self.btn_region = QPushButton("🌸 地区测速")
         self.btn_full = QPushButton("⬆ 完全测速")
         self.btn_export = QPushButton("⬇ 导出结果")
-        self.btn_region.setFixedHeight(30)
-        self.btn_full.setFixedHeight(30)
-        self.btn_export.setFixedHeight(30)
         for b in (self.btn_region, self.btn_full, self.btn_export):
+            b.setFixedHeight(32)
             b.setFont(FONT_SMALL)
             b.setCursor(Qt.PointingHandCursor)
-        self.btn_region.setStyleSheet(btn_stylesheet(C_ORANGE))
-        self.btn_full.setStyleSheet(btn_stylesheet(C_BLUE))
-        self.btn_export.setStyleSheet(btn_stylesheet(C_GREEN))
+        self.btn_region.setStyleSheet(btn_stylesheet(C_ORANGE, hover_color=C_ORANGE_DARK))
+        self.btn_full.setStyleSheet(btn_stylesheet(C_BLUE, hover_color=C_BLUE_DARK))
+        self.btn_export.setStyleSheet(btn_stylesheet(C_GREEN, hover_color=C_GREEN_DARK))
         self.btn_region.clicked.connect(self._on_region)
         self.btn_full.clicked.connect(self.start_full_requested.emit)
         self.btn_export.clicked.connect(self.export_requested.emit)
@@ -124,7 +135,7 @@ class SpeedPage(QWidget):
         self.spin_min_speed.valueChanged.connect(self._refresh_table)
 
         # ---- 表格 ----
-        table_card = Card("测速结果")
+        table_card = Card("测速结果", "双击任意单元格可复制内容")
         self.table = QTableWidget()
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels(
@@ -132,13 +143,18 @@ class SpeedPage(QWidget):
         )
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
         self.table.setStyleSheet(TABLE_LIGHT_STYLE)
         for i in range(7):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
         self.table.doubleClicked.connect(self._copy_cell)
+        self.empty = EmptyState("暂无测速结果，请先在「结果」页选择范围并开始测速", "🚀")
+        table_card.body().addWidget(self.empty)
         table_card.body().addWidget(self.table, 1)
         outer.addWidget(table_card, 1)
 
@@ -148,19 +164,33 @@ class SpeedPage(QWidget):
 
         self.setStyleSheet(
             "QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: white;"
-            " color: #111827; border: 1px solid #D1D5DB; border-radius: 6px;"
-            f" padding: 4px 7px; font-family: '{FONT_FAMILY}'; }}"
+            " color: #0F172A; border: 1px solid #D3DAE3; border-radius: 8px;"
+            f" padding: 4px 8px; font-family: '{FONT_FAMILY}'; }}"
             "QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus"
             " { border: 1px solid #2563EB; }"
-            "QComboBox::drop-down { border: none; width: 20px; }"
-            "QLabel { color: #374151; font-size: 12px; }"
-            "QCheckBox { color: #374151; font-size: 12px; spacing: 5px; }"
-            "QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px;"
-            " border: 1px solid #D1D5DB; background: white; }"
+            "QComboBox::drop-down { border: none; width: 22px; }"
+            "QLabel { color: #334155; font-size: 12px; }"
+            "QCheckBox { color: #334155; font-size: 12px; spacing: 6px; }"
+            "QCheckBox::indicator { width: 15px; height: 15px; border-radius: 4px;"
+            " border: 1px solid #D3DAE3; background: white; }"
             "QCheckBox::indicator:checked { background: #2563EB; border: 1px solid #2563EB; }"
         )
 
     # ---------------- 交互 ----------------
+    def _apply_speed_url_to_ui(self, url: str):
+        preset = url_to_preset_value(url)
+        index = self.combo_speed_url.findData(preset)
+        self.combo_speed_url.setCurrentIndex(index if index >= 0 else 0)
+        is_custom = (preset == CUSTOM_SPEED_URL)
+        self.input_speed_url.setText(url if is_custom else "")
+        self.input_speed_url.setVisible(is_custom)
+
+    def _on_speed_url_preset_changed(self, _index: int):
+        is_custom = (self.combo_speed_url.currentData() == CUSTOM_SPEED_URL)
+        self.input_speed_url.setVisible(is_custom)
+        if is_custom and not self.input_speed_url.text().strip():
+            self.input_speed_url.setText(CF_SPEED_URL)
+
     def _auto_uppercase(self, text):
         if text != text.upper():
             self.input_region.blockSignals(True)
@@ -178,10 +208,11 @@ class SpeedPage(QWidget):
 
     # ---------------- 参数 ----------------
     def collect(self) -> dict:
-        if self.combo_speed_url.currentText() == "手动输入":
+        value = self.combo_speed_url.currentData()
+        if value == CUSTOM_SPEED_URL:
             url = self.input_speed_url.text().strip() or "auto"
         else:
-            url = "auto"
+            url = value or "auto"
         return {
             "region": self.input_region.text().strip().upper(),
             "count": self.spin_count.value(),
@@ -191,6 +222,16 @@ class SpeedPage(QWidget):
 
     def health_snapshot(self) -> dict:
         return {"min_speed": self.collect()["min_speed"], "speed_url": self.collect()["speed_url"]}
+
+    def reload_from_settings(self, full: bool = False):
+        """把设置回填到测速页表单（speed_url 始终同步；full 时含 min_speed）。"""
+        s = self.app_settings
+        self._apply_speed_url_to_ui(s.get("speed_url", "auto"))
+        if full:
+            value = to_float(s.get("min_speed"), 0.0, 0.0, 200.0)
+            self.spin_min_speed.setValue(value)
+            if value > 0:
+                self.chk_min_speed.setChecked(True)
 
     # ---------------- 数据 ----------------
     def set_results(self, results: List[Dict]):
@@ -207,7 +248,7 @@ class SpeedPage(QWidget):
     def _refresh_table(self):
         data = self._visible_results()
         self.table.setRowCount(len(data))
-        rank_colors = {0: QColor("#D4A017"), 1: QColor("#9AA0A6"), 2: QColor("#B87333")}
+        rank_colors = {0: QColor("#D4A017"), 1: QColor("#94A3B8"), 2: QColor("#B87333")}
 
         for i, r in enumerate(data):
             rank_item = QTableWidgetItem(str(i + 1))
@@ -219,7 +260,9 @@ class SpeedPage(QWidget):
                 rank_item.setFont(font)
             self.table.setItem(i, 0, rank_item)
 
-            self.table.setItem(i, 1, QTableWidgetItem(r.get("ip", "")))
+            ip_item = QTableWidgetItem(r.get("ip", ""))
+            ip_item.setFont(QFont("Consolas", 10))
+            self.table.setItem(i, 1, ip_item)
 
             code = r.get("iata_code", "") or ""
             name = r.get("chinese_name", AIRPORT_CODES.get(code, "未知"))
@@ -231,29 +274,29 @@ class SpeedPage(QWidget):
             region_item = QTableWidgetItem(f"{verify_mark}{name}({code})")
             region_item.setTextAlignment(Qt.AlignCenter)
             if r.get("verified") is False:
-                region_item.setForeground(QColor("#EF4444"))
+                region_item.setForeground(QColor(C_RED))
             self.table.setItem(i, 2, region_item)
 
             latency = r.get("latency", 0)
             lat_item = QTableWidgetItem(f"{latency:.1f} ms")
             lat_item.setTextAlignment(Qt.AlignCenter)
             if latency < 100:
-                lat_item.setForeground(QColor("#22C55E"))
+                lat_item.setForeground(QColor(C_GREEN))
             elif latency < 200:
-                lat_item.setForeground(QColor("#F97316"))
+                lat_item.setForeground(QColor(C_ORANGE))
             else:
-                lat_item.setForeground(QColor("#EF4444"))
+                lat_item.setForeground(QColor(C_RED))
             self.table.setItem(i, 3, lat_item)
 
             speed = r.get("download_speed", 0)
             speed_item = QTableWidgetItem(f"{speed:.2f} MB/s")
             speed_item.setTextAlignment(Qt.AlignCenter)
             if speed >= 10:
-                speed_item.setForeground(QColor("#22C55E"))
+                speed_item.setForeground(QColor(C_GREEN))
             elif speed >= 5:
-                speed_item.setForeground(QColor("#F97316"))
+                speed_item.setForeground(QColor(C_ORANGE))
             else:
-                speed_item.setForeground(QColor("#EF4444"))
+                speed_item.setForeground(QColor(C_RED))
             self.table.setItem(i, 4, speed_item)
 
             score = r.get("score", 0)
@@ -269,7 +312,33 @@ class SpeedPage(QWidget):
             port_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(i, 6, port_item)
 
-            self.table.setItem(i, 7, QTableWidgetItem(r.get("test_type", "")))
+            type_item = QTableWidgetItem(r.get("test_type", ""))
+            type_item.setTextAlignment(Qt.AlignCenter)
+            type_item.setForeground(QColor(C_MUTED))
+            self.table.setItem(i, 7, type_item)
+
+        self._update_stats(data)
+        self._sync_empty_state()
+
+    def _update_stats(self, visible: List[Dict]):
+        self.stat_count.set_value(len(self.all_results))
+        if not self.all_results:
+            self.stat_best.set_value("—")
+            self.stat_avg.set_value("—")
+            self.stat_pass.set_value(0)
+            return
+        speeds = [(r.get("download_speed") or 0) for r in self.all_results]
+        best = max(speeds)
+        avg = sum(speeds) / len(speeds)
+        self.stat_best.set_value(f"{best:.2f}", color=C_GREEN)
+        self.stat_avg.set_value(
+            f"{avg:.2f}", color=C_GREEN if avg >= 10 else (C_ORANGE if avg >= 5 else C_RED))
+        self.stat_pass.set_value(len(visible))
+
+    def _sync_empty_state(self):
+        has_data = bool(self.all_results)
+        self.table.setVisible(has_data)
+        self.empty.setVisible(not has_data)
 
     def _copy_cell(self, index):
         item = self.table.item(index.row(), index.column())

@@ -13,9 +13,11 @@ EV_LOG = "log"                    # payload: str
 EV_PROGRESS = "progress"          # payload: (completed, total, success, ips_per_second)
 EV_FUNNEL = "funnel"              # payload: dict
 EV_SCAN_DONE = "scan_done"        # payload: list | None (None=中止/出错)
-EV_SPEED_PROGRESS = "speed_progress"  # payload: (current, total, 0)
-EV_SPEED_DONE = "speed_done"      # payload: list
+EV_SPEED_PROGRESS = "speed_progress"  # payload: (current, total, success)
+EV_SPEED_DONE = "speed_done"      # payload: list（正常完成）
+EV_SPEED_ABORT = "speed_abort"    # payload: None（用户中止，结果不写入历史）
 EV_STATE = "state"                # payload: dict (状态快照变化)
+EV_SETTINGS = "settings"          # payload: dict (设置变更，双 UI 需重新回填表单)
 
 
 class EventBus:

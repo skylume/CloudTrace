@@ -4,32 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CloudTrace 云迹</title>
+<link rel="icon" href="/static/favicon.ico">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="app">
 
   <!-- ============ 左侧导航 ============ -->
-  <aside class="sidebar">
-    <div class="logo"><span class="ico">☁</span>CloudTrace<span class="sub">云迹 · 面板</span></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-ico">☁</span>
+      <span class="brand-text">
+        <b>CloudTrace</b>
+        <i>云迹 · 面板</i>
+      </span>
+    </div>
     <nav class="nav">
-      <div class="nav-item active" data-page="scan"><span class="ico">📡</span>扫描</div>
-      <div class="nav-item" data-page="result"><span class="ico">📋</span>结果</div>
-      <div class="nav-item" data-page="speed"><span class="ico">🚀</span>测速</div>
-      <div class="nav-item" data-page="history"><span class="ico">🕘</span>历史</div>
-      <div class="nav-item" data-page="settings"><span class="ico">⚙️</span>设置</div>
+      <div class="nav-item active" data-page="scan"    title="扫描"><span class="ico">📡</span><span class="txt">扫描</span></div>
+      <div class="nav-item"        data-page="result"  title="结果"><span class="ico">📋</span><span class="txt">结果</span></div>
+      <div class="nav-item"        data-page="speed"   title="测速"><span class="ico">🚀</span><span class="txt">测速</span></div>
+      <div class="nav-item"        data-page="history" title="历史"><span class="ico">🕘</span><span class="txt">历史</span></div>
+      <div class="nav-item"        data-page="settings" title="设置"><span class="ico">⚙️</span><span class="txt">设置</span></div>
     </nav>
-    <div class="sidebar-footer" id="app-version">…</div>
+    <div class="sidebar-footer">
+      <span class="dot" id="conn-dot"></span>
+      <span id="app-version">…</span>
+    </div>
   </aside>
 
   <!-- ============ 主区 ============ -->
   <div class="main">
     <header class="topbar">
-      <h2 id="page-title">扫描</h2>
+      <div class="title-box">
+        <h2 id="page-title">扫描</h2>
+        <span class="subtitle" id="page-subtitle">配置参数并扫描 Cloudflare IP 段</span>
+      </div>
       <span class="pill" id="status-pill">就绪</span>
       <span class="muted" id="meta-label"></span>
       <div class="spacer"></div>
-      <span class="muted" id="speed-label">速度: 0 IP/s</span>
+      <span class="muted" id="speed-label">结果: 扫描 0 · 测速 0</span>
       <button class="btn btn-ghost btn-sm" id="btn-stop" disabled>⏹ 停止</button>
       <button class="btn btn-primary" id="btn-cta">▶ 开始扫描</button>
     </header>
@@ -41,7 +54,7 @@
       <section class="page show" id="page-scan">
         <div class="grid grid-2">
           <div class="card">
-            <h3>扫描参数</h3>
+            <div class="card-head"><h3>扫描参数</h3><span class="hint">决定扫描速度与筛选严格度</span></div>
             <div class="grid grid-3">
               <div class="field"><label>IP 版本</label>
                 <div class="seg" id="seg-version"><span class="on" data-v="4">IPv4</span><span data-v="6">IPv6</span></div>
@@ -56,64 +69,93 @@
               <div class="field"><label>延迟阈值 (ms)</label><input type="number" id="in-threshold" value="230" min="50" max="999"></div>
               <div class="field"><label>采样上限</label><input type="number" id="in-sample" value="5000" min="100" max="50000"></div>
               <div class="field"><label>探测次数 (0=自动)</label><input type="number" id="in-ping" value="0" min="0" max="10"></div>
-              <div class="field"><label>扫描方式</label>
-                <div class="seg" id="seg-mode"><span class="on" data-v="tcping">TCPing</span><span data-v="httping">HTTPing</span></div>
+              <div class="field span-3"><label>端口过滤（留空 = 不过滤）</label>
+                <input type="text" id="in-prefilter" placeholder="如 443,8443">
+                <div class="hint">在延迟测试前先剔除其它端口的节点，省下并发预算</div>
               </div>
-              <div class="field" style="grid-column: span 2;"><label>&nbsp;</label>
+              <div class="field span-3"><label>扫描方式</label>
+                <div class="seg" id="seg-mode"><span class="on" data-v="tcping">TCPing</span><span data-v="httping">HTTPing</span></div>
                 <div class="hint">TCPing 测握手延迟；HTTPing 测 TTFB（阈值 ×1.3/×4.0 自动换算），两者数据不可比</div>
               </div>
             </div>
           </div>
 
           <div class="card">
-            <h3>IP 来源</h3>
-            <div class="field" style="margin-bottom:10px">
+            <div class="card-head"><h3>IP 来源</h3><span class="hint">自定义框同时支持 CIDR / IP / IP 段 / 域名，自动分类</span></div>
+            <div class="field" style="margin-bottom:12px">
               <label>来源模式</label>
               <select id="sel-source">
-                <option>仅官方</option><option>仅自定义</option>
-                <option>官方+自定义</option><option>非标列表</option>
+                <option>仅官方</option><option>仅自定义</option><option>官方+自定义</option>
               </select>
             </div>
-            <div class="field" id="wrap-cidr">
-              <label>自定义 CIDR（每行一个）</label>
-              <textarea id="txt-cidr" placeholder="1.2.3.0/24&#10;2606:4700::/32"></textarea>
-            </div>
-            <div class="field" id="wrap-import" hidden>
-              <label>非标 IP 列表（每行 IP [端口]，未填端口用「端口」参数）</label>
-              <textarea id="txt-import" placeholder="1.2.3.4&#10;5.6.7.8 8443&#10;2606:4700::1111"></textarea>
-              <div class="row" style="margin-top:6px">
+            <div class="field" id="wrap-custom">
+              <div class="row" style="margin-bottom:6px">
                 <label class="btn btn-ghost btn-sm" style="margin:0">
                   导入文件<input type="file" id="file-import" accept=".txt,.csv" hidden>
                 </label>
-                <span class="hint">支持 txt / csv</span>
+                <button class="btn btn-ghost btn-sm" id="btn-source-sample" type="button">填入示例</button>
+                <button class="btn btn-ghost btn-sm" id="btn-source-clear" type="button">清空</button>
               </div>
+              <textarea id="txt-source" placeholder="每行一条，自动识别类型（可混着写）：&#10;1.2.3.0/24                  # CIDR → 按采样密度抽 IP&#10;2606:4700::/32              # IPv6 CIDR&#10;1.2.3.4                     # 单个 IP → 逐条直测&#10;1.2.3.4:8443                # IP + 端口&#10;1.2.3.4-1.2.3.20            # IP 段（≤1024 个直接展开）&#10;[2606:4700::1111]:8443      # IPv6 + 端口&#10;example.com                 # 域名（自动解析，最多 50 个 IP）&#10;https://example.com:8443/   # 带 scheme → 决定是否走 TLS"></textarea>
+              <div class="hint" id="source-preview">等待输入：CIDR / 单个 IP / IP 段 / 域名</div>
             </div>
+            <div class="hint" id="source-official">将扫描 Cloudflare 官方 IPv4/IPv6 网段（自动更新，无需填写）。</div>
           </div>
         </div>
 
         <div class="card">
-          <h3>本次扫描</h3>
+          <div class="card-head"><h3>数据源</h3><span class="hint">扫描前从远程列表拉取节点并合并进本次扫描</span></div>
+          <div class="set-row"><span class="grow">启用远程数据源</span><div class="switch" id="sw-remote"></div></div>
+          <div class="field" id="wrap-sources">
+            <label>数据源列表（每行「名称 | URL」；以 # 开头表示禁用）</label>
+            <textarea id="txt-sources" placeholder="cfnb 聚合列表 | https://zip.cm.edu.kg/all.txt&#10;# 备用源 | https://example.com/all.txt"></textarea>
+            <div class="row" style="margin-top:8px">
+              <span class="hint">重试</span><input type="number" id="in-retries" min="1" max="10" value="3" class="w-narrow">
+              <span class="hint">间隔(s)</span><input type="number" id="in-retry-delay" min="0" max="60" step="0.5" value="3" class="w-narrow">
+              <span class="hint">超时(s)</span><input type="number" id="in-source-timeout" min="1" max="120" step="1" value="8" class="w-narrow">
+              <div class="spacer"></div>
+              <button class="btn btn-ghost btn-sm" id="btn-source-preview" type="button">🔍 拉取预览</button>
+            </div>
+            <div class="hint" id="sources-preview">尚未拉取</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>本次扫描</h3><span class="hint">漏斗实时反映筛选情况</span></div>
           <div class="funnel" id="scan-funnel"><span class="step">等待开始</span></div>
         </div>
 
         <div class="card">
-          <div class="term-head"><h3>运行日志</h3><span class="hint">自动滚动 · 可全选复制</span></div>
+          <div class="card-head"><h3>运行日志</h3><span class="hint">自动滚动 · 可全选复制</span></div>
           <div class="term" id="scan-log"></div>
         </div>
 
-        <div class="row" style="justify-content:center; margin-top:4px">
-          <button class="btn btn-primary" id="btn-start-scan" style="padding:10px 34px">▶ 开始扫描</button>
+        <div class="row center" style="margin-top:2px">
+          <button class="btn btn-primary btn-lg" id="btn-start-scan">▶ 开始扫描</button>
         </div>
       </section>
 
       <!-- ========== 结果 ========== -->
       <section class="page" id="page-result">
+        <div class="stats">
+          <div class="stat"><span class="stat-label">可用 IP</span><b class="stat-value" id="rstat-total">0</b></div>
+          <div class="stat"><span class="stat-label">覆盖地区</span><b class="stat-value" id="rstat-regions">0</b></div>
+          <div class="stat"><span class="stat-label">最低延迟</span><b class="stat-value" id="rstat-min">—<i>ms</i></b></div>
+          <div class="stat"><span class="stat-label">平均延迟</span><b class="stat-value" id="rstat-avg">—<i>ms</i></b></div>
+        </div>
+
         <div class="card">
           <div class="funnel" id="result-funnel"><span class="step">暂无数据</span></div>
           <div class="muted" id="result-summary" style="margin-top:10px"></div>
         </div>
         <div class="card">
-          <h3>地区分布（点击过滤）</h3>
+          <div class="card-head">
+            <h3>地区分布</h3>
+            <span class="hint">点击芯片过滤表格，可多选</span>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" id="btn-chips-all">全选</button>
+            <button class="btn btn-ghost btn-sm" id="btn-chips-none">清空</button>
+          </div>
           <div class="chips" id="region-chips"><span class="hint">暂无数据，请先扫描或加载历史</span></div>
         </div>
         <div class="card">
@@ -123,6 +165,8 @@
             <span class="muted">ms</span>
             <select id="sel-sort"><option value="latency">按延迟升序</option><option value="region">按地区排序</option></select>
             <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" id="btn-check-all">勾选全部</button>
+            <button class="btn btn-ghost btn-sm" id="btn-check-none">清空勾选</button>
             <button class="btn btn-ghost btn-sm" id="btn-single">🎯 单点测速</button>
             <button class="btn btn-orange btn-sm" id="btn-region-speed">🚀 测速所选地区</button>
             <button class="btn btn-primary btn-sm" id="btn-full-speed">⬆ 完全测速</button>
@@ -131,7 +175,7 @@
           <div class="table-wrap">
             <table id="scan-table">
               <thead><tr>
-                <th style="width:34px"></th><th>IP 地址</th><th>地区</th>
+                <th style="width:38px"></th><th>IP 地址</th><th>地区</th>
                 <th>延迟</th><th>端口</th><th>扫描时间</th>
               </tr></thead>
               <tbody id="scan-tbody"><tr><td colspan="6" class="empty">暂无数据</td></tr></tbody>
@@ -142,15 +186,23 @@
 
       <!-- ========== 测速 ========== -->
       <section class="page" id="page-speed">
+        <div class="stats">
+          <div class="stat"><span class="stat-label">最快下载</span><b class="stat-value" id="sstat-best">—<i>MB/s</i></b></div>
+          <div class="stat"><span class="stat-label">平均下载</span><b class="stat-value" id="sstat-avg">—<i>MB/s</i></b></div>
+          <div class="stat"><span class="stat-label">合格节点</span><b class="stat-value" id="sstat-pass">0</b></div>
+          <div class="stat"><span class="stat-label">结果总数</span><b class="stat-value" id="sstat-count">0</b></div>
+        </div>
+
         <div class="card">
+          <div class="card-head"><h3>测速控制</h3><span class="hint">基于扫描结果下载实测；间隔越小越快，但更易触发限速</span></div>
           <div class="toolbar" style="margin-bottom:0">
             <span class="muted">地区码</span>
             <input type="text" id="in-region" class="w-narrow" placeholder="HKG" style="text-transform:uppercase">
             <span class="muted">数量</span>
             <input type="number" id="in-count" value="10" min="1" max="50" class="w-narrow">
             <span class="muted">测速地址</span>
-            <select id="sel-speed-url"><option value="auto">自动</option><option value="manual">手动输入</option></select>
-            <input type="text" id="in-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999" hidden style="width:300px">
+            <select id="sel-speed-url"></select>
+            <input type="text" id="in-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999" hidden style="width:290px">
             <label class="check"><input type="checkbox" id="chk-minspeed"> 隐藏低于</label>
             <input type="number" id="in-minspeed" value="5" min="0" max="200" step="0.5">
             <span class="muted">MB/s</span>
@@ -161,6 +213,7 @@
           </div>
         </div>
         <div class="card">
+          <div class="card-head"><h3>测速结果</h3><span class="hint">双击任意单元格可复制内容</span></div>
           <div class="table-wrap">
             <table id="speed-table">
               <thead><tr>
@@ -172,7 +225,7 @@
           </div>
         </div>
         <div class="card">
-          <div class="term-head"><h3>测速日志</h3></div>
+          <div class="card-head"><h3>测速日志</h3></div>
           <div class="term" id="speed-log"></div>
         </div>
       </section>
@@ -185,15 +238,15 @@
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm" id="btn-hist-refresh">🔄 刷新</button>
         </div>
-        <div class="card"><h3>扫描记录</h3><div id="hist-scan-list"></div></div>
-        <div class="card"><h3>测速记录</h3><div id="hist-speed-list"></div></div>
+        <div class="card"><div class="card-head"><h3>扫描记录</h3><span class="hint">最多保留 5 份</span></div><div id="hist-scan-list"></div></div>
+        <div class="card"><div class="card-head"><h3>测速记录</h3><span class="hint">最多保留 5 份</span></div><div id="hist-speed-list"></div></div>
       </section>
 
       <!-- ========== 设置 ========== -->
       <section class="page" id="page-settings">
         <div class="set-grid">
           <div class="card">
-            <h3>常规</h3>
+            <div class="card-head"><h3>常规</h3></div>
             <div class="set-row"><span class="grow">关闭窗口时最小化到托盘（桌面版）</span>
               <div class="switch" id="sw-tray"></div></div>
             <div class="set-row"><span class="grow">扫描方式默认值</span>
@@ -203,34 +256,43 @@
           </div>
 
           <div class="card">
-            <h3>测速</h3>
-            <div class="set-row"><span class="grow">测速地址</span>
-              <select id="set-speed-url-mode"><option value="auto">auto</option><option value="manual">手动输入</option></select></div>
-            <div class="set-row" id="row-speed-url" hidden><span class="grow">地址</span>
-              <input type="text" id="set-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999"></div>
-            <div class="set-row"><span class="grow">测速前验证 Cloudflare 节点</span>
-              <div class="switch" id="sw-verify"></div></div>
-            <div class="set-row"><span class="grow">合格阈值 (MB/s)</span>
-              <input type="number" id="set-minspeed" min="0" max="200" step="0.5"></div>
-            <div class="set-row"><span class="grow">测速间隔 (秒)</span>
-              <input type="number" id="set-interval" min="0" max="15"></div>
-          </div>
-
-          <div class="card">
-            <h3>综合评分权重</h3>
+            <div class="card-head"><h3>综合评分权重</h3></div>
             <div class="hint" style="margin-bottom:8px">score = 速度权重 × MB/s ÷ (1 + 延迟权重 × 延迟秒)</div>
             <div class="set-row"><span class="grow">速度权重</span><input type="number" id="set-w-speed" min="0" max="50" step="0.5"></div>
             <div class="set-row"><span class="grow">延迟权重</span><input type="number" id="set-w-latency" min="0" max="50" step="0.5"></div>
           </div>
 
           <div class="card">
-            <h3>HTTP 服务面板</h3>
+            <div class="card-head"><h3>测速</h3></div>
+            <div class="set-row"><span class="grow">测速地址</span>
+              <select id="set-speed-url-mode"></select></div>
+            <div class="set-row" id="row-speed-url" hidden><span class="grow">地址</span>
+              <input type="text" id="set-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999"></div>
+            <div class="hint" id="speed-url-hint"></div>
+            <div class="set-row"><span class="grow">测速前验证 Cloudflare 节点</span>
+              <div class="switch" id="sw-verify"></div></div>
+            <div class="set-row"><span class="grow">合格阈值 (MB/s)</span>
+              <input type="number" id="set-minspeed" min="0" max="200" step="0.5"></div>
+            <div class="set-row"><span class="grow">测速间隔 (秒)</span>
+              <input type="number" id="set-interval" min="0" max="15"></div>
+            <div class="set-row"><span class="grow">测速并发 <i class="hint">1=串行最准</i></span>
+              <input type="number" id="set-speed-workers" min="1" max="16"></div>
+            <div class="set-row"><span class="grow">提前收敛 <i class="hint">0=不限</i></span>
+              <input type="number" id="set-result-limit" min="0" max="1000"></div>
+            <div class="set-row"><span class="grow">分地区 TopN <i class="hint">0=不限</i></span>
+              <input type="number" id="set-region-topn" min="0" max="100"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>HTTP 服务面板</h3></div>
             <div class="set-row"><span class="grow">启用 HTTP 服务</span>
               <div class="switch" id="sw-http"></div></div>
             <div class="set-row"><span class="grow">监听端口</span><input type="number" id="set-port" min="1" max="65535"></div>
             <div class="set-row"><span class="grow">允许局域网访问</span><div class="switch" id="sw-lan"></div></div>
             <div class="set-row"><span class="grow">访问 Token</span>
-              <input type="password" id="set-token" placeholder="留空则不鉴权"></div>
+              <input type="password" id="set-token" placeholder="留空则不修改">
+              <button class="btn btn-ghost btn-sm" id="btn-token-clear" type="button">清除</button></div>
+            <div class="hint" id="token-hint"></div>
             <div class="hint" id="http-hint"></div>
           </div>
         </div>
@@ -253,6 +315,9 @@
     <div class="modal-footer" id="modal-footer"></div>
   </div>
 </div>
+
+<!-- 轻提示 -->
+<div class="toasts" id="toasts"></div>
 
 <script src="/static/app.js"></script>
 </body>

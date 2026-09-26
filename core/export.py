@@ -16,6 +16,7 @@ SCAN_FIELDS = {
     'latency': '延迟(ms)',
     'ip_version': 'IP版本',
     'port': '端口',
+    'use_tls': 'TLS',
     'scan_mode': '扫描方式',
     'scan_time': '扫描时间',
 }
@@ -29,8 +30,11 @@ SPEED_FIELDS = {
     'score': '综合评分',
     'verified': '可用性验证',
     'port': '端口',
+    'use_tls': 'TLS',
     'test_type': '测速类型',
 }
+
+EXPORT_FORMATS = ("csv", "json", "txt")
 
 
 def fields_for(result_type: str) -> Dict[str, str]:
@@ -47,12 +51,33 @@ def _select(results: List[Dict], result_type: str, fields: Optional[List[str]],
     return data, selected
 
 
+def _ip_port(r: Dict) -> str:
+    ip = str(r.get('ip', '')).strip()
+    port = r.get('port')
+    if ':' in ip and not ip.startswith('['):
+        ip = f"[{ip}]"
+    return f"{ip}:{port}" if port else ip
+
+
+def render_txt(results: List[Dict], result_type: str,
+               qualified_only: bool = False, min_speed: float = 0.0) -> str:
+    """TXT 导出：每行一个 `ip:port`，可直接粘贴进代理客户端。
+
+    测速结果按评分（已排序）输出，扫描结果按延迟输出。
+    """
+    data, _ = _select(results, result_type, None, qualified_only, min_speed)
+    return "\n".join(_ip_port(r) for r in data) + ("\n" if data else "")
+
+
 def render_export(results: List[Dict], result_type: str,
                   fields: Optional[List[str]] = None,
                   qualified_only: bool = False,
                   min_speed: float = 0.0,
                   fmt: str = "csv") -> str:
-    """把结果渲染为 CSV/JSON 文本（供文件导出与 HTTP 下载共用）。"""
+    """把结果渲染为 CSV/JSON/TXT 文本（供文件导出与 HTTP 下载共用）。"""
+    if fmt == "txt":
+        return render_txt(results, result_type, qualified_only, min_speed)
+
     data, selected = _select(results, result_type, fields, qualified_only, min_speed)
     available = fields_for(result_type)
 
@@ -82,12 +107,24 @@ def render_export(results: List[Dict], result_type: str,
 def write_export(filepath: str, results: List[Dict], result_type: str,
                  fields: Optional[List[str]] = None,
                  qualified_only: bool = False,
-                 min_speed: float = 0.0) -> int:
-    """导出到文件（按扩展名判断 CSV/JSON）。返回实际导出条数。"""
-    fmt = "json" if filepath.lower().endswith('.json') else "csv"
+                 min_speed: float = 0.0,
+                 fmt: Optional[str] = None) -> int:
+    """导出到文件。返回实际导出条数。
+
+    fmt 为 None 时按扩展名判断（csv/json/txt）；显式传入时以 fmt 为准
+    （用户在导出对话框里选了格式，但文件名后缀可能不一致）。
+    """
+    if fmt not in EXPORT_FORMATS:
+        lowered = filepath.lower()
+        if lowered.endswith('.json'):
+            fmt = "json"
+        elif lowered.endswith('.txt'):
+            fmt = "txt"
+        else:
+            fmt = "csv"
     data, _ = _select(results, result_type, fields, qualified_only, min_speed)
     content = render_export(results, result_type, fields, qualified_only, min_speed, fmt)
     encoding = "utf-8-sig" if fmt == "csv" else "utf-8"
-    with open(filepath, 'w', encoding=encoding, newline='') as f:
-        f.write(content)
+    from core.utils import atomic_write_text
+    atomic_write_text(filepath, content, encoding=encoding)
     return len(data)

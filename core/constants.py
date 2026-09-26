@@ -197,7 +197,7 @@ def load_or_update_ip_cache(ip_version: int):
             with open(IP_CACHE_FILE, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
     except Exception:
-        pass
+        cache = {}
 
     current_time = time.time()
     # 每个 IP 版本独立记录更新时间，避免更新 v4 顺带给 v6 缓存“续期”
@@ -210,8 +210,8 @@ def load_or_update_ip_cache(ip_version: int):
         cache[key] = official_list
         cache[ts_key] = current_time
         try:
-            with open(IP_CACHE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(cache, f, ensure_ascii=False, indent=2)
+            from core.utils import atomic_write_json
+            atomic_write_json(IP_CACHE_FILE, cache)
             logger.info("已更新 %s 列表（%d 个 CIDR）", key, len(official_list))
         except Exception:
             pass

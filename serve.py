@@ -41,6 +41,13 @@ def main() -> int:
     parser.add_argument("--token", default=None, help="访问 Token（写入设置）")
     args = parser.parse_args()
 
+    # 单实例：避免与桌面版/另一个面板进程抢端口与历史目录
+    from core.single_instance import acquire_single_instance
+    if not acquire_single_instance():
+        print("[错误] 检测到另一个 CloudTrace 实例正在运行；"
+              "如需强制多开，请设置环境变量 CLOUDTRACE_ALLOW_MULTI=1。")
+        return 1
+
     settings = load_settings()
     dirty = False
     if args.token is not None and args.token != settings.get("http_token", ""):

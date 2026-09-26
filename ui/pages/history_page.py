@@ -12,9 +12,10 @@ from PySide6.QtGui import QFont
 
 from core.constants import FONT_FAMILY
 from settings import get_history_list
-from ui.widgets import Card, Segmented
+from ui.widgets import Card, Segmented, clear_layout
 from ui.styles import (
-    FONT_SMALL, C_BLUE, C_RED, C_MUTED, btn_stylesheet, ghost_btn_stylesheet,
+    FONT_SMALL, C_BLUE, C_BLUE_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
+    C_PURPLE, btn_stylesheet, ghost_btn_stylesheet, danger_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
 
@@ -33,8 +34,8 @@ class HistoryPage(QWidget):
 
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(18, 16, 18, 16)
-        outer.setSpacing(12)
+        outer.setContentsMargins(20, 16, 20, 18)
+        outer.setSpacing(14)
 
         head = QHBoxLayout()
         lbl = QLabel("IP 版本")
@@ -46,7 +47,8 @@ class HistoryPage(QWidget):
         head.addWidget(self.seg_version)
         head.addStretch()
         self.btn_refresh = QPushButton("🔄 刷新")
-        self.btn_refresh.setFixedHeight(28)
+        self.btn_refresh.setFixedHeight(30)
+        self.btn_refresh.setFont(FONT_SMALL)
         self.btn_refresh.setCursor(Qt.PointingHandCursor)
         self.btn_refresh.setStyleSheet(ghost_btn_stylesheet())
         self.btn_refresh.clicked.connect(self.refresh)
@@ -60,8 +62,8 @@ class HistoryPage(QWidget):
         inner = QWidget()
         inner.setStyleSheet("background: transparent;")
         self.inner_lay = QVBoxLayout(inner)
-        self.inner_lay.setContentsMargins(0, 0, 6, 0)
-        self.inner_lay.setSpacing(12)
+        self.inner_lay.setContentsMargins(0, 0, 8, 0)
+        self.inner_lay.setSpacing(14)
         scroll.setWidget(inner)
         outer.addWidget(scroll, 1)
 
@@ -70,24 +72,18 @@ class HistoryPage(QWidget):
         self.refresh()
 
     def refresh(self):
-        while self.inner_lay.count():
-            item = self.inner_lay.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-            elif item.layout():
-                sub = item.layout()
-                while sub.count():
-                    s = sub.takeAt(0)
-                    if s.widget():
-                        s.widget().deleteLater()
+        clear_layout(self.inner_lay)
 
         for type_label, type_key, icon in (("扫描记录", "scan", "📡"), ("测速记录", "speed", "🚀")):
-            card = Card(f"IPv{self.ip_version} {type_label}")
             history = get_history_list(self.ip_version, type_key)
+            card = Card(f"IPv{self.ip_version} {type_label}", f"共 {len(history)} 份 · 最多保留 5 份")
             if not history:
-                empty = QLabel(f"暂无{type_label}（执行一次{'扫描' if type_key == 'scan' else '测速'}后自动生成）")
-                empty.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; border: none; background: transparent;")
+                empty = QLabel(
+                    f"暂无{type_label}（执行一次{'扫描' if type_key == 'scan' else '测速'}后自动生成）")
+                empty.setStyleSheet(
+                    f"color: {C_MUTED_LIGHT}; font-size: 12px; border: none; background: transparent;")
+                empty.setAlignment(Qt.AlignCenter)
+                empty.setContentsMargins(0, 14, 0, 14)
                 card.body().addWidget(empty)
             else:
                 for h in history:
@@ -97,45 +93,46 @@ class HistoryPage(QWidget):
 
     def _make_row(self, h: dict, type_key: str, icon: str) -> QFrame:
         row = QFrame()
-        row.setObjectName("card")
         row.setStyleSheet(
-            "QFrame#card { background: white; border: 1px solid #E5E7EB; border-radius: 10px; }"
-        )
+            "QFrame { background: #F8FAFC; border: 1px solid #E6EAF0; border-radius: 10px; }")
         lay = QHBoxLayout(row)
-        lay.setContentsMargins(14, 8, 14, 8)
+        lay.setContentsMargins(14, 10, 14, 10)
         lay.setSpacing(12)
 
         icon_lbl = QLabel(icon)
         icon_lbl.setFont(QFont(FONT_FAMILY, 14))
+        icon_lbl.setStyleSheet("border: none; background: transparent;")
         lay.addWidget(icon_lbl)
 
         text_box = QVBoxLayout()
-        text_box.setSpacing(1)
+        text_box.setSpacing(2)
         title = QLabel(h.get("save_time", "未知时间"))
         title.setFont(QFont(FONT_FAMILY, 10))
-        title.setStyleSheet("color: #111827; border: none; background: transparent;")
-        meta = QLabel(f"{h.get('count', 0)} 个 IP · {h.get('filename', '')}")
+        title.setStyleSheet("color: #0F172A; border: none; background: transparent; font-weight: 600;")
+        meta = QLabel(f"{h.get('count', 0)} 条 · {h.get('filename', '')}")
         meta.setFont(QFont(FONT_FAMILY, 8))
         meta.setStyleSheet(f"color: {C_MUTED}; border: none; background: transparent;")
         text_box.addWidget(title)
         text_box.addWidget(meta)
         lay.addLayout(text_box, 1)
 
-        def op(text, color, primary=False):
+        def op(text, style):
             b = QPushButton(text)
-            b.setFixedSize(60, 26)
+            b.setFixedSize(62, 28)
             b.setFont(QFont(FONT_FAMILY, 9))
             b.setCursor(Qt.PointingHandCursor)
-            b.setStyleSheet(btn_stylesheet(color) if primary else ghost_btn_stylesheet())
+            b.setStyleSheet(style)
             return b
 
-        btn_load = op("加载", C_BLUE, primary=True)
-        btn_export = op("导出", "#8B5CF6", primary=True)
-        btn_del = op("删除", C_RED, primary=True)
+        btn_load = op("加载", btn_stylesheet(C_BLUE, hover_color=C_BLUE_DARK))
+        btn_export = op("导出", btn_stylesheet(C_PURPLE))
+        btn_del = op("删除", danger_btn_stylesheet())
         filepath = h["filepath"]
-        btn_load.clicked.connect(lambda _c, fp=filepath: self.load_requested.emit(fp, type_key))
-        btn_export.clicked.connect(lambda _c, fp=filepath: self.export_requested.emit(fp, type_key))
-        btn_del.clicked.connect(lambda _c, fp=filepath: self._confirm_delete(fp))
+        # 首参必须带默认值：PySide6 的 clicked 只有 0/1 参重载，
+        # 2 个参数的 lambda 会匹配失败并静默不执行（详见 ui/widgets.py 注释）。
+        btn_load.clicked.connect(lambda _c=False, fp=filepath: self.load_requested.emit(fp, type_key))
+        btn_export.clicked.connect(lambda _c=False, fp=filepath: self.export_requested.emit(fp, type_key))
+        btn_del.clicked.connect(lambda _c=False, fp=filepath: self._confirm_delete(fp))
         lay.addWidget(btn_load)
         lay.addWidget(btn_export)
         lay.addWidget(btn_del)

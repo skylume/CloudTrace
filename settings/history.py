@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import os
-import shutil
 import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 
 from settings.settings import SAVE_DIR
+from core.utils import atomic_write_json, atomic_write_bytes
 
 
 logger = logging.getLogger("CloudTrace")
@@ -45,14 +45,15 @@ def save_results_to_file(results: List[Dict], ip_version: int, result_type: str)
     }
 
     try:
-        with open(history_file, 'w', encoding='utf-8') as f:
-            json.dump(save_data, f, ensure_ascii=False, indent=2)
+        # 原子写：进程崩溃也不会留下半截 JSON 导致历史页报「文件损坏」
+        atomic_write_json(history_file, save_data)
 
         if result_type == "scan":
             latest_file = IPV4_SCAN_FILE if ip_version == 4 else IPV6_SCAN_FILE
         else:
             latest_file = IPV4_SPEED_FILE if ip_version == 4 else IPV6_SPEED_FILE
-        shutil.copy2(history_file, latest_file)
+        with open(history_file, 'rb') as f:
+            atomic_write_bytes(latest_file, f.read())
 
         _cleanup_by_prefix(ip_label, type_label)
         return True

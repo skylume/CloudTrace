@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Optional
 from core.compat import get_event_loop_policy
 from service.events import (
     EventBus, EV_LOG, EV_PROGRESS, EV_FUNNEL,
-    EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_STATE,
+    EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_SPEED_ABORT,
+    EV_STATE, EV_SETTINGS,
 )
 
 
@@ -74,15 +75,28 @@ class TaskManager:
         """外部（如历史加载）写入扫描结果，保持双 UI 状态一致。"""
         with self._lock:
             self.scan_results = list(results or [])
+        self._emit_state()
 
     def set_speed_results(self, results: List[Dict]):
         with self._lock:
             self.speed_results = list(results or [])
+        self._emit_state()
+
+    def _emit_state(self):
+        """广播完整状态快照。
+
+        订阅方（Web 面板 / Qt 桥）都把 EV_STATE 当作「完整快照」处理，
+        因此这里必须发送 snapshot() 全量数据；只发 {"stage": ...} 会让
+        Web 端把缺失字段当成空值，从而清空已扫描/已测速的结果。
+        """
+        snap = self.snapshot()
+        snap["stage"] = self.stage
+        self.bus.emit(EV_STATE, snap)
 
     def _set_stage(self, stage: str):
         with self._lock:
             self.stage = stage
-        self.bus.emit(EV_STATE, {"stage": stage})
+        self._emit_state()
 
     def _log(self, msg: str):
         with self._lock:
@@ -135,7 +149,7 @@ class TaskManager:
         scanner.progress_callback = self._on_scan_progress
         scanner.funnel_callback = self._set_funnel
 
-        self.bus.emit(EV_STATE, {"stage": STAGE_SCANNING})
+        self._emit_state()
         thread.start()
         return True
 
@@ -197,7 +211,7 @@ class TaskManager:
         speed_task.log_callback = self._log
         speed_task.progress_callback = self._on_speed_progress
 
-        self.bus.emit(EV_STATE, {"stage": STAGE_TESTING})
+        self._emit_state()
         thread.start()
         return True
 
@@ -206,20 +220,31 @@ class TaskManager:
         self.bus.emit(EV_SPEED_PROGRESS, (current, total, speed))
 
     def _run_speed(self, speed_task):
-        results = []
+        results = None
         try:
-            results = speed_task.run() or []
+            results = speed_task.run()
         except Exception as e:
             self.last_error = str(e)
             self._log(f"测速线程异常: {e}")
             logger.exception("测速线程异常")
             results = []
         with self._lock:
-            self.speed_results = results
+            if results is not None:
+                self.speed_results = results
             self._speed_thread = None
         if self.stage == STAGE_TESTING:
             self._set_stage(STAGE_IDLE)
-        self.bus.emit(EV_SPEED_DONE, results)
+        # 中止（None）与「正常完成但无结果」（[]）必须区分：
+        # 前者不能触发「完成」语义，否则会覆盖停止提示并写入半截历史。
+        if results is None:
+            self.bus.emit(EV_SPEED_ABORT, None)
+        else:
+            self.bus.emit(EV_SPEED_DONE, results)
+
+    # ---------------- 设置广播 ----------------
+    def broadcast_settings(self, settings: Dict[str, Any]):
+        """设置变更后广播，供双 UI 重新回填表单（避免互相覆盖）。"""
+        self.bus.emit(EV_SETTINGS, dict(settings or {}))
 
     # ---------------- 停止 / 等待 ----------------
     def stop(self, wait: bool = False, timeout: float = 3.0):
