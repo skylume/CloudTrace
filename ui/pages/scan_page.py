@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QComboBox, QPlainTextEdit, QPushButton, QFileDialog, QScrollArea,
     QGridLayout, QSizePolicy, QDoubleSpinBox,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
 
 from core.constants import FONT_FAMILY, PORT_OPTIONS
@@ -56,7 +56,7 @@ SOURCE_SAMPLE = (
 SOURCES_PLACEHOLDER = (
     "每行一个数据源：名称 | URL\n"
     "以 # 开头的行表示禁用该源。例如：\n"
-    "cfnb 聚合列表 | https://zip.cm.edu.kg/all.txt\n"
+    "cm.edu.kg 聚合列表 | https://zip.cm.edu.kg/all.txt\n"
     "# 备用源 | https://example.com/all.txt"
 )
 
@@ -66,6 +66,12 @@ class ScanPage(QWidget):
 
     start_requested = Signal()
     sources_preview_ready = Signal(str)
+    params_changed = Signal()   # 扫描参数（采样上限/并发/阈值…）被用户改动，需落盘
+
+    # 采样上限可设置范围：与 settings.sanitize_settings / create_scanner 保持一致，
+    # 避免「设置里能填 200000，界面上却被悄悄截到 50000」这类静默失效。
+    SAMPLE_MIN = 100
+    SAMPLE_MAX = 200000
 
     def __init__(self, app_settings: dict, parent=None):
         super().__init__(parent)
@@ -139,11 +145,13 @@ class ScanPage(QWidget):
         grid.addLayout(field("延迟阈值", self.spin_threshold), 1, 0)
 
         self.spin_sample = QSpinBox()
-        self.spin_sample.setRange(100, 50000)
+        self.spin_sample.setRange(self.SAMPLE_MIN, self.SAMPLE_MAX)
         self.spin_sample.setSingleStep(500)
-        self.spin_sample.setValue(to_int(self.app_settings.get("sample_max"), 5000, 100, 50000))
+        self.spin_sample.setValue(to_int(self.app_settings.get("sample_max"), 5000,
+                                         self.SAMPLE_MIN, self.SAMPLE_MAX))
         self.spin_sample.setFixedHeight(32)
-        grid.addLayout(field("采样上限", self.spin_sample), 1, 1)
+        grid.addLayout(field("采样上限", self.spin_sample,
+                             "单次扫描最多生成的 IP 数（100~200000）；与设置页共用同一份配置"), 1, 1)
 
         self.spin_ping = QSpinBox()
         self.spin_ping.setRange(0, 10)
@@ -349,10 +357,35 @@ class ScanPage(QWidget):
         self._on_source_changed(self.combo_source.currentText())
         self._on_remote_toggled(self.chk_remote.currentText())
 
+        # 参数改了就落盘（去抖 600ms）：此前只有点「开始扫描」才写回，
+        # 用户改完直接关窗口就会丢掉，表现为「设置值不起作用」。
+        self._persist_timer = QTimer(self)
+        self._persist_timer.setSingleShot(True)
+        self._persist_timer.setInterval(600)
+        self._persist_timer.timeout.connect(self.persist_scan_params)
+        for widget, signal_name in (
+            (self.spin_sample, "valueChanged"),
+            (self.spin_workers, "valueChanged"),
+            (self.spin_threshold, "valueChanged"),
+            (self.spin_ping, "valueChanged"),
+            (self.spin_retries, "valueChanged"),
+            (self.spin_retry_delay, "valueChanged"),
+            (self.spin_timeout, "valueChanged"),
+            (self.input_prefilter, "textChanged"),
+        ):
+            getattr(widget, signal_name).connect(self._schedule_persist)
+
         saved_cidrs = load_custom_cidrs()
         if saved_cidrs:
             self.text_source.setPlainText(saved_cidrs)
         self._update_source_preview()
+
+    def _schedule_persist(self, *_args):
+        """参数变更 → 去抖后写回设置（避免每敲一个字符都落盘）。"""
+        if self._suppress_persist:
+            return
+        if hasattr(self, "_persist_timer"):
+            self._persist_timer.start()
 
     # ---------------- 来源模式 ----------------
     def _on_source_changed(self, mode: str):
@@ -444,7 +477,8 @@ class ScanPage(QWidget):
         s = self.app_settings
         self._suppress_persist = True
         try:
-            self.spin_sample.setValue(to_int(s.get("sample_max"), 5000, 100, 50000))
+            self.spin_sample.setValue(to_int(s.get("sample_max"), 5000,
+                                             self.SAMPLE_MIN, self.SAMPLE_MAX))
             self.seg_mode.set_index(0 if s.get("scan_mode", "tcping") == "tcping" else 1)
             if full:
                 self.spin_workers.setValue(to_int(s.get("workers"), 200, 10, 500))
@@ -466,9 +500,14 @@ class ScanPage(QWidget):
         self._update_source_preview()
 
     def persist_scan_params(self):
-        """把扫描页参数写回设置，保证下次启动沿用（不覆盖设置页拥有的 sample_max/scan_mode）。"""
+        """把扫描页参数写回设置，保证下次启动沿用。
+
+        包含 `sample_max`：此前漏了它，导致「采样上限改完重启就还原」，
+        用户看到的就是「这个设置根本不起作用」。
+        """
         changed = False
         payload = {
+            "sample_max": self.spin_sample.value(),
             "workers": self.spin_workers.value(),
             "latency_threshold": self.spin_threshold.value(),
             "ping_times": self.spin_ping.value(),
@@ -485,6 +524,8 @@ class ScanPage(QWidget):
                 changed = True
         if changed:
             save_settings(self.app_settings)
+            self.params_changed.emit()
+        return changed
 
     def _import_file(self):
         path, _ = QFileDialog.getOpenFileName(

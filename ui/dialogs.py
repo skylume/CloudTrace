@@ -471,3 +471,166 @@ class ExportDialog(QDialog):
         self.qualified_only = self.chk_qualified.isChecked()
         self.min_speed = self.spin_min.value()
         self.accept()
+
+
+class NodeDetailDialog(QDialog):
+    """节点详情：把一条扫描/测速结果的全部字段摊开显示，支持一键复制。
+
+    字段顺序按「标识 → 延迟 → 带宽 → 地区 → 协议栈」分组，便于快速定位。
+    """
+
+    # (字段键, 显示名, 格式化函数名) —— 值为 None/空 的字段自动跳过
+    GROUPS = (
+        ("标识", (
+            ("ip", "IP 地址", "text"),
+            ("port", "端口", "text"),
+            ("ip_version", "IP 版本", "ipver"),
+            ("client_ip", "出口 IP（CF 视角）", "text"),
+        )),
+        ("延迟", (
+            ("latency", "延迟 min (ms)", "ms"),
+            ("latency_avg", "延迟 avg (ms)", "ms"),
+            ("latency_max", "延迟 max (ms)", "ms"),
+            ("jitter", "抖动 (ms)", "ms"),
+            ("loss", "丢包率 (%)", "pct"),
+            ("ok_count", "成功探测次数", "text"),
+            ("samples", "探测总次数", "text"),
+            ("scan_mode", "扫描方式", "text"),
+        )),
+        ("带宽（测速）", (
+            ("download_speed", "下载速度 (MB/s)", "speed"),
+            ("score", "综合评分", "score"),
+            ("download_bytes", "下载字节", "bytes"),
+            ("download_seconds", "测速时长 (s)", "text"),
+            ("download_ttfb", "首字节 TTFB (ms)", "ms"),
+            ("download_connect_ms", "建连耗时 (ms)", "ms"),
+            ("verified", "可用性验证", "bool"),
+            ("test_type", "测速类型", "text"),
+        )),
+        ("地区", (
+            ("iata_code", "地区码", "text"),
+            ("chinese_name", "地区", "text"),
+            ("colo", "数据中心 (colo)", "text"),
+            ("loc", "落地区域 (loc)", "text"),
+        )),
+        ("协议栈（/cdn-cgi/trace）", (
+            ("visit_scheme", "访问协议", "text"),
+            ("http_version", "HTTP 版本", "text"),
+            ("tls_version", "TLS 版本", "text"),
+            ("use_tls", "是否走 TLS", "bool"),
+            ("sni", "SNI", "text"),
+            ("kex", "密钥交换", "text"),
+            ("warp", "WARP", "text"),
+            ("gateway", "Gateway", "text"),
+        )),
+        ("其他", (
+            ("scan_time", "扫描时间", "text"),
+        )),
+    )
+
+    def __init__(self, parent, result: Dict, title: str = "节点详情"):
+        super().__init__(parent)
+        self.result = dict(result or {})
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(520)
+        self.setMaximumWidth(700)
+        self.setStyleSheet(
+            f"QDialog {{ background: #FFFFFF; font-family: '{FONT_FAMILY}'; }}"
+            "QLabel { background: transparent; border: none; }"
+        )
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 18, 20, 16)
+        outer.setSpacing(12)
+
+        head = QLabel(f"{self.result.get('ip', '')}:{self.result.get('port', '')}"
+                      f"　{self.result.get('chinese_name', '')} {self.result.get('iata_code', '')}")
+        head.setStyleSheet("color: #0F172A; font-size: 15px; font-weight: 700;")
+        outer.addWidget(head)
+
+        for group_name, fields in self.GROUPS:
+            rows = []
+            for key, label, fmt in fields:
+                value = self._format(self.result.get(key), fmt)
+                if value == "":
+                    continue
+                rows.append((label, value))
+            if not rows:
+                continue
+            box = QFrame()
+            box.setStyleSheet(
+                "QFrame { background: #F8FAFC; border: 1px solid #E6EAF0; border-radius: 10px; }")
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(14, 11, 14, 11)
+            bl.setSpacing(6)
+            title = QLabel(group_name)
+            title.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 600;")
+            bl.addWidget(title)
+            for label, value in rows:
+                row = QHBoxLayout()
+                row.setSpacing(10)
+                k = QLabel(label)
+                k.setFixedWidth(170)
+                k.setStyleSheet("color: #64748B; font-size: 12px;")
+                v = QLabel(value)
+                v.setStyleSheet("color: #0F172A; font-size: 12px;")
+                v.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                v.setWordWrap(True)
+                row.addWidget(k)
+                row.addWidget(v, 1)
+                bl.addLayout(row)
+            outer.addWidget(box)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+        copy = _ghost_btn("📋 复制全部")
+        copy.clicked.connect(self._copy_all)
+        close = _primary_btn("关闭")
+        close.setFixedWidth(90)
+        close.clicked.connect(self.accept)
+        btns.addWidget(copy)
+        btns.addWidget(close)
+        outer.addLayout(btns)
+
+    @staticmethod
+    def _format(value, fmt: str) -> str:
+        if value is None or value == "":
+            return ""
+        try:
+            if fmt == "ms":
+                return f"{float(value):.1f}"
+            if fmt == "pct":
+                return f"{float(value):.1f} %"
+            if fmt == "speed":
+                return f"{float(value):.2f} MB/s"
+            if fmt == "score":
+                return f"{float(value):.1f}"
+            if fmt == "bytes":
+                num = float(value)
+                return f"{num:,.0f} B（{num / 1024 / 1024:.2f} MB）"
+            if fmt == "bool":
+                return "是" if value is True else ("否" if value is False else str(value))
+            if fmt == "ipver":
+                return f"IPv{int(value)}"
+        except (TypeError, ValueError):
+            pass
+        return str(value)
+
+    def _copy_all(self):
+        from PySide6.QtWidgets import QApplication
+        lines = []
+        for group_name, fields in self.GROUPS:
+            for key, label, fmt in fields:
+                value = self._format(self.result.get(key), fmt)
+                if value != "":
+                    lines.append(f"{label}: {value}")
+        QApplication.clipboard().setText("\n".join(lines))
+        CustomMessageBox.information(self, "已复制", "节点详情已复制到剪贴板")
+
+
+def show_node_detail(parent, result: Dict, title: str = "节点详情"):
+    """便捷入口：弹窗显示单条结果的全部字段。"""
+    if not result:
+        return
+    NodeDetailDialog(parent, result, title).exec()

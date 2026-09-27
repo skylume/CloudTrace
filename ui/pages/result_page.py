@@ -15,10 +15,28 @@ from core.constants import FONT_FAMILY
 from core.analytics import region_stats, filter_by_latency
 from core.scanner import effective_latency_threshold
 from ui.widgets import Card, RegionChips, FunnelBar, StatCard, EmptyState
+from ui.dialogs import show_node_detail
 from ui.styles import (
     FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
     C_GREEN, C_MUTED, C_RED, btn_stylesheet, ghost_btn_stylesheet,
 )
+
+# 扫描结果表列定义：(标题, 宽度策略, 取值函数)
+# 除「扫描时间」拉伸外，其余按内容自适应；列顺序与 CFData-WEB 的明细表对齐。
+SCAN_COLUMNS = [
+    ("", "resize", None),
+    ("IP 地址", "resize", None),
+    ("地区", "resize", None),
+    ("延迟", "resize", None),
+    ("平均", "resize", None),
+    ("抖动", "resize", None),
+    ("丢包", "resize", None),
+    ("数据中心", "resize", None),
+    ("落地区域", "resize", None),
+    ("协议", "resize", None),
+    ("端口", "resize", None),
+    ("扫描时间", "stretch", None),
+]
 
 
 class ResultPage(QWidget):
@@ -86,7 +104,7 @@ class ResultPage(QWidget):
         outer.addWidget(chips_card)
 
         # ---- 表格 ----
-        table_card = Card("扫描结果")
+        table_card = Card("扫描结果", "双击任意行查看完整明细（延迟分布 / 数据中心 / 协议栈）；右键可复制")
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
 
@@ -112,6 +130,7 @@ class ResultPage(QWidget):
 
         self.btn_check_all = QPushButton("勾选全部")
         self.btn_check_none = QPushButton("清空勾选")
+        self.btn_detail = QPushButton("🔍 详情")
         self.btn_single = QPushButton("🎯 单点测速")
         self.btn_region = QPushButton("🚀 测速所选地区")
         self.btn_full = QPushButton("⬆ 完全测速")
@@ -119,6 +138,7 @@ class ResultPage(QWidget):
         self.btn_check_all.clicked.connect(lambda: self._set_all_checked(True))
         self.btn_check_none.clicked.connect(lambda: self._set_all_checked(False))
         for b, color, hover in ((self.btn_check_all, None, None), (self.btn_check_none, None, None),
+                                (self.btn_detail, None, None),
                                 (self.btn_single, None, None),
                                 (self.btn_region, C_ORANGE, C_ORANGE_DARK),
                                 (self.btn_full, C_BLUE, C_BLUE_DARK),
@@ -128,6 +148,7 @@ class ResultPage(QWidget):
             b.setCursor(Qt.PointingHandCursor)
             b.setStyleSheet(ghost_btn_stylesheet() if color is None
                             else btn_stylesheet(color, hover_color=hover))
+        self.btn_detail.clicked.connect(self._show_detail)
         self.btn_single.clicked.connect(self._on_single)
         self.btn_region.clicked.connect(self._on_region)
         self.btn_full.clicked.connect(self.full_speed_requested.emit)
@@ -136,6 +157,7 @@ class ResultPage(QWidget):
         toolbar.addWidget(self.btn_check_all)
         toolbar.addWidget(self.btn_check_none)
         toolbar.addSpacing(6)
+        toolbar.addWidget(self.btn_detail)
         toolbar.addWidget(self.btn_single)
         toolbar.addWidget(self.btn_region)
         toolbar.addWidget(self.btn_full)
@@ -143,10 +165,8 @@ class ResultPage(QWidget):
         table_card.body().addLayout(toolbar)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(
-            ["", "IP 地址", "地区", "延迟", "端口", "扫描时间"]
-        )
+        self.table.setColumnCount(len(SCAN_COLUMNS))
+        self.table.setHorizontalHeaderLabels([c[0] for c in SCAN_COLUMNS])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(34)
@@ -156,13 +176,13 @@ class ResultPage(QWidget):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setStyleSheet(TABLE_LIGHT_STYLE)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
-        self.table.doubleClicked.connect(self._copy_cell)
+        for i, (_title, size, _fn) in enumerate(SCAN_COLUMNS):
+            mode = QHeaderView.Stretch if size == "stretch" else QHeaderView.ResizeToContents
+            self.table.horizontalHeader().setSectionResizeMode(i, mode)
+        # 双击看详情；复制单元格改走右键菜单（详情弹窗里也能一键复制全部）
+        self.table.doubleClicked.connect(self._show_detail)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemChanged.connect(self._on_item_changed)
         # 空状态与表格互斥显示（放在同一布局里切换可见性，比覆盖层更稳）
         self.empty = EmptyState("暂无扫描结果，请先在「扫描」页开始扫描，或在「历史」页加载记录", "📭")
@@ -268,32 +288,87 @@ class ResultPage(QWidget):
                 region_item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(i, 2, region_item)
 
-                latency = r.get("latency", 0)
-                lat_item = QTableWidgetItem(f"{latency:.1f} ms")
-                lat_item.setTextAlignment(Qt.AlignCenter)
-                if latency < 100 * factor:
-                    lat_item.setForeground(QColor(C_GREEN))
-                elif latency < 200 * factor:
-                    lat_item.setForeground(QColor(C_ORANGE))
-                else:
-                    lat_item.setForeground(QColor(C_RED))
-                self.table.setItem(i, 3, lat_item)
+                latency = r.get("latency", 0) or 0
+                self.table.setItem(i, 3, self._latency_cell(latency, factor, " ms"))
+
+                avg = r.get("latency_avg")
+                self.table.setItem(i, 4, self._muted_cell(
+                    f"{avg:.1f} ms" if isinstance(avg, (int, float)) else "—"))
+
+                jitter = r.get("jitter")
+                jitter_item = self._muted_cell(
+                    f"{jitter:.1f}" if isinstance(jitter, (int, float)) else "—")
+                if isinstance(jitter, (int, float)) and jitter >= 20:
+                    jitter_item.setForeground(QColor(C_ORANGE))
+                self.table.setItem(i, 5, jitter_item)
+
+                loss = r.get("loss")
+                loss_item = self._muted_cell(
+                    f"{loss:.0f}%" if isinstance(loss, (int, float)) else "—")
+                if isinstance(loss, (int, float)) and loss > 0:
+                    loss_item.setForeground(QColor(C_RED))
+                self.table.setItem(i, 6, loss_item)
+
+                colo_item = self._muted_cell(r.get("colo") or code or "—")
+                self.table.setItem(i, 7, colo_item)
+
+                self.table.setItem(i, 8, self._muted_cell(r.get("loc") or "—"))
+
+                proto = self._protocol_text(r)
+                self.table.setItem(i, 9, self._muted_cell(proto or "—"))
 
                 port_item = QTableWidgetItem(str(r.get("port", "")))
                 port_item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(i, 4, port_item)
+                self.table.setItem(i, 10, port_item)
 
                 time_item = QTableWidgetItem(r.get("scan_time", ""))
                 time_item.setTextAlignment(Qt.AlignCenter)
                 time_item.setForeground(QColor(C_MUTED))
-                self.table.setItem(i, 5, time_item)
+                self.table.setItem(i, 11, time_item)
         finally:
             self._loading_table = False
 
         mode_txt = "HTTPing" if self.scan_mode == "httping" else "TCPing"
         self.lbl_summary.setText(
-            f"显示 {len(data)} / {len(self.all_results)} 个 IP · 模式 {mode_txt}")
+            f"显示 {len(data)} / {len(self.all_results)} 个 IP · 模式 {mode_txt}"
+            f"　·　双击行查看完整明细")
         self._sync_empty_state()
+
+    @staticmethod
+    def _protocol_text(r: Dict) -> str:
+        """把 trace 明细压成一行紧凑文本，例如 `https · h2 · TLS1.3`。"""
+        parts = []
+        scheme = (r.get("visit_scheme") or "").strip()
+        if scheme:
+            parts.append(scheme)
+        http_v = (r.get("http_version") or "").strip()
+        if http_v:
+            parts.append(http_v.replace("http/", "h").replace("HTTP/", "h"))
+        tls_v = (r.get("tls_version") or "").strip()
+        if tls_v:
+            parts.append(tls_v.replace("TLSv", "TLS"))
+        if not parts and r.get("use_tls") is not None:
+            parts.append("TLS" if r.get("use_tls") else "明文")
+        return " · ".join(parts)
+
+    @staticmethod
+    def _muted_cell(text: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setForeground(QColor(C_MUTED))
+        return item
+
+    @staticmethod
+    def _latency_cell(latency: float, factor: float, suffix: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(f"{latency:.1f}{suffix}")
+        item.setTextAlignment(Qt.AlignCenter)
+        if latency < 100 * factor:
+            item.setForeground(QColor(C_GREEN))
+        elif latency < 200 * factor:
+            item.setForeground(QColor(C_ORANGE))
+        else:
+            item.setForeground(QColor(C_RED))
+        return item
 
     def _sync_empty_state(self):
         has_data = bool(self.all_results)
@@ -375,9 +450,39 @@ class ResultPage(QWidget):
         if item and item.text():
             QApplication.clipboard().setText(item.text())
 
+    def _show_detail(self, *_args):
+        """双击行 / 点「详情」：弹出该节点的全部字段。"""
+        info = self._row_info()
+        if not info:
+            from ui.dialogs import CustomMessageBox
+            CustomMessageBox.warning(self, "提示", "请先选中一行（或双击某一行）")
+            return
+        show_node_detail(self, info, "扫描节点详情")
+
+    def _show_context_menu(self, pos):
+        """右键菜单：查看详情 / 复制单元格。"""
+        from PySide6.QtWidgets import QMenu
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        menu = QMenu(self)
+        act_detail = menu.addAction("🔍 查看详情")
+        act_copy = menu.addAction("📋 复制单元格")
+        act_copy_all = menu.addAction("📋 复制整行")
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen is act_detail:
+            self._show_detail()
+        elif chosen is act_copy:
+            self._copy_cell(index)
+        elif chosen is act_copy_all:
+            info = self._row_info()
+            if info:
+                QApplication.clipboard().setText(
+                    "　".join(f"{k}={v}" for k, v in info.items() if v not in (None, "")))
+
     def set_busy(self, busy: bool):
         for b in (self.btn_single, self.btn_region, self.btn_full, self.btn_export,
-                  self.btn_check_all, self.btn_check_none):
+                  self.btn_check_all, self.btn_check_none, self.btn_detail):
             b.setEnabled(not busy)
 
     def set_empty(self):

@@ -16,6 +16,8 @@ from core.constants import load_or_update_ip_cache, AIRPORT_CODES
 from core.network import (
     get_iata_code_async, get_iata_code_from_ip, verify_cloudflare,
     get_iata_translation, measure_tcp_latency, measure_http_latency,
+    measure_tcp_stats, measure_http_stats, get_node_detail_async,
+    probe_node_detail, TRACE_DETAIL_KEYS, empty_detail,
     download_speed, HTTPS_PORTS, port_uses_tls,
 )
 from core.scoring import apply_scores
@@ -198,41 +200,67 @@ class BaseScanner:
     def generate_ips_from_cidrs(self) -> List[str]:
         raise NotImplementedError
 
-    async def test_ip_latency(self, session, ip):
+    async def test_ip_latency_stats(self, session, ip) -> Optional[Dict]:
+        """返回该 IP 的延迟统计（min/avg/max/丢包/抖动）；不可达返回 None。"""
         if not self.running:
             return None
         port = self.port_for(ip)
         if self.scan_mode == "httping":
             use_tls = self.tls_for(ip, port)
-            return await measure_http_latency(session, ip, port, self.timeout, use_tls)
-        return await measure_tcp_latency(ip, port, self.ping_times, self.timeout)
+            stats = await measure_http_stats(
+                session, ip, port, self.timeout, use_tls, self.ping_times)
+        else:
+            stats = await measure_tcp_stats(ip, port, self.ping_times, self.timeout)
+        return stats if stats.get("latency") is not None else None
+
+    async def test_ip_latency(self, session, ip):
+        """向后兼容：只取最小延迟。"""
+        stats = await self.test_ip_latency_stats(session, ip)
+        return stats.get("latency") if stats else None
 
     async def test_single_ip(self, session, ip):
         if not self.running:
             return None
         port = self.port_for(ip)
         threshold = effective_latency_threshold(self.latency_threshold, self.scan_mode, port)
-        latency = await self.test_ip_latency(session, ip)
+        stats = await self.test_ip_latency_stats(session, ip)
+        latency = stats.get("latency") if stats else None
         if latency is not None and latency < threshold:
             self.funnel["latency_ok"] += 1
+            detail = empty_detail()
             iata_code = None
             if self.running:
                 try:
-                    iata_code = await get_iata_code_async(session, ip, self.timeout, port=port)
+                    detail = await get_node_detail_async(
+                        session, ip, self.timeout, port=port,
+                        use_tls=self.tls_for(ip, port))
+                    colo = (detail.get("colo") or "").upper()
+                    if colo and colo != "UNKNOWN":
+                        iata_code = colo
                 except Exception as e:
                     if self.log_callback:
                         self.log_callback(f"获取地区码失败 {ip}: {str(e)}")
             if iata_code:
                 self.funnel["with_iata"] += 1
-            return {
+            result = {
                 'ip': ip, 'latency': latency, 'iata_code': iata_code,
                 'chinese_name': get_iata_translation(iata_code) if iata_code else "未知地区",
                 'success': True, 'ip_version': self.version_for(ip),
-                'scan_time': datetime.now().strftime("%H:%M:%S"),
+                'scan_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'port': port, 'ping_times': self.ping_times,
                 'scan_mode': self.scan_mode,
                 'use_tls': self.tls_for(ip, port),
             }
+            # 延迟明细（min/avg/max/丢包/抖动）
+            for key in ("latency_min", "latency_avg", "latency_max", "jitter",
+                        "loss", "samples", "ok_count"):
+                if stats and stats.get(key) is not None:
+                    result[key] = stats[key]
+            # trace 明细（数据中心/落地区域/协议栈/出口 IP）
+            for key in TRACE_DETAIL_KEYS:
+                if detail.get(key):
+                    result[key] = detail[key]
+            return result
         return None
 
     async def batch_test_ips(self, ip_list: List[str]):
@@ -576,27 +604,29 @@ class SpeedTestTask:
         latency = ip_info.get('latency', 0)
         use_tls = self._use_tls_for(ip_info, port)
 
-        verified = None
-        if self.verify_nodes:
-            verified = verify_cloudflare(ip, timeout=3, port=port)
-            if not verified:
-                self._log(f"  可用性验证失败（非 Cloudflare 节点），跳过: {ip}")
-                return ("skip", ip)
+        # 一次 trace 探测同时拿到「可用性判定」与「节点明细」（数据中心/落地区域/协议栈）
+        detail = probe_node_detail(ip, timeout=3, port=port, use_tls=use_tls)
+        verified = bool(detail.get("ok"))
+        if self.verify_nodes and not verified:
+            self._log(f"  可用性验证失败（非 Cloudflare 节点），跳过: {ip}")
+            return ("skip", ip)
 
+        dl_stats: Dict = {}
         speed, err, status = download_speed(
             ip, port, host=self.test_host,
             path=self.download_path, time_limit=self.download_time_limit,
             should_continue=self._should_run,
             use_tls=use_tls,
+            stats=dl_stats,
         )
         if status == 429:
             return ("429", ip)
         if err and err != "用户中止":
             self._log(f"  测速失败 {ip}: {err}")
 
-        # 优先复用扫描阶段已解析的地区码，缺失时才回查
-        colo = ip_info.get('iata_code')
-        if not colo or colo == "Unknown":
+        # 优先复用扫描阶段已解析的地区码，其次用本次 trace 得到的 colo，最后才回查
+        colo = ip_info.get('iata_code') or detail.get("colo")
+        if not colo or str(colo).upper() in ("UNKNOWN", "NONE"):
             colo = get_iata_code_from_ip(ip, timeout=3, port=port)
         colo = colo.upper() if colo else 'UNKNOWN'
         speed_result = {
@@ -604,8 +634,23 @@ class SpeedTestTask:
             'iata_code': colo,
             'chinese_name': AIRPORT_CODES.get(colo, '未知地区'),
             'test_type': self._test_type(), 'port': port,
-            'verified': verified, 'use_tls': use_tls,
+            'verified': verified if self.verify_nodes else None, 'use_tls': use_tls,
         }
+        # 延迟明细：沿用扫描阶段的统计（丢包/抖动/min/avg/max）
+        for key in ("latency_min", "latency_avg", "latency_max", "jitter",
+                    "loss", "samples", "ok_count"):
+            if ip_info.get(key) is not None:
+                speed_result[key] = ip_info[key]
+        # trace 明细
+        for key in TRACE_DETAIL_KEYS:
+            if detail.get(key):
+                speed_result[key] = detail[key]
+        # 下载明细
+        if dl_stats:
+            speed_result['download_bytes'] = dl_stats.get("bytes", 0)
+            speed_result['download_seconds'] = dl_stats.get("seconds", 0)
+            speed_result['download_ttfb'] = dl_stats.get("ttfb")
+            speed_result['download_connect_ms'] = dl_stats.get("connect_ms")
         return ("ok", speed_result)
 
     def _test_type(self) -> str:

@@ -11,8 +11,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from core.constants import FONT_FAMILY
+from core.scoring import score_result
 from core.speed_url import (
-    SPEED_URL_PRESETS, CUSTOM_SPEED_URL, CF_SPEED_URL,
+    SPEED_URL_PRESETS, CUSTOM_SPEED_URL, CF_SPEED_URL, AUTO_SPEED_URL,
     url_to_preset_value,
 )
 from core.utils import to_float, to_int
@@ -24,6 +25,18 @@ from ui.styles import (
     btn_stylesheet, ghost_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
+
+
+# 评分权重预设：(名称, 速度权重, 延迟权重, 说明)
+SCORE_PRESETS = (
+    ("均衡（默认）", 3.0, 3.0, "带宽与延迟同等重要，适合大多数场景"),
+    ("速度优先", 8.0, 1.0, "只看下载速度，适合大文件/流媒体"),
+    ("延迟优先", 1.0, 8.0, "强烈惩罚高延迟，适合网页浏览/游戏"),
+    ("只看速度", 1.0, 0.0, "完全忽略延迟，纯按 MB/s 排序"),
+)
+
+# 预览用的示例节点：(下载速度 MB/s, 延迟 ms)
+SCORE_PREVIEW_NODES = ((20.0, 40.0), (10.0, 60.0), (5.0, 120.0), (20.0, 200.0))
 
 
 def _hint(text: str) -> QLabel:
@@ -109,29 +122,66 @@ class SettingsPage(QWidget):
             "tcping 测握手延迟；httping 测 TTFB，阈值自动换算"))
 
         self.spin_sample = QSpinBox()
-        self.spin_sample.setRange(100, 50000)
+        self.spin_sample.setRange(100, 200000)
         self.spin_sample.setSingleStep(500)
-        self.spin_sample.setValue(to_int(s.get("sample_max"), 5000, 100, 50000))
+        self.spin_sample.setValue(to_int(s.get("sample_max"), 5000, 100, 200000))
         self.spin_sample.setFixedHeight(32)
         card_scan.body().addLayout(self._row(
-            "采样上限", self.spin_sample, "单次扫描生成的 IP 数量上限"))
+            "采样上限", self.spin_sample,
+            "单次扫描最多生成的 IP 数（100~200000）；与「扫描」页共用同一份配置，改完立即生效"))
         left.addWidget(card_scan)
 
         # ---- 评分权重 ----
-        card_score = Card("综合评分权重", "score = 速度权重 × MB/s ÷ (1 + 延迟权重 × 延迟秒)")
+        card_score = Card(
+            "综合评分权重",
+            "测速结果的排序依据。公式：综合评分 = 速度权重 × 下载速度(MB/s) ÷ (1 + 延迟权重 × 延迟秒)。"
+            "分数越高排越前，导出顺序也按它排。")
         self.spin_w_speed = QDoubleSpinBox()
         self.spin_w_speed.setRange(0, 50)
         self.spin_w_speed.setSingleStep(0.5)
         self.spin_w_speed.setValue(to_float(s.get("score_speed_weight"), 3.0, 0, 50))
         self.spin_w_speed.setFixedHeight(32)
-        card_score.body().addLayout(self._row("速度权重", self.spin_w_speed))
+        card_score.body().addLayout(self._row(
+            "速度权重", self.spin_w_speed,
+            "乘在下载速度上。调大 → 更看重带宽（下载快的排前面）"))
         self.spin_w_latency = QDoubleSpinBox()
         self.spin_w_latency.setRange(0, 50)
         self.spin_w_latency.setSingleStep(0.5)
         self.spin_w_latency.setValue(to_float(s.get("score_latency_weight"), 3.0, 0, 50))
         self.spin_w_latency.setFixedHeight(32)
         card_score.body().addLayout(self._row(
-            "延迟权重", self.spin_w_latency, "延迟作分母惩罚，权重越大越偏向低延迟节点"))
+            "延迟权重", self.spin_w_latency,
+            "做分母的惩罚项（延迟以秒计）。调大 → 更排斥高延迟节点；设为 0 表示完全忽略延迟"))
+
+        # 预设：一键套用常见取向
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        preset_lbl = QLabel("快捷预设")
+        preset_lbl.setProperty("class", "fieldLabel")
+        preset_lbl.setFont(FONT_SMALL)
+        preset_row.addWidget(preset_lbl)
+        for name, w_speed, w_lat, tip in SCORE_PRESETS:
+            btn = QPushButton(name)
+            btn.setFixedHeight(28)
+            btn.setFont(FONT_SMALL)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(ghost_btn_stylesheet())
+            btn.setToolTip(f"{tip}（速度 {w_speed} / 延迟 {w_lat}）")
+            btn.clicked.connect(
+                lambda _c=False, a=w_speed, b=w_lat: self._apply_score_preset(a, b))
+            preset_row.addWidget(btn)
+        preset_row.addStretch()
+        card_score.body().addLayout(preset_row)
+
+        # 实时预览：同一组权重下 4 个示例节点的得分与排序
+        self.lbl_score_preview = QLabel("")
+        self.lbl_score_preview.setProperty("class", "hintText")
+        self.lbl_score_preview.setWordWrap(True)
+        card_score.body().addWidget(self.lbl_score_preview)
+        self.spin_w_speed.valueChanged.connect(self._update_score_preview)
+        self.spin_w_latency.valueChanged.connect(self._update_score_preview)
+        self._update_score_preview()
+
         left.addWidget(card_score)
         left.addStretch()
 
@@ -285,6 +335,30 @@ class SettingsPage(QWidget):
         self.spin_port.valueChanged.connect(lambda _v: self._update_http_hint())
         self.chk_lan.stateChanged.connect(lambda _s: self._update_http_hint())
 
+    # ---------------- 评分权重 ----------------
+    def _apply_score_preset(self, speed_weight: float, latency_weight: float):
+        self.spin_w_speed.setValue(speed_weight)
+        self.spin_w_latency.setValue(latency_weight)
+
+    def _update_score_preview(self, *_args):
+        """用 4 个示例节点展示当前权重的实际效果（含排序变化）。"""
+        weights = {
+            "speed": self.spin_w_speed.value(),
+            "latency": self.spin_w_latency.value(),
+        }
+        scored = []
+        for speed, latency in SCORE_PREVIEW_NODES:
+            score = score_result({"download_speed": speed, "latency": latency}, weights)
+            scored.append((score, speed, latency))
+        ranked = sorted(scored, key=lambda x: x[0], reverse=True)
+        lines = ["效果预览（4 个示例节点按当前权重的得分与排序）："]
+        for idx, (score, speed, latency) in enumerate(ranked, 1):
+            lines.append(f"　{idx}. {speed:>4.1f} MB/s · {latency:>3.0f} ms → 评分 {score}")
+        top = ranked[0]
+        lines.append(
+            f"　→ 当前权重会优先选「{top[1]:.0f} MB/s / {top[2]:.0f} ms」这类节点")
+        self.lbl_score_preview.setText("\n".join(lines))
+
     # ---------------- 测速地址预设 ----------------
     def _apply_speed_url_to_ui(self, url: str):
         """把已保存的地址回填到「预设下拉 + 自定义输入框」。"""
@@ -411,4 +485,5 @@ class SettingsPage(QWidget):
         self.spin_port.setValue(to_int(s.get("http_port"), 17443, 1, 65535))
         self.chk_lan.setChecked(bool(s.get("allow_lan", False)))
         self.input_token.setText(s.get("http_token", ""))
+        self._update_score_preview()
         self._update_http_hint()

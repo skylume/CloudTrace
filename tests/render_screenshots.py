@@ -29,6 +29,26 @@ os.environ.setdefault("CLOUDTRACE_ALLOW_MULTI", "1")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+# settings.json 是仓库外的运行时文件。本脚本会驱动扫描页控件（来源模式 / 端口过滤 /
+# 启用远程数据源），这些改动会经去抖持久化写回设置；截图结束后必须原样还原，
+# 否则每次出图都会悄悄改掉用户的配置。按二进制备份 + atexit 还原（异常时也生效）。
+import atexit
+
+SETTINGS_PATH = os.path.join(ROOT, "settings.json")
+_ORIG_SETTINGS = None
+if os.path.exists(SETTINGS_PATH):
+    with open(SETTINGS_PATH, "rb") as f:
+        _ORIG_SETTINGS = f.read()
+
+
+def restore_settings_file():
+    if _ORIG_SETTINGS is not None:
+        with open(SETTINGS_PATH, "wb") as f:
+            f.write(_ORIG_SETTINGS)
+
+
+atexit.register(restore_settings_file)
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFontDatabase, QFont
 from PySide6.QtCore import Qt
@@ -71,49 +91,97 @@ _fonts = register_fonts()
 print("平台: %s | 注册字体: %s" % (app.platformName(), ", ".join(_fonts) if _fonts else "(使用系统字体)"))
 
 SCAN_RESULTS = [
-    {"ip": "104.16.132.229", "latency": 42.3, "iata_code": "HKG", "chinese_name": "中国香港",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "172.66.147.243", "latency": 58.7, "iata_code": "HKG", "chinese_name": "中国香港",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "104.17.24.18", "latency": 76.1, "iata_code": "NRT", "chinese_name": "日本",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "162.159.36.5", "latency": 91.4, "iata_code": "NRT", "chinese_name": "日本",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "104.18.6.99", "latency": 112.8, "iata_code": "SIN", "chinese_name": "新加坡",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "188.114.97.7", "latency": 134.5, "iata_code": "LAX", "chinese_name": "美国",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "198.41.200.13", "latency": 158.2, "iata_code": "SIN", "chinese_name": "新加坡",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
-    {"ip": "104.19.176.5", "latency": 187.9, "iata_code": "FRA", "chinese_name": "德国",
-     "port": 443, "use_tls": True, "scan_mode": "tcping", "scan_time": "2026-01-12 21:04:11",
-     "ip_version": 4},
+    {"ip": "104.16.132.229", "latency": 42.3, "latency_avg": 44.1, "latency_max": 51.2,
+     "jitter": 3.4, "loss": 0.0, "iata_code": "HKG", "chinese_name": "中国香港",
+     "colo": "HKG", "loc": "HK", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "172.66.147.243", "latency": 58.7, "latency_avg": 61.2, "latency_max": 70.4,
+     "jitter": 4.8, "loss": 0.0, "iata_code": "HKG", "chinese_name": "中国香港",
+     "colo": "HKG", "loc": "HK", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "104.17.24.18", "latency": 76.1, "latency_avg": 79.9, "latency_max": 92.6,
+     "jitter": 6.1, "loss": 0.0, "iata_code": "NRT", "chinese_name": "日本",
+     "colo": "NRT", "loc": "JP", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/3", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "162.159.36.5", "latency": 91.4, "latency_avg": 95.3, "latency_max": 108.7,
+     "jitter": 7.2, "loss": 0.0, "iata_code": "NRT", "chinese_name": "日本",
+     "colo": "NRT", "loc": "JP", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "104.18.6.99", "latency": 112.8, "latency_avg": 118.4, "latency_max": 141.2,
+     "jitter": 11.6, "loss": 0.0, "iata_code": "SIN", "chinese_name": "新加坡",
+     "colo": "SIN", "loc": "SG", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "188.114.97.7", "latency": 134.5, "latency_avg": 141.7, "latency_max": 168.3,
+     "jitter": 14.9, "loss": 0.0, "iata_code": "LAX", "chinese_name": "美国",
+     "colo": "LAX", "loc": "US", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "198.41.200.13", "latency": 158.2, "latency_avg": 166.8, "latency_max": 194.5,
+     "jitter": 18.3, "loss": 0.0, "iata_code": "SIN", "chinese_name": "新加坡",
+     "colo": "SIN", "loc": "SG", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
+    {"ip": "104.19.176.5", "latency": 187.9, "latency_avg": 205.4, "latency_max": 262.8,
+     "jitter": 33.7, "loss": 20.0, "iata_code": "FRA", "chinese_name": "德国",
+     "colo": "FRA", "loc": "DE", "port": 443, "use_tls": True, "scan_mode": "tcping",
+     "scan_time": "2026-01-12 21:04:11", "ip_version": 4, "visit_scheme": "https",
+     "http_version": "HTTP/2", "tls_version": "TLSv1.3", "sni": "yes",
+     "kex": "X25519", "warp": "off", "client_ip": "203.0.113.8"},
 ]
 SPEED_RESULTS = [
-    {"ip": "104.16.132.229", "latency": 42.3, "download_speed": 28.64, "score": 24.9,
-     "iata_code": "HKG", "chinese_name": "中国香港", "port": 443,
+    {"ip": "104.16.132.229", "latency": 42.3, "latency_avg": 44.1, "jitter": 3.4, "loss": 0.0,
+     "download_speed": 28.64, "score": 24.9, "download_bytes": 99999999,
+     "download_seconds": 3.33, "download_ttfb": 61.4, "download_connect_ms": 38.2,
+     "iata_code": "HKG", "chinese_name": "中国香港", "colo": "HKG", "loc": "HK",
+     "port": 443, "use_tls": True, "http_version": "HTTP/2", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
-    {"ip": "172.66.147.243", "latency": 58.7, "download_speed": 21.35, "score": 17.6,
-     "iata_code": "HKG", "chinese_name": "中国香港", "port": 443,
+    {"ip": "172.66.147.243", "latency": 58.7, "latency_avg": 61.2, "jitter": 4.8, "loss": 0.0,
+     "download_speed": 21.35, "score": 17.6, "download_bytes": 99999999,
+     "download_seconds": 4.47, "download_ttfb": 74.8, "download_connect_ms": 52.1,
+     "iata_code": "HKG", "chinese_name": "中国香港", "colo": "HKG", "loc": "HK",
+     "port": 443, "use_tls": True, "http_version": "HTTP/2", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
-    {"ip": "104.17.24.18", "latency": 76.1, "download_speed": 16.82, "score": 12.7,
-     "iata_code": "NRT", "chinese_name": "日本", "port": 443,
+    {"ip": "104.17.24.18", "latency": 76.1, "latency_avg": 79.9, "jitter": 6.1, "loss": 0.0,
+     "download_speed": 16.82, "score": 12.7, "download_bytes": 99999999,
+     "download_seconds": 5.68, "download_ttfb": 92.5, "download_connect_ms": 68.9,
+     "iata_code": "NRT", "chinese_name": "日本", "colo": "NRT", "loc": "JP",
+     "port": 443, "use_tls": True, "http_version": "HTTP/3", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
-    {"ip": "162.159.36.5", "latency": 91.4, "download_speed": 12.07, "score": 8.6,
-     "iata_code": "NRT", "chinese_name": "日本", "port": 443,
+    {"ip": "162.159.36.5", "latency": 91.4, "latency_avg": 95.3, "jitter": 7.2, "loss": 0.0,
+     "download_speed": 12.07, "score": 8.6, "download_bytes": 99999999,
+     "download_seconds": 7.91, "download_ttfb": 110.2, "download_connect_ms": 83.4,
+     "iata_code": "NRT", "chinese_name": "日本", "colo": "NRT", "loc": "JP",
+     "port": 443, "use_tls": True, "http_version": "HTTP/2", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
-    {"ip": "104.18.6.99", "latency": 112.8, "download_speed": 8.41, "score": 5.4,
-     "iata_code": "SIN", "chinese_name": "新加坡", "port": 443,
+    {"ip": "104.18.6.99", "latency": 112.8, "latency_avg": 118.4, "jitter": 11.6, "loss": 0.0,
+     "download_speed": 8.41, "score": 5.4, "download_bytes": 99999999,
+     "download_seconds": 11.36, "download_ttfb": 138.7, "download_connect_ms": 104.5,
+     "iata_code": "SIN", "chinese_name": "新加坡", "colo": "SIN", "loc": "SG",
+     "port": 443, "use_tls": True, "http_version": "HTTP/2", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
-    {"ip": "188.114.97.7", "latency": 134.5, "download_speed": 5.93, "score": 3.5,
-     "iata_code": "LAX", "chinese_name": "美国", "port": 443,
+    {"ip": "188.114.97.7", "latency": 134.5, "latency_avg": 141.7, "jitter": 14.9, "loss": 0.0,
+     "download_speed": 5.93, "score": 3.5, "download_bytes": 99999999,
+     "download_seconds": 16.11, "download_ttfb": 165.3, "download_connect_ms": 126.8,
+     "iata_code": "LAX", "chinese_name": "美国", "colo": "LAX", "loc": "US",
+     "port": 443, "use_tls": True, "http_version": "HTTP/2", "tls_version": "TLSv1.3",
+     "visit_scheme": "https", "sni": "yes", "kex": "X25519", "client_ip": "203.0.113.8",
      "test_type": "完全测速", "verified": True},
 ]
 FUNNEL = {"generated": 5000, "latency_ok": 342, "with_iata": 318}
@@ -188,7 +256,7 @@ def main():
     win.scan_page.input_prefilter.setText("443, 8443")
     win.scan_page.chk_remote.setCurrentText("启用")
     win.scan_page.lbl_sources_preview.setText(
-        "拉取完成：2 个源共 1284 条候选节点（cfnb 聚合 1024 · countrymerge 260）")
+        "拉取完成：2 个源共 1284 条候选节点（cm.edu.kg 聚合 1024 · countrymerge 260）")
     app.processEvents()
 
     print("渲染截图:")

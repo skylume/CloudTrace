@@ -479,6 +479,18 @@ async def h_index(request):
     return web.FileResponse(os.path.join(web_dir, "index.html"))
 
 
+async def h_favicon(request):
+    """面板图标。
+
+    index.html 引用的是 /static/favicon.ico，而 /static/ 映射到 web/ 目录，
+    favicon.ico 实际在项目根目录 → 不单独提供这条路由就会 404、标签页没有图标。
+    """
+    path = resource_path("favicon.ico")
+    if not os.path.exists(path):
+        return _err("favicon 缺失", 404)
+    return web.FileResponse(path)
+
+
 def create_app() -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
     app["sse_stop"] = asyncio.Event()
@@ -501,6 +513,9 @@ def create_app() -> web.Application:
     app.router.add_post("/api/settings/reset", h_settings_reset)
 
     app.router.add_get("/", h_index)
+    # favicon 必须先于 add_static 注册（aiohttp 按注册顺序匹配）
+    app.router.add_get("/favicon.ico", h_favicon)
+    app.router.add_get("/static/favicon.ico", h_favicon)
     web_dir = _web_dir()
     if web_dir:
         app.router.add_static("/static/", web_dir, show_index=False)

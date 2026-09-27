@@ -29,9 +29,10 @@ logger = logging.getLogger("CloudTrace")
 DEFAULT_PORT = 443
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
-# 内置默认源（来自 cfnb 的 config.json；默认「不启用」由上层开关控制）
+# 内置默认源（地址与 cfnb 参考项目 config.json 所用一致，但该列表由 cm.edu.kg 独立维护，
+# 并非 cfnb 自己的聚合产物，故标签按其真实归属命名；默认「不启用」由上层开关控制）
 DEFAULT_SOURCES: List[Dict] = [
-    {"name": "cfnb 聚合列表", "url": "https://zip.cm.edu.kg/all.txt", "enabled": True},
+    {"name": "cm.edu.kg 聚合列表", "url": "https://zip.cm.edu.kg/all.txt", "enabled": True},
     {"name": "countrymerge 聚合列表",
      "url": "https://countrymerge.pages.dev/all.txt", "enabled": True},
 ]

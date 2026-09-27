@@ -197,13 +197,62 @@ print("\n== 10. 历史保存 / 读取 / 列表 / 删除 往返 ==")
 from settings import history as hist
 from settings.settings import SAVE_DIR
 os.makedirs(SAVE_DIR, exist_ok=True)
-before = set(os.listdir(SAVE_DIR))
+
+
+def _snapshot_dir(path):
+    """把目录快照成 {文件名: 字节}，用于测试结束后逐字节还原。"""
+    snap = {}
+    for name in os.listdir(path):
+        full = os.path.join(path, name)
+        if os.path.isfile(full):
+            with open(full, 'rb') as fp:
+                snap[name] = fp.read()
+    return snap
+
+
+def _restore_dir(path, snap):
+    """还原目录到快照状态：删掉新增的、补回被删的、覆盖被改的。"""
+    for name in os.listdir(path):
+        full = os.path.join(path, name)
+        if os.path.isfile(full) and name not in snap:
+            try:
+                os.remove(full)
+            except OSError:
+                pass
+    for name, blob in snap.items():
+        full = os.path.join(path, name)
+        try:
+            with open(full, 'rb') as fp:
+                if fp.read() == blob:
+                    continue
+        except OSError:
+            pass
+        with open(full, 'wb') as fp:
+            fp.write(blob)
+
+
+# 历史目录是用户真实数据目录，且内部有 MAX_HISTORY=5 的自动清理逻辑：
+# 只要目录里已有 >=5 份时间戳文件，本次保存就会顺带删掉最旧的一份，
+# 用「before/after 集合差」判断复原会误报。这里改为整目录快照 + 完整还原，
+# 与目录里现存多少历史文件无关，测试自身也不会留下任何残留。
+#
+# 注意：save_results_to_file 会同时写「时间戳历史文件」和「*_latest.json」两份，
+# 且脚本后续步骤（含 get_history_list 触发的 ensure_save_dir 清理）也可能改动目录，
+# 因此把「还原」注册到 atexit —— 它在进程退出时最后执行，无论中途谁再写文件，
+# 都能把目录恢复到测试开始前的逐字节状态。
+import atexit
+
+snapshot = _snapshot_dir(SAVE_DIR)
+before = set(snapshot.keys())
+atexit.register(_restore_dir, SAVE_DIR, snapshot)
 saved_path = None
 try:
     hist.save_results_to_file(scan, 4, "scan")
     after = set(os.listdir(SAVE_DIR))
-    new_files = sorted(after - before)
-    check("保存后新增文件", len(new_files) == 1, new_files)
+    # 只关心新增的时间戳历史文件（latest 是固定指针文件，可能本来就存在）
+    new_files = sorted(f for f in (after - before) if "latest" not in f)
+    check("保存后新增 1 个时间戳历史文件", len(new_files) == 1, sorted(after - before))
+    check("latest 指针文件已生成", any("latest" in f for f in after), sorted(after))
     saved_path = os.path.join(SAVE_DIR, new_files[0])
     data = hist.load_results_from_file(saved_path)
     check("读回结果条数一致", data and len(data["results"]) == 2, data and len(data.get("results")))
@@ -216,6 +265,7 @@ finally:
         ok = hist.delete_history(saved_path)
         check("删除历史成功", ok is True)
         check("删除后文件不存在", not os.path.exists(saved_path))
+    _restore_dir(SAVE_DIR, snapshot)
     check("历史目录已复原", set(os.listdir(SAVE_DIR)) == before, set(os.listdir(SAVE_DIR)) - before)
 
 print("\n== 11. SpeedTestTask 中止语义（缺陷 3.2 核心） ==")

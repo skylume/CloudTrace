@@ -3,11 +3,12 @@
 
 import ssl
 import socket
+import math
 import time
 import asyncio
 import aiohttp
 import logging
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 
 from core.compat import IS_WIN7
 from core.constants import AIRPORT_CODES, PORT_OPTIONS
@@ -19,6 +20,100 @@ DEFAULT_TEST_HOST = "speed.cloudflare.com"
 
 # Cloudflare 常用 HTTPS 端口集合：决定探测/测速时是否走 TLS
 HTTPS_PORTS = {int(p) for p in PORT_OPTIONS}  # 443/2053/2083/2087/2096/8443
+
+# 结果里保存的 trace 明细字段（顺序即展示顺序）
+TRACE_DETAIL_KEYS = (
+    "colo", "loc", "client_ip", "http_version", "tls_version",
+    "sni", "warp", "gateway", "kex", "visit_scheme",
+)
+
+
+def parse_trace(body) -> Dict[str, str]:
+    """解析 `/cdn-cgi/trace` 的 `key=value` 文本，返回原始键值字典。
+
+    Cloudflare 的 trace 响应形如：
+        fl=123abc
+        h=speed.cloudflare.com
+        ip=203.0.113.7          ← 本机出口 IP（CF 视角）
+        colo=HKG                ← 承载该请求的数据中心
+        loc=HK                  ← CF 判定的访客落地区域
+        http=http/2
+        tls=TLSv1.3
+        sni=plaintext
+        warp=off
+        gateway=off
+        rbi=off
+        kex=X25519
+    """
+    if isinstance(body, (bytes, bytearray)):
+        text = bytes(body).decode("utf-8", errors="ignore")
+    else:
+        text = str(body or "")
+    out: Dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        out[key.strip().lower()] = value.strip()
+    return out
+
+
+def trace_to_detail(trace: Dict[str, str]) -> Dict[str, str]:
+    """把 trace 原始键值映射成结果字段（缺项给空串，方便直接进表格/CSV）。"""
+    trace = trace or {}
+    return {
+        "colo": (trace.get("colo") or "").upper(),
+        "loc": (trace.get("loc") or "").upper(),
+        "client_ip": trace.get("ip") or "",
+        "http_version": trace.get("http") or "",
+        "tls_version": trace.get("tls") or "",
+        "sni": trace.get("sni") or "",
+        "warp": trace.get("warp") or "",
+        "gateway": trace.get("gateway") or "",
+        "kex": trace.get("kex") or "",
+        "visit_scheme": trace.get("visit_scheme") or "",
+    }
+
+
+def empty_detail() -> Dict[str, str]:
+    return {k: "" for k in TRACE_DETAIL_KEYS}
+
+
+def _stdev(values: List[float]) -> float:
+    """样本标准差（抖动）；少于 2 个样本时返回 0。"""
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    var = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+    return math.sqrt(var)
+
+
+def summarize_latencies(latencies: List[float], samples: int) -> Dict:
+    """把一组探测延迟汇总成 min/avg/max/loss/jitter。
+
+    `samples` 为实际发起的探测次数（用于算丢包率）；全部失败时各项为 None。
+    """
+    samples = max(1, int(samples or 1))
+    ok = [float(v) for v in (latencies or []) if v is not None]
+    stats = {
+        "samples": samples,
+        "ok_count": len(ok),
+        "loss": round((samples - len(ok)) / samples * 100.0, 1),
+        "latency": None,
+        "latency_min": None,
+        "latency_avg": None,
+        "latency_max": None,
+        "jitter": None,
+    }
+    if ok:
+        stats["latency_min"] = round(min(ok), 2)
+        stats["latency_max"] = round(max(ok), 2)
+        stats["latency_avg"] = round(sum(ok) / len(ok), 2)
+        stats["jitter"] = round(_stdev(ok), 2)
+        # 与历史行为一致：扫描结果里的 latency 取最小值
+        stats["latency"] = stats["latency_min"]
+    return stats
 
 
 def port_uses_tls(port: int, default: bool = True) -> bool:
@@ -161,6 +256,98 @@ def _probe_trace(ip: str, timeout: float = 3, test_host: str = DEFAULT_TEST_HOST
     return 0, {}, b""
 
 
+async def _probe_trace_async(ip: str, timeout: float = 3,
+                             test_host: str = DEFAULT_TEST_HOST,
+                             port: Optional[int] = None,
+                             use_tls: Optional[bool] = None):
+    """`_probe_trace` 的 asyncio 版本（语义、返回结构完全一致）。
+
+    为什么不直接用 aiohttp：aiohttp 的 SNI 只能取自 URL 里的主机名，而我们要连的
+    是**裸 IP**。Cloudflare 边缘必须看到合法 SNI 才会返回 `/cdn-cgi/trace`
+    （SNI 是 IP 时直接 403 或握手失败），所以只能自己开裸连接，把
+    `server_hostname` 设成探测用的主机名（= 同时作为 Host 头）。
+
+    这也是本项目扫描结果长期拿不到 colo/loc 的根因：旧实现走 aiohttp，
+    永远探测失败，导致每一行的「地区」都显示为「未知地区」。
+    """
+    if port is not None:
+        first_tls = port_uses_tls(port) if use_tls is None else bool(use_tls)
+        candidates = [(first_tls, int(port)), (not first_tls, int(port))]
+    else:
+        candidates = [(True, 443), (False, 80)]
+
+    loop = asyncio.get_event_loop()
+    for tls, port_num in candidates:
+        writer = None
+        try:
+            ctx = create_probe_ssl_context() if tls else None
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port_num, ssl=ctx,
+                                        server_hostname=test_host if tls else None),
+                timeout=timeout,
+            )
+
+            request = (
+                f"GET /cdn-cgi/trace HTTP/1.1\r\n"
+                f"Host: {test_host}\r\n"
+                f"User-Agent: Mozilla/5.0\r\n"
+                f"Connection: close\r\n\r\n"
+            ).encode()
+            writer.write(request)
+            await writer.drain()
+
+            data = b""
+            deadline = loop.time() + timeout
+            while b"\r\n\r\n" not in data:
+                remain = deadline - loop.time()
+                if remain <= 0:
+                    break
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=remain)
+                if not chunk:
+                    break
+                data += chunk
+            if b"\r\n\r\n" not in data:
+                continue
+
+            header_raw = data.split(b"\r\n\r\n", 1)[0]
+            status_line = header_raw.split(b"\r\n", 1)[0].decode('latin-1', errors='ignore')
+            parts = status_line.split()
+            status = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
+
+            headers = {}
+            for line in header_raw.split(b"\r\n")[1:]:
+                if b":" in line:
+                    k, v = line.split(b":", 1)
+                    headers[k.strip().lower()] = v.strip().lower()
+
+            # 小响应通常一包内；再读 0.5s 防止 body 被截断
+            tail_deadline = loop.time() + 0.5
+            while loop.time() < tail_deadline and len(data) < 65536:
+                remain = tail_deadline - loop.time()
+                if remain <= 0:
+                    break
+                try:
+                    chunk = await asyncio.wait_for(reader.read(4096), timeout=remain)
+                except asyncio.TimeoutError:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+            body = data.split(b"\r\n\r\n", 1)[1]
+
+            if status:
+                return status, headers, body
+        except Exception:
+            continue
+        finally:
+            if writer is not None:
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+    return 0, {}, b""
+
+
 def get_iata_code_from_ip(ip: str, timeout: int = 3,
                           port: Optional[int] = None) -> Optional[str]:
     status, headers, body = _probe_trace(ip, timeout, port=port)
@@ -218,50 +405,61 @@ def verify_cloudflare(ip: str, timeout: int = 3, port: Optional[int] = None) -> 
     return probe_cloudflare(ip, timeout, port=port)["ok"]
 
 
+def probe_node_detail(ip: str, timeout: int = 3, port: Optional[int] = None,
+                      use_tls: Optional[bool] = None) -> Dict:
+    """一次探测拿到「可用性判定 + trace 明细」（测速阶段用，避免重复请求）。
+
+    返回 {"ok", "status", "server", "reason", **TRACE_DETAIL_KEYS}
+    """
+    probe = probe_cloudflare(ip, timeout, port=port)
+    detail = trace_to_detail(parse_trace(probe.get("body") or b""))
+    out = {
+        "ok": bool(probe.get("ok")),
+        "status": probe.get("status", 0),
+        "server": probe.get("server", ""),
+        "reason": probe.get("reason", ""),
+    }
+    out.update(detail)
+    return out
+
+
+async def get_node_detail_async(session: aiohttp.ClientSession, ip: str,
+                                timeout: int = 3, port: Optional[int] = None,
+                                use_tls: Optional[bool] = None) -> Dict:
+    """扫描阶段的节点明细：一次 `/cdn-cgi/trace` 拿到数据中心/落地区域/协议栈信息。
+
+    返回 {"colo", "loc", "client_ip", "http_version", "tls_version", "sni",
+          "warp", "gateway", "kex", "visit_scheme", "cf_ray", "status"}；
+    探测失败时各字段为空串（调用方无需判空）。
+
+    `session` 参数只为兼容既有调用方而保留 —— 实际探测走裸连接（原因见
+    `_probe_trace_async` 的说明），不再复用 aiohttp 连接池。
+    """
+    detail = empty_detail()
+    detail.update({"cf_ray": "", "status": 0})
+
+    status, headers, body = await _probe_trace_async(
+        ip, timeout, port=port, use_tls=use_tls)
+    if status != 200:
+        return detail
+
+    detail.update(trace_to_detail(parse_trace(body)))
+    detail["status"] = status
+    detail["cf_ray"] = headers.get('cf-ray', '')
+    if not detail["colo"] and detail["cf_ray"] and '-' in detail["cf_ray"]:
+        for part in detail["cf_ray"].split('-')[-2:]:
+            if len(part) == 3 and part.isalpha():
+                detail["colo"] = part.upper()
+                break
+    return detail
+
+
 async def get_iata_code_async(session: aiohttp.ClientSession, ip: str,
                               timeout: int = 3, port: Optional[int] = None) -> Optional[str]:
-    test_host = DEFAULT_TEST_HOST
-    if port is not None:
-        brackets = f"[{ip}]" if ':' in ip else ip
-        schemes = ["https", "http"] if port_uses_tls(port) else ["http", "https"]
-        urls = [f"{sch}://{brackets}:{int(port)}/cdn-cgi/trace" for sch in schemes]
-    elif ':' in ip:
-        urls = [f"https://[{ip}]/cdn-cgi/trace", f"http://[{ip}]/cdn-cgi/trace"]
-    else:
-        urls = [f"https://{ip}/cdn-cgi/trace", f"http://{ip}/cdn-cgi/trace"]
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Host": test_host
-    }
-    ssl_ctx = create_compat_ssl_context()
-
-    for url in urls:
-        try:
-            use_ssl = url.startswith('https://')
-            ssl_context = ssl_ctx if use_ssl else None
-            async with session.get(
-                url, headers=headers, ssl=ssl_context,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=False
-            ) as response:
-                if response.status == 200:
-                    text = await response.text()
-                    for line in text.strip().split('\n'):
-                        if line.startswith('colo='):
-                            colo_value = line.split('=', 1)[1].strip()
-                            if colo_value and colo_value.upper() != 'UNKNOWN':
-                                return colo_value.upper()
-                    if 'CF-RAY' in response.headers:
-                        cf_ray = response.headers['CF-RAY']
-                        if '-' in cf_ray:
-                            parts = cf_ray.split('-')
-                            for part in parts[-2:]:
-                                if len(part) == 3 and part.isalpha():
-                                    return part.upper()
-        except Exception:
-            continue
-    return None
+    """向后兼容入口：只取地区码。"""
+    detail = await get_node_detail_async(session, ip, timeout, port=port)
+    colo = detail.get("colo") or ""
+    return colo.upper() if colo and colo.upper() != 'UNKNOWN' else None
 
 
 def get_iata_translation(iata_code: str) -> str:
@@ -283,17 +481,42 @@ async def async_tcp_ping(ip: str, port: int, timeout: float = 1.0) -> Optional[f
         return None
 
 
+async def measure_tcp_stats(ip: str, port: int, ping_times: int = 4,
+                            timeout: float = 1.0) -> Dict:
+    """TCP 握手延迟统计：并发发起 `ping_times` 次探测，汇总 min/avg/max/丢包/抖动。
+
+    `latency` 仍取最小值，与历史行为保持一致（结果页/阈值判定口径不变）。
+    全部失败时 latency 为 None（调用方据此判定不可用）。
+    """
+    samples = max(1, int(ping_times or 1))
+    tasks = [asyncio.create_task(async_tcp_ping(ip, port, timeout)) for _ in range(samples)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    latencies = [r for r in results if isinstance(r, float)]
+    return summarize_latencies(latencies, samples)
+
+
 async def measure_tcp_latency(ip: str, port: int, ping_times: int = 4,
                               timeout: float = 1.0) -> Optional[float]:
     """TCP 握手延迟：多次探测并发发起，取最小值。"""
     if ping_times <= 0:
         return None
-    tasks = [asyncio.create_task(async_tcp_ping(ip, port, timeout)) for _ in range(ping_times)]
+    return (await measure_tcp_stats(ip, port, ping_times, timeout))["latency"]
+
+
+async def measure_http_stats(session: aiohttp.ClientSession, ip: str, port: int,
+                             timeout: float = 1.0, use_tls: bool = True,
+                             samples: int = 1) -> Dict:
+    """HTTPing 统计：并发发起 `samples` 次 TTFB 探测，汇总 min/avg/max/丢包/抖动。
+
+    与 TCPing 保持同样的「并发探测、取最小值」语义：总耗时约等于单次探测，
+    不会因为要算抖动而把扫描时间乘以样本数。
+    """
+    samples = max(1, int(samples or 1))
+    tasks = [asyncio.create_task(measure_http_latency(session, ip, port, timeout, use_tls))
+             for _ in range(samples)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     latencies = [r for r in results if isinstance(r, float)]
-    if latencies:
-        return min(latencies)
-    return None
+    return summarize_latencies(latencies, samples)
 
 
 async def measure_http_latency(session: aiohttp.ClientSession, ip: str, port: int,
@@ -347,7 +570,8 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
                    path: str = "/__down?bytes=50000000",
                    time_limit: float = 3.0,
                    should_continue=None,
-                   use_tls: bool = True) -> Tuple[float, Optional[str], int]:
+                   use_tls: bool = True,
+                   stats: Optional[Dict] = None) -> Tuple[float, Optional[str], int]:
     """向指定 IP 实测下载速度 (MB/s)。
 
     - `use_tls` 由调用方按端口决定：非标列表里的 `http://` 节点（如 80 端口）
@@ -357,6 +581,9 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
     - 支持 chunked 解码（不会把块长度算进速度）
     - 字节数异常少 / 时间异常短视为失败，防止假高速
     返回 (speed, error_message|None, http_status)。
+
+    传入 `stats`（dict）时，会额外写入实测明细：
+    `bytes` / `seconds` / `content_length` / `ttfb` / `server` / `cf_ray`。
     """
     ctx = create_probe_ssl_context() if use_tls else None
     req = (
@@ -369,7 +596,14 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
 
     sock = None
     ss = None
+    if stats is not None:
+        stats.clear()
+        stats.update({
+            "bytes": 0, "seconds": 0.0, "content_length": "",
+            "ttfb": None, "server": "", "cf_ray": "", "http_status": 0,
+        })
     try:
+        connect_start = time.time()
         sock = _connect_raw(ip, int(port), 3)
         if use_tls:
             ss = ctx.wrap_socket(sock, server_hostname=host)
@@ -378,6 +612,8 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
             ss = sock
             sock = None
         ss.settimeout(1.0)
+        if stats is not None:
+            stats["connect_ms"] = round((time.time() - connect_start) * 1000, 1)
         ss.sendall(req)
 
         # ---- 读取响应头 ----
@@ -413,6 +649,14 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
                 k, v = line.split(b":", 1)
                 header_map[k.strip().lower()] = v.strip().lower()
         chunked = b"chunked" in header_map.get(b"transfer-encoding", b"")
+        if stats is not None:
+            stats["content_length"] = header_map.get(b"content-length", b"").decode(
+                "latin-1", errors="ignore")
+            stats["server"] = header_map.get(b"server", b"").decode("latin-1", errors="ignore")
+            stats["cf_ray"] = header_map.get(b"cf-ray", b"").decode("latin-1", errors="ignore")
+            stats["http_status"] = status
+            if stats.get("ttfb") is None:
+                stats["ttfb"] = round((time.time() - connect_start) * 1000, 1)
 
         # ---- 计时下载响应体 ----
         start = time.time()
@@ -441,6 +685,9 @@ def download_speed(ip: str, port: int, host: str = DEFAULT_TEST_HOST,
         ss = None
 
         dur = time.time() - start
+        if stats is not None:
+            stats["bytes"] = body
+            stats["seconds"] = round(dur, 3)
         if body < 16 * 1024:
             return 0.0, "下载数据量过少", status
         if dur < 0.3 and body < 1024 * 1024:

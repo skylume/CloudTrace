@@ -17,12 +17,31 @@ from core.speed_url import (
 )
 from core.utils import to_float
 from ui.widgets import Card, LogTerminal, StatCard, EmptyState
+from ui.dialogs import show_node_detail
 from ui.styles import (
     FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
     C_GREEN, C_GREEN_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
     btn_stylesheet, ghost_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
+
+# 测速结果表列：(标题, 拉伸?, 单元格类型)
+SPEED_COLUMNS = (
+    ("排名", False, "rank"),
+    ("IP 地址", False, "ip"),
+    ("地区", False, "region"),
+    ("延迟", False, "latency"),
+    ("平均", False, "avg"),
+    ("抖动", False, "jitter"),
+    ("丢包", False, "loss"),
+    ("下载速度", False, "speed"),
+    ("综合评分", False, "score"),
+    ("数据中心", False, "colo"),
+    ("落地区域", False, "loc"),
+    ("协议", False, "proto"),
+    ("端口", False, "port"),
+    ("测速类型", True, "type"),
+)
 
 
 class SpeedPage(QWidget):
@@ -135,12 +154,10 @@ class SpeedPage(QWidget):
         self.spin_min_speed.valueChanged.connect(self._refresh_table)
 
         # ---- 表格 ----
-        table_card = Card("测速结果", "双击任意单元格可复制内容")
+        table_card = Card("测速结果", "双击任意行查看完整明细（延迟分布 / 下载字节 / 数据中心 / 协议栈）；右键可复制")
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels(
-            ["排名", "IP 地址", "地区", "延迟", "下载速度", "综合评分", "端口", "测速类型"]
-        )
+        self.table.setColumnCount(len(SPEED_COLUMNS))
+        self.table.setHorizontalHeaderLabels([c[0] for c in SPEED_COLUMNS])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
@@ -149,10 +166,12 @@ class SpeedPage(QWidget):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setStyleSheet(TABLE_LIGHT_STYLE)
-        for i in range(7):
-            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
-        self.table.doubleClicked.connect(self._copy_cell)
+        for i, (_title, stretch, _kind) in enumerate(SPEED_COLUMNS):
+            self.table.horizontalHeader().setSectionResizeMode(
+                i, QHeaderView.Stretch if stretch else QHeaderView.ResizeToContents)
+        self.table.doubleClicked.connect(self._show_detail)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.empty = EmptyState("暂无测速结果，请先在「结果」页选择范围并开始测速", "🚀")
         table_card.body().addWidget(self.empty)
         table_card.body().addWidget(self.table, 1)
@@ -251,6 +270,10 @@ class SpeedPage(QWidget):
         rank_colors = {0: QColor("#D4A017"), 1: QColor("#94A3B8"), 2: QColor("#B87333")}
 
         for i, r in enumerate(data):
+            cells = {}
+            for col, (_title, _stretch, kind) in enumerate(SPEED_COLUMNS):
+                cells[kind] = col
+
             rank_item = QTableWidgetItem(str(i + 1))
             rank_item.setTextAlignment(Qt.AlignCenter)
             if i in rank_colors:
@@ -258,11 +281,11 @@ class SpeedPage(QWidget):
                 font = rank_item.font()
                 font.setBold(True)
                 rank_item.setFont(font)
-            self.table.setItem(i, 0, rank_item)
+            self.table.setItem(i, cells["rank"], rank_item)
 
             ip_item = QTableWidgetItem(r.get("ip", ""))
             ip_item.setFont(QFont("Consolas", 10))
-            self.table.setItem(i, 1, ip_item)
+            self.table.setItem(i, cells["ip"], ip_item)
 
             code = r.get("iata_code", "") or ""
             name = r.get("chinese_name", AIRPORT_CODES.get(code, "未知"))
@@ -275,9 +298,9 @@ class SpeedPage(QWidget):
             region_item.setTextAlignment(Qt.AlignCenter)
             if r.get("verified") is False:
                 region_item.setForeground(QColor(C_RED))
-            self.table.setItem(i, 2, region_item)
+            self.table.setItem(i, cells["region"], region_item)
 
-            latency = r.get("latency", 0)
+            latency = r.get("latency", 0) or 0
             lat_item = QTableWidgetItem(f"{latency:.1f} ms")
             lat_item.setTextAlignment(Qt.AlignCenter)
             if latency < 100:
@@ -286,9 +309,25 @@ class SpeedPage(QWidget):
                 lat_item.setForeground(QColor(C_ORANGE))
             else:
                 lat_item.setForeground(QColor(C_RED))
-            self.table.setItem(i, 3, lat_item)
+            self.table.setItem(i, cells["latency"], lat_item)
 
-            speed = r.get("download_speed", 0)
+            self.table.setItem(i, cells["avg"], self._muted(
+                f"{r['latency_avg']:.1f} ms" if isinstance(r.get("latency_avg"), (int, float)) else "—"))
+
+            jitter = r.get("jitter")
+            jitter_item = self._muted(
+                f"{jitter:.1f}" if isinstance(jitter, (int, float)) else "—")
+            if isinstance(jitter, (int, float)) and jitter >= 20:
+                jitter_item.setForeground(QColor(C_ORANGE))
+            self.table.setItem(i, cells["jitter"], jitter_item)
+
+            loss = r.get("loss")
+            loss_item = self._muted(f"{loss:.0f}%" if isinstance(loss, (int, float)) else "—")
+            if isinstance(loss, (int, float)) and loss > 0:
+                loss_item.setForeground(QColor(C_RED))
+            self.table.setItem(i, cells["loss"], loss_item)
+
+            speed = r.get("download_speed", 0) or 0
             speed_item = QTableWidgetItem(f"{speed:.2f} MB/s")
             speed_item.setTextAlignment(Qt.AlignCenter)
             if speed >= 10:
@@ -297,28 +336,56 @@ class SpeedPage(QWidget):
                 speed_item.setForeground(QColor(C_ORANGE))
             else:
                 speed_item.setForeground(QColor(C_RED))
-            self.table.setItem(i, 4, speed_item)
+            self.table.setItem(i, cells["speed"], speed_item)
 
-            score = r.get("score", 0)
+            score = r.get("score", 0) or 0
             score_item = QTableWidgetItem(f"{score:.1f}")
             score_item.setTextAlignment(Qt.AlignCenter)
             if i in rank_colors:
                 font = score_item.font()
                 font.setBold(True)
                 score_item.setFont(font)
-            self.table.setItem(i, 5, score_item)
+            self.table.setItem(i, cells["score"], score_item)
+
+            self.table.setItem(i, cells["colo"], self._muted(r.get("colo") or code or "—"))
+            self.table.setItem(i, cells["loc"], self._muted(r.get("loc") or "—"))
+            self.table.setItem(i, cells["proto"], self._muted(self._protocol_text(r) or "—"))
 
             port_item = QTableWidgetItem(str(r.get("port", "")))
             port_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(i, 6, port_item)
+            self.table.setItem(i, cells["port"], port_item)
 
             type_item = QTableWidgetItem(r.get("test_type", ""))
             type_item.setTextAlignment(Qt.AlignCenter)
             type_item.setForeground(QColor(C_MUTED))
-            self.table.setItem(i, 7, type_item)
+            self.table.setItem(i, cells["type"], type_item)
 
         self._update_stats(data)
         self._sync_empty_state()
+
+    @staticmethod
+    def _muted(text: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setForeground(QColor(C_MUTED))
+        return item
+
+    @staticmethod
+    def _protocol_text(r: Dict) -> str:
+        """把 trace 明细压成一行紧凑文本，例如 `https · h2 · TLS1.3`。"""
+        parts = []
+        scheme = (r.get("visit_scheme") or "").strip()
+        if scheme:
+            parts.append(scheme)
+        http_v = (r.get("http_version") or "").strip()
+        if http_v:
+            parts.append(http_v.replace("http/", "h").replace("HTTP/", "h"))
+        tls_v = (r.get("tls_version") or "").strip()
+        if tls_v:
+            parts.append(tls_v.replace("TLSv", "TLS"))
+        if not parts and r.get("use_tls") is not None:
+            parts.append("TLS" if r.get("use_tls") else "明文")
+        return " · ".join(parts)
 
     def _update_stats(self, visible: List[Dict]):
         self.stat_count.set_value(len(self.all_results))
@@ -344,6 +411,41 @@ class SpeedPage(QWidget):
         item = self.table.item(index.row(), index.column())
         if item and item.text():
             QApplication.clipboard().setText(item.text())
+
+    def _row_info(self) -> Dict:
+        row = self.table.currentRow()
+        if row < 0:
+            return {}
+        ip_item = self.table.item(row, 1)
+        if not ip_item:
+            return {}
+        ip = ip_item.text()
+        for r in self._visible_results():
+            if r.get("ip") == ip:
+                return r
+        return {}
+
+    def _show_detail(self, *_args):
+        """双击行：弹出该节点的全部字段。"""
+        info = self._row_info()
+        if not info:
+            CustomMessageBox.warning(self, "提示", "请先选中一行（或双击某一行）")
+            return
+        show_node_detail(self, info, "测速节点详情")
+
+    def _show_context_menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        menu = QMenu(self)
+        act_detail = menu.addAction("🔍 查看详情")
+        act_copy = menu.addAction("📋 复制单元格")
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen is act_detail:
+            self._show_detail()
+        elif chosen is act_copy:
+            self._copy_cell(index)
 
     def set_busy(self, busy: bool):
         for b in (self.btn_region, self.btn_full, self.btn_export):

@@ -60,7 +60,7 @@ window.__stateResponse = {
     verify_nodes: true, download_interval: 3, speed_workers: 1, speed_result_limit: 0,
     per_region_topn: 0, pre_filter_ports: "", use_remote_sources: false,
     remote_sources: [
-      { name: "cfnb 聚合列表", url: "https://zip.cm.edu.kg/all.txt", enabled: true },
+      { name: "cm.edu.kg 聚合列表", url: "https://zip.cm.edu.kg/all.txt", enabled: true },
       { name: "备用源", url: "https://example.com/all.txt", enabled: false }
     ],
     source_retries: 3, source_retry_delay: 3, source_timeout: 8,

@@ -14,6 +14,10 @@ let selectedChips = new Set();
 /* 结果表勾选集合：renderResult 用 innerHTML 重建表格，必须靠它恢复勾选，
    否则任何一次 state 事件（进度/阶段变化）都会把用户勾选清空。 */
 let checkedIps = new Set();
+/* 当前可见行缓存：表格用 innerHTML 重建，行里只放 data-idx，
+   双击/详情按钮再按索引回查完整结果对象（含全部明细字段）。 */
+let visibleScanCache = [];
+let visibleSpeedCache = [];
 let settingsLoaded = false;
 let clearToken = false;        // 用户在设置页点了「清除 Token」
 let es = null;
@@ -24,7 +28,7 @@ const DEFAULT_SETTINGS = {
   workers: 200, latency_threshold: 230, ping_times: 0,
   pre_filter_ports: "", use_remote_sources: false,
   remote_sources: [
-    { name: "cfnb 聚合列表", url: "https://zip.cm.edu.kg/all.txt", enabled: true },
+    { name: "cm.edu.kg 聚合列表", url: "https://zip.cm.edu.kg/all.txt", enabled: true },
     { name: "countrymerge 聚合列表", url: "https://countrymerge.pages.dev/all.txt", enabled: true },
   ],
   source_retries: 3, source_retry_delay: 3.0, source_timeout: 8.0,
@@ -65,16 +69,143 @@ const SOURCE_SAMPLE =
   "# IP 段\n104.16.0.10-104.16.0.40\n" +
   "# 域名\ncloudflare.com\n";
 
+/* 导出字段：与后端 core/export.py 的 SCAN_FIELDS / SPEED_FIELDS 保持同序同名 */
 const SCAN_FIELDS = {
-  ip: "IP地址", iata_code: "地区码", chinese_name: "地区", latency: "延迟(ms)",
-  ip_version: "IP版本", port: "端口", use_tls: "TLS", scan_mode: "扫描方式",
-  scan_time: "扫描时间",
+  ip: "IP地址", port: "端口", iata_code: "地区码", chinese_name: "地区",
+  latency: "延迟(ms)", latency_avg: "平均延迟(ms)", latency_max: "最大延迟(ms)",
+  jitter: "抖动(ms)", loss: "丢包率(%)",
+  colo: "数据中心", loc: "落地区域",
+  http_version: "HTTP版本", tls_version: "TLS版本", sni: "SNI", warp: "WARP",
+  kex: "密钥交换", client_ip: "出口IP", visit_scheme: "访问协议", use_tls: "TLS",
+  scan_mode: "扫描方式", ip_version: "IP版本", scan_time: "扫描时间",
 };
 const SPEED_FIELDS = {
-  ip: "IP地址", iata_code: "地区码", chinese_name: "地区", latency: "延迟(ms)",
-  download_speed: "下载速度(MB/s)", score: "综合评分", verified: "可用性验证",
-  port: "端口", use_tls: "TLS", test_type: "测速类型",
+  ip: "IP地址", port: "端口", iata_code: "地区码", chinese_name: "地区",
+  download_speed: "下载速度(MB/s)", score: "综合评分",
+  latency: "延迟(ms)", latency_avg: "平均延迟(ms)", latency_max: "最大延迟(ms)",
+  jitter: "抖动(ms)", loss: "丢包率(%)",
+  download_bytes: "下载字节", download_seconds: "测速时长(s)", download_ttfb: "首字节(ms)",
+  colo: "数据中心", loc: "落地区域",
+  http_version: "HTTP版本", tls_version: "TLS版本", sni: "SNI", warp: "WARP",
+  kex: "密钥交换", client_ip: "出口IP",
+  verified: "可用性验证", use_tls: "TLS", test_type: "测速类型",
 };
+
+/* 详情弹窗字段分组：与桌面版 ui/dialogs.py 的 NodeDetailDialog.GROUPS 对齐 */
+const DETAIL_GROUPS = [
+  ["标识", [["ip", "IP 地址", "text"], ["port", "端口", "text"],
+            ["ip_version", "IP 版本", "ipver"], ["client_ip", "出口 IP（CF 视角）", "text"]]],
+  ["延迟", [["latency", "延迟 min (ms)", "ms"], ["latency_avg", "延迟 avg (ms)", "ms"],
+            ["latency_max", "延迟 max (ms)", "ms"], ["jitter", "抖动 (ms)", "ms"],
+            ["loss", "丢包率 (%)", "pct"], ["ok_count", "成功探测次数", "text"],
+            ["samples", "探测总次数", "text"], ["scan_mode", "扫描方式", "text"]]],
+  ["带宽（测速）", [["download_speed", "下载速度 (MB/s)", "speed"], ["score", "综合评分", "score"],
+                   ["download_bytes", "下载字节", "bytes"], ["download_seconds", "测速时长 (s)", "text"],
+                   ["download_ttfb", "首字节 TTFB (ms)", "ms"], ["download_connect_ms", "建连耗时 (ms)", "ms"],
+                   ["verified", "可用性验证", "bool"], ["test_type", "测速类型", "text"]]],
+  ["地区", [["iata_code", "地区码", "text"], ["chinese_name", "地区", "text"],
+            ["colo", "数据中心 (colo)", "text"], ["loc", "落地区域 (loc)", "text"]]],
+  ["协议栈（/cdn-cgi/trace）", [["visit_scheme", "访问协议", "text"], ["http_version", "HTTP 版本", "text"],
+                               ["tls_version", "TLS 版本", "text"], ["use_tls", "是否走 TLS", "bool"],
+                               ["sni", "SNI", "text"], ["kex", "密钥交换", "text"],
+                               ["warp", "WARP", "text"], ["gateway", "Gateway", "text"]]],
+  ["其他", [["scan_time", "扫描时间", "text"]]],
+];
+
+function fmtDetail(value, fmt) {
+  if (value === null || value === undefined || value === "") return "";
+  const num = Number(value);
+  if (fmt === "ms" && Number.isFinite(num)) return num.toFixed(1);
+  if (fmt === "pct" && Number.isFinite(num)) return num.toFixed(1) + " %";
+  if (fmt === "speed" && Number.isFinite(num)) return num.toFixed(2) + " MB/s";
+  if (fmt === "score" && Number.isFinite(num)) return num.toFixed(1);
+  if (fmt === "bytes" && Number.isFinite(num)) return num.toLocaleString() + " B（" + (num / 1048576).toFixed(2) + " MB）";
+  if (fmt === "bool") return value === true ? "是" : (value === false ? "否" : String(value));
+  if (fmt === "ipver" && Number.isFinite(num)) return "IPv" + num;
+  return String(value);
+}
+
+/* 把一条结果的全部字段渲染成弹窗 HTML（与桌面版 NodeDetailDialog 一致的分组） */
+function nodeDetailHTML(r) {
+  const head = `<div class="dt-head">${escapeHTML(r.ip || "")}${r.port ? ":" + r.port : ""}`
+    + `　${escapeHTML(r.chinese_name || "")} ${escapeHTML(r.iata_code || "")}</div>`;
+  const groups = DETAIL_GROUPS.map(([name, fields]) => {
+    const rows = fields
+      .map(([key, label, fmt]) => [label, fmtDetail(r[key], fmt)])
+      .filter(([, v]) => v !== "");
+    if (!rows.length) return "";
+    return `<div class="dt-group"><div class="dt-group-title">${name}</div>`
+      + rows.map(([k, v]) => `<div class="dt-row"><span class="dt-k">${k}</span><span class="dt-v">${escapeHTML(v)}</span></div>`).join("")
+      + "</div>";
+  }).join("");
+  return head + groups;
+}
+
+/* 与桌面版一致的「协议」紧凑文本：https · h2 · TLS1.3 */
+function protocolText(r) {
+  const parts = [];
+  const scheme = (r.visit_scheme || "").trim();
+  if (scheme) parts.push(scheme);
+  const httpV = (r.http_version || "").trim();
+  if (httpV) parts.push(httpV.replace(/http\//i, "h"));
+  const tlsV = (r.tls_version || "").trim();
+  if (tlsV) parts.push(tlsV.replace("TLSv", "TLS"));
+  if (!parts.length && r.use_tls !== undefined && r.use_tls !== null) {
+    parts.push(r.use_tls ? "TLS" : "明文");
+  }
+  return parts.join(" · ");
+}
+
+function escapeHTML(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function fmtNum(v, digits, suffix) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits) + (suffix || "") : "—";
+}
+function fmtLoss(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(0) + "%" : "—";
+}
+function muted(text) { return `<span class="muted-cell">${escapeHTML(text)}</span>`; }
+
+/* 打开某个节点的详情弹窗 */
+function showNodeDetail(r, title) {
+  if (!r) return;
+  showModal(title || "节点详情", nodeDetailHTML(r), [
+    { label: "📋 复制全部", cls: "btn-ghost", onClick: () => {
+        const lines = [];
+        DETAIL_GROUPS.forEach(([, fields]) => fields.forEach(([key, label, fmt]) => {
+          const v = fmtDetail(r[key], fmt);
+          if (v !== "") lines.push(label + ": " + v);
+        }));
+        copyText(lines.join("\n"));
+        toast("节点详情已复制到剪贴板", "ok");
+        return false;   // 复制后不关闭弹窗
+      } },
+    { label: "关闭", cls: "btn-primary" },
+  ], { wide: true });
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+}
 
 /* ================= 轻提示 ================= */
 function toast(msg, type) {
@@ -167,7 +298,9 @@ async function downloadURL(path) {
 }
 
 /* ================= 弹窗 ================= */
-function showModal(title, bodyHTML, buttons) {
+function showModal(title, bodyHTML, buttons, opts) {
+  const modal = document.querySelector("#modal-backdrop .modal");
+  if (modal) modal.classList.toggle("modal-wide", !!(opts && opts.wide));
   document.getElementById("modal-title").textContent = title;
   document.getElementById("modal-body").innerHTML = bodyHTML;
   const footer = document.getElementById("modal-footer");
@@ -732,24 +865,38 @@ function renderResult() {
   // 表格
   const factor = latencyFactor();
   const rows = visibleScanResults();
+  visibleScanCache = rows;
   const tbody = document.getElementById("scan-tbody");
   if (!rows.length) {
     tbody.innerHTML = scanResults.length
-      ? '<tr><td colspan="6" class="empty">没有符合筛选条件的结果</td></tr>'
-      : '<tr><td colspan="6" class="empty">暂无数据</td></tr>';
+      ? '<tr><td colspan="12" class="empty">没有符合筛选条件的结果</td></tr>'
+      : '<tr><td colspan="12" class="empty">暂无数据</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => {
+  tbody.innerHTML = rows.map((r, idx) => {
     const cls = r.latency < 100 * factor ? "lat-g" : (r.latency < 200 * factor ? "lat-o" : "lat-r");
-    const region = r.iata_code ? `${r.chinese_name || ""} (${r.iata_code})` : "未知";
+    const code = (r.iata_code || "").toUpperCase();
+    const region = code ? `${escapeHTML(r.chinese_name || "")} (${escapeHTML(code)})` : "未知";
     const checked = checkedIps.has(r.ip) ? " checked" : "";
-    return `<tr>
-      <td class="t-c"><input type="checkbox" data-ip="${r.ip}"${checked}></td>
-      <td class="mono">${r.ip}</td>
+    const jitter = Number(r.jitter);
+    const jitterCell = Number.isFinite(jitter)
+      ? `<span class="${jitter >= 20 ? "lat-o" : "muted-cell"}">${jitter.toFixed(1)}</span>` : muted("—");
+    const loss = Number(r.loss);
+    const lossCell = Number.isFinite(loss)
+      ? `<span class="${loss > 0 ? "lat-r" : "muted-cell"}">${loss.toFixed(0)}%</span>` : muted("—");
+    return `<tr data-idx="${idx}" title="双击查看完整明细">
+      <td class="t-c"><input type="checkbox" data-ip="${escapeHTML(r.ip)}"${checked}></td>
+      <td class="mono">${escapeHTML(r.ip)}</td>
       <td class="t-c">${region}</td>
       <td class="t-c ${cls}">${Number(r.latency).toFixed(1)} ms</td>
+      <td class="t-c">${muted(fmtNum(r.latency_avg, 1, " ms"))}</td>
+      <td class="t-c">${jitterCell}</td>
+      <td class="t-c">${lossCell}</td>
+      <td class="t-c">${muted(r.colo || code || "—")}</td>
+      <td class="t-c">${muted(r.loc || "—")}</td>
+      <td class="t-c">${muted(protocolText(r) || "—")}</td>
       <td class="t-c">${r.port || ""}</td>
-      <td class="t-c">${r.scan_time || ""}</td>
+      <td class="t-c">${escapeHTML(r.scan_time || "")}</td>
     </tr>`;
   }).join("");
 }
@@ -761,6 +908,90 @@ document.getElementById("scan-tbody").addEventListener("change", e => {
   if (cb.checked) checkedIps.add(cb.dataset.ip);
   else checkedIps.delete(cb.dataset.ip);
 });
+
+/* 双击行 / 右键菜单：查看完整明细、复制单元格、复制整行 */
+function bindRowDetail(tbodyId, cacheFn, title) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.addEventListener("dblclick", e => {
+    const tr = e.target.closest("tr[data-idx]");
+    if (!tr) return;
+    showNodeDetail(cacheFn()[Number(tr.dataset.idx)], title);
+  });
+  tbody.addEventListener("contextmenu", e => {
+    const tr = e.target.closest("tr[data-idx]");
+    if (!tr) return;
+    e.preventDefault();
+    const r = cacheFn()[Number(tr.dataset.idx)];
+    if (!r) return;
+    const cell = e.target.closest("td");
+    const col = cell ? [...tr.children].indexOf(cell) : -1;
+    const items = [
+      { label: "🔍 查看详情", run: () => showNodeDetail(r, title) },
+      { label: "📋 复制整行", run: () => { copyText(rowToText(r)); toast("已复制整行", "ok"); } },
+    ];
+    if (col >= 0 && cell.textContent.trim()) {
+      items.push({ label: "📋 复制单元格", run: () => { copyText(cell.textContent.trim()); toast("已复制单元格", "ok"); } });
+    }
+    showContextMenu(e.clientX, e.clientY, items);
+  });
+}
+
+function rowToText(r) {
+  return Object.keys(r)
+    .filter(k => r[k] !== null && r[k] !== undefined && r[k] !== "")
+    .map(k => k + "=" + r[k]).join("　");
+}
+
+/* 轻量右键菜单（用后即弃，点空白处关闭） */
+function showContextMenu(x, y, items) {
+  document.querySelectorAll(".ctx-menu").forEach(el => el.remove());
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu";
+  menu.style.left = Math.min(x, window.innerWidth - 190) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - 8 - items.length * 34) + "px";
+  items.forEach(it => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = it.label;
+    btn.onclick = ev => { ev.stopPropagation(); menu.remove(); it.run(); };
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  const close = ev => {
+    if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener("click", close); }
+  };
+  setTimeout(() => document.addEventListener("click", close), 0);
+}
+
+bindRowDetail("scan-tbody", () => visibleScanCache, "扫描节点详情");
+bindRowDetail("speed-tbody", () => visibleSpeedCache, "测速节点详情");
+
+document.getElementById("btn-scan-detail").addEventListener("click", () => {
+  const idx = currentRowIndex("scan-tbody");
+  if (idx < 0) { showWarn("请先点击一行（或直接双击某一行）"); return; }
+  showNodeDetail(visibleScanCache[idx], "扫描节点详情");
+});
+document.getElementById("btn-speed-detail").addEventListener("click", () => {
+  const idx = currentRowIndex("speed-tbody");
+  if (idx < 0) { showWarn("请先点击一行（或直接双击某一行）"); return; }
+  showNodeDetail(visibleSpeedCache[idx], "测速节点详情");
+});
+
+/* 当前高亮的行索引（点击行时由 CSS :hover 不够，需要真的记录一次选中） */
+function currentRowIndex(tbodyId) {
+  const tr = document.querySelector(`#${tbodyId} tr.sel-row[data-idx]`);
+  return tr ? Number(tr.dataset.idx) : -1;
+}
+function bindRowSelect(tbodyId) {
+  document.getElementById(tbodyId).addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-idx]");
+    if (!tr) return;
+    tr.parentNode.querySelectorAll("tr.sel-row").forEach(x => x.classList.remove("sel-row"));
+    tr.classList.add("sel-row");
+  });
+}
+bindRowSelect("scan-tbody");
+bindRowSelect("speed-tbody");
 
 ["chk-latency", "in-latency", "sel-sort"].forEach(id => {
   document.getElementById(id).addEventListener("change", () => { renderResultStats(); renderResult(); });
@@ -883,11 +1114,12 @@ function renderSpeedStats() {
 
 function renderSpeed() {
   const rows = visibleSpeedResults();
+  visibleSpeedCache = rows;
   const tbody = document.getElementById("speed-tbody");
   if (!rows.length) {
     tbody.innerHTML = speedResults.length
-      ? '<tr><td colspan="8" class="empty">没有符合筛选条件的结果</td></tr>'
-      : '<tr><td colspan="8" class="empty">暂无数据</td></tr>';
+      ? '<tr><td colspan="14" class="empty">没有符合筛选条件的结果</td></tr>'
+      : '<tr><td colspan="14" class="empty">暂无数据</td></tr>';
     return;
   }
   const rankCls = ["rank1", "rank2", "rank3"];
@@ -896,15 +1128,28 @@ function renderSpeed() {
     const spdCls = r.download_speed >= 10 ? "lat-g" : (r.download_speed >= 5 ? "lat-o" : "lat-r");
     const verify = r.verified === true ? "✓ " : (r.verified === false ? "✗ " : "");
     const vStyle = r.verified === false ? ' style="color:#B91C1C"' : "";
-    return `<tr>
+    const code = (r.iata_code || "").toUpperCase();
+    const jitter = Number(r.jitter);
+    const jitterCell = Number.isFinite(jitter)
+      ? `<span class="${jitter >= 20 ? "lat-o" : "muted-cell"}">${jitter.toFixed(1)}</span>` : muted("—");
+    const loss = Number(r.loss);
+    const lossCell = Number.isFinite(loss)
+      ? `<span class="${loss > 0 ? "lat-r" : "muted-cell"}">${loss.toFixed(0)}%</span>` : muted("—");
+    return `<tr data-idx="${i}" title="双击查看完整明细">
       <td class="t-c ${rankCls[i] || ""}">${i + 1}</td>
-      <td class="mono">${r.ip}</td>
-      <td class="t-c"${vStyle}>${verify}${r.chinese_name || "未知"}(${r.iata_code || ""})</td>
+      <td class="mono">${escapeHTML(r.ip)}</td>
+      <td class="t-c"${vStyle}>${verify}${escapeHTML(r.chinese_name || "未知")}(${escapeHTML(code)})</td>
       <td class="t-c ${latCls}">${Number(r.latency).toFixed(1)} ms</td>
+      <td class="t-c">${muted(fmtNum(r.latency_avg, 1, " ms"))}</td>
+      <td class="t-c">${jitterCell}</td>
+      <td class="t-c">${lossCell}</td>
       <td class="t-c ${spdCls}">${Number(r.download_speed).toFixed(2)} MB/s</td>
       <td class="t-c"><b>${Number(r.score || 0).toFixed(1)}</b></td>
+      <td class="t-c">${muted(r.colo || code || "—")}</td>
+      <td class="t-c">${muted(r.loc || "—")}</td>
+      <td class="t-c">${muted(protocolText(r) || "—")}</td>
       <td class="t-c">${r.port || ""}</td>
-      <td class="t-c"><span class="tag">${r.test_type || ""}</span></td>
+      <td class="t-c"><span class="tag">${escapeHTML(r.test_type || "")}</span></td>
     </tr>`;
   }).join("");
 }
@@ -1085,6 +1330,7 @@ function populateSettings(s) {
   document.getElementById("set-result-limit").value = s.speed_result_limit != null ? s.speed_result_limit : 0;
   document.getElementById("set-w-speed").value = s.score_speed_weight;
   document.getElementById("set-w-latency").value = s.score_latency_weight;
+  updateScorePreview();
   setSwitch("sw-http", s.http_enabled);
   document.getElementById("set-port").value = s.http_port;
   setSwitch("sw-lan", s.allow_lan);
@@ -1140,6 +1386,48 @@ function updateHttpHint() {
     ? `面板地址: ${lan ? "http://<本机IP>:" + port : location.origin.replace(/:\d+$/, ":" + port)}  ·  HTTP 相关设置重启服务后生效`
     : "HTTP 服务已关闭（重启后不再启动）";
 }
+
+/* ---- 综合评分权重：快捷预设 + 实时效果预览 ---- */
+/* 预览用示例节点 [下载速度 MB/s, 延迟 ms]（与桌面版 SCORE_PREVIEW_NODES 一致） */
+const SCORE_PREVIEW_NODES = [[20.0, 40.0], [10.0, 60.0], [5.0, 120.0], [20.0, 200.0]];
+
+/* 与后端 core/scoring.py 的 score_result 完全一致：
+   score = W_speed × MB/s ÷ (1 + W_latency × 延迟秒) */
+function scoreOf(speed, latencyMs, wSpeed, wLatency) {
+  const raw = wSpeed * Number(speed || 0) / (1 + wLatency * (Number(latencyMs || 0) / 1000));
+  return Math.round(raw * 10) / 10;
+}
+
+function updateScorePreview() {
+  const el = document.getElementById("score-preview");
+  if (!el) return;
+  const wSpeed = floatVal("set-w-speed", 3);
+  const wLatency = floatVal("set-w-latency", 3);
+  const ranked = SCORE_PREVIEW_NODES
+    .map(([speed, latency]) => [scoreOf(speed, latency, wSpeed, wLatency), speed, latency])
+    .sort((a, b) => b[0] - a[0]);
+  const lines = ["效果预览（4 个示例节点按当前权重的得分与排序）："];
+  ranked.forEach(([score, speed, latency], i) => {
+    lines.push(`　${i + 1}. ${speed.toFixed(1).padStart(4)} MB/s · ${String(latency).padStart(3)} ms → 评分 ${score}`);
+  });
+  const top = ranked[0];
+  lines.push(`　→ 当前权重会优先选「${top[1].toFixed(0)} MB/s / ${top[2].toFixed(0)} ms」这类节点`);
+  el.textContent = lines.join("\n");
+}
+
+["set-w-speed", "set-w-latency"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", updateScorePreview);
+  el.addEventListener("change", updateScorePreview);
+});
+document.querySelectorAll("#page-settings button[data-preset]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const [wSpeed, wLatency] = btn.dataset.preset.split(",");
+    document.getElementById("set-w-speed").value = wSpeed;
+    document.getElementById("set-w-latency").value = wLatency;
+    updateScorePreview();
+  });
+});
 
 function collectSettings() {
   const speedPreset = document.getElementById("set-speed-url-mode").value;

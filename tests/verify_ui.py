@@ -11,18 +11,26 @@ os.environ.setdefault("CLOUDTRACE_ALLOW_MULTI", "1")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# settings.json 是仓库文件：测试会写它，先备份、结束后原样还原
+# settings.json 是仓库外的运行时文件：测试会写它，先备份、结束后原样还原。
+# 必须按「二进制」备份/还原，否则文本模式会把 LF 换成 CRLF，白白改动用户文件。
+# 必须走 atexit：脚本中途抛异常时，末尾的显式还原根本执行不到，
+# 会把测试值（含测试 Token）永久留在用户的 settings.json 里。
+import atexit
+
 SETTINGS_PATH = os.path.join(ROOT, "settings.json")
 _ORIG_SETTINGS = None
 if os.path.exists(SETTINGS_PATH):
-    with io.open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+    with open(SETTINGS_PATH, "rb") as f:
         _ORIG_SETTINGS = f.read()
 
 
 def restore_settings_file():
     if _ORIG_SETTINGS is not None:
-        with io.open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        with open(SETTINGS_PATH, "wb") as f:
             f.write(_ORIG_SETTINGS)
+
+
+atexit.register(restore_settings_file)
 
 from PySide6.QtWidgets import QApplication, QTableWidget
 from PySide6.QtCore import Qt

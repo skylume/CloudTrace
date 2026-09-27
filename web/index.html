@@ -67,7 +67,8 @@
               </div>
               <div class="field"><label>并发数</label><input type="number" id="in-workers" value="200" min="10" max="500"></div>
               <div class="field"><label>延迟阈值 (ms)</label><input type="number" id="in-threshold" value="230" min="50" max="999"></div>
-              <div class="field"><label>采样上限</label><input type="number" id="in-sample" value="5000" min="100" max="50000"></div>
+              <div class="field"><label>采样上限</label><input type="number" id="in-sample" value="5000" min="100" max="200000">
+                <div class="hint">单次扫描最多生成的 IP 数（100~200000）；与设置页共用同一份配置</div></div>
               <div class="field"><label>探测次数 (0=自动)</label><input type="number" id="in-ping" value="0" min="0" max="10"></div>
               <div class="field span-3"><label>端口过滤（留空 = 不过滤）</label>
                 <input type="text" id="in-prefilter" placeholder="如 443,8443">
@@ -108,7 +109,7 @@
           <div class="set-row"><span class="grow">启用远程数据源</span><div class="switch" id="sw-remote"></div></div>
           <div class="field" id="wrap-sources">
             <label>数据源列表（每行「名称 | URL」；以 # 开头表示禁用）</label>
-            <textarea id="txt-sources" placeholder="cfnb 聚合列表 | https://zip.cm.edu.kg/all.txt&#10;# 备用源 | https://example.com/all.txt"></textarea>
+            <textarea id="txt-sources" placeholder="cm.edu.kg 聚合列表 | https://zip.cm.edu.kg/all.txt&#10;countrymerge 聚合列表 | https://countrymerge.pages.dev/all.txt&#10;# 备用源 | https://example.com/all.txt"></textarea>
             <div class="row" style="margin-top:8px">
               <span class="hint">重试</span><input type="number" id="in-retries" min="1" max="10" value="3" class="w-narrow">
               <span class="hint">间隔(s)</span><input type="number" id="in-retry-delay" min="0" max="60" step="0.5" value="3" class="w-narrow">
@@ -159,6 +160,10 @@
           <div class="chips" id="region-chips"><span class="hint">暂无数据，请先扫描或加载历史</span></div>
         </div>
         <div class="card">
+          <div class="card-head">
+            <h3>扫描结果</h3>
+            <span class="hint">双击任意行查看完整明细（延迟分布 / 数据中心 / 协议栈）；右键可复制</span>
+          </div>
           <div class="toolbar">
             <label class="check"><input type="checkbox" id="chk-latency" checked> 仅显示延迟 &lt;</label>
             <input type="number" id="in-latency" value="200" min="50" max="9999">
@@ -167,6 +172,7 @@
             <div class="spacer"></div>
             <button class="btn btn-ghost btn-sm" id="btn-check-all">勾选全部</button>
             <button class="btn btn-ghost btn-sm" id="btn-check-none">清空勾选</button>
+            <button class="btn btn-ghost btn-sm" id="btn-scan-detail">🔍 详情</button>
             <button class="btn btn-ghost btn-sm" id="btn-single">🎯 单点测速</button>
             <button class="btn btn-orange btn-sm" id="btn-region-speed">🚀 测速所选地区</button>
             <button class="btn btn-primary btn-sm" id="btn-full-speed">⬆ 完全测速</button>
@@ -176,9 +182,11 @@
             <table id="scan-table">
               <thead><tr>
                 <th style="width:38px"></th><th>IP 地址</th><th>地区</th>
-                <th>延迟</th><th>端口</th><th>扫描时间</th>
+                <th>延迟</th><th>平均</th><th>抖动</th><th>丢包</th>
+                <th>数据中心</th><th>落地区域</th><th>协议</th>
+                <th>端口</th><th>扫描时间</th>
               </tr></thead>
-              <tbody id="scan-tbody"><tr><td colspan="6" class="empty">暂无数据</td></tr></tbody>
+              <tbody id="scan-tbody"><tr><td colspan="12" class="empty">暂无数据</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -209,18 +217,24 @@
             <div class="spacer"></div>
             <button class="btn btn-orange btn-sm" id="btn-region2">🌸 地区测速</button>
             <button class="btn btn-primary btn-sm" id="btn-full2">⬆ 完全测速</button>
+            <button class="btn btn-ghost btn-sm" id="btn-speed-detail">🔍 详情</button>
             <button class="btn btn-green btn-sm" id="btn-export-speed">⬇ 导出结果</button>
           </div>
         </div>
         <div class="card">
-          <div class="card-head"><h3>测速结果</h3><span class="hint">双击任意单元格可复制内容</span></div>
+          <div class="card-head">
+            <h3>测速结果</h3>
+            <span class="hint">双击任意行查看完整明细（延迟分布 / 下载字节 / 数据中心 / 协议栈）；右键可复制</span>
+          </div>
           <div class="table-wrap">
             <table id="speed-table">
               <thead><tr>
                 <th>排名</th><th>IP 地址</th><th>地区</th><th>延迟</th>
-                <th>下载速度</th><th>综合评分</th><th>端口</th><th>测速类型</th>
+                <th>平均</th><th>抖动</th><th>丢包</th>
+                <th>下载速度</th><th>综合评分</th><th>数据中心</th>
+                <th>落地区域</th><th>协议</th><th>端口</th><th>测速类型</th>
               </tr></thead>
-              <tbody id="speed-tbody"><tr><td colspan="8" class="empty">暂无数据</td></tr></tbody>
+              <tbody id="speed-tbody"><tr><td colspan="14" class="empty">暂无数据</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -252,14 +266,34 @@
             <div class="set-row"><span class="grow">扫描方式默认值</span>
               <select id="set-scan-mode"><option value="tcping">tcping</option><option value="httping">httping</option></select></div>
             <div class="set-row"><span class="grow">采样上限默认值</span>
-              <input type="number" id="set-sample" min="100" max="50000"></div>
+              <input type="number" id="set-sample" min="100" max="200000"></div>
           </div>
 
           <div class="card">
-            <div class="card-head"><h3>综合评分权重</h3></div>
-            <div class="hint" style="margin-bottom:8px">score = 速度权重 × MB/s ÷ (1 + 延迟权重 × 延迟秒)</div>
-            <div class="set-row"><span class="grow">速度权重</span><input type="number" id="set-w-speed" min="0" max="50" step="0.5"></div>
-            <div class="set-row"><span class="grow">延迟权重</span><input type="number" id="set-w-latency" min="0" max="50" step="0.5"></div>
+            <div class="card-head"><h3>综合评分权重</h3>
+              <span class="hint">决定测速结果如何排序</span></div>
+            <div class="formula">score = 速度权重 × 下载速度(MB/s) ÷ (1 + 延迟权重 × 延迟(秒))</div>
+            <div class="hint" style="margin-bottom:6px">
+              分数越高排越前，导出顺序也按它排。注意延迟以「秒」为单位参与分母惩罚。
+            </div>
+            <div class="set-row"><span class="grow">速度权重</span>
+              <input type="number" id="set-w-speed" min="0" max="50" step="0.5"></div>
+            <div class="hint" style="margin:-6px 0 8px">乘在下载速度上。调大 → 更看重带宽（下载快的排前面）</div>
+            <div class="set-row"><span class="grow">延迟权重</span>
+              <input type="number" id="set-w-latency" min="0" max="50" step="0.5"></div>
+            <div class="hint" style="margin:-6px 0 8px">做分母的惩罚项。调大 → 更排斥高延迟节点；设为 0 表示完全忽略延迟</div>
+            <div class="row" style="margin:2px 0 8px">
+              <span class="hint">快捷预设</span>
+              <button type="button" class="btn btn-ghost btn-sm" data-preset="3,3"
+                title="带宽与延迟同等重要，适合大多数场景">均衡（默认）</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-preset="8,1"
+                title="只看下载速度，适合大文件/流媒体">速度优先</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-preset="1,8"
+                title="强烈惩罚高延迟，适合网页浏览/游戏">延迟优先</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-preset="1,0"
+                title="完全忽略延迟，纯按 MB/s 排序">只看速度</button>
+            </div>
+            <div class="hint" id="score-preview"></div>
           </div>
 
           <div class="card">
