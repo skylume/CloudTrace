@@ -33,7 +33,10 @@ html, body { height: 100%; }
 body {
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
   background: var(--bg); color: var(--text); font-size: 14px;
-  overflow: hidden; -webkit-font-smoothing: antialiased;
+  /* 不要用 -webkit-font-smoothing: antialiased：它会强制灰度抗锯齿，
+     在 Windows 上关掉 ClearType 次像素抗锯齿，中文小字会明显发虚发灰。
+     不声明即走浏览器默认（最佳渲染）。 */
+  overflow: hidden;
 }
 .app { display: flex; height: 100vh; }
 

@@ -13,7 +13,7 @@ python tests/run_all.py
 # 或单独运行
 python tests/verify_core.py     # 核心逻辑单测（201 项）
 python tests/verify_api.py      # aiohttp 接口 / SSE / 鉴权 / 导出（62 项）
-python tests/verify_ui.py       # PySide6 离屏冒烟（74 项）
+python tests/verify_ui.py       # PySide6 离屏冒烟（96 项）
 node  tests/verify_web.js       # Web 面板 DOM 冒烟（140 项，需 jsdom）
 ```
 
@@ -65,6 +65,11 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（140 项，需 jsdom）
 - 测速中止后状态为「已停止」而非「完成」（缺陷 3.2）
 - 中止后**保留部分结果**：扫描中止仍可勾选测速、测速中止仍显示已测结果
 - 结果表勾选全部 / 清空
+- **排版回归**：5 个页面均无被 QSS 盒模型垂直裁切的控件；表格无整列被挤到看不见
+  （注意：按钮裁切依赖真实字体度量，离屏平台只能覆盖部分场景，
+  完整核对请用 `render_screenshots.py` 的原生渲染或 `audit_layout.py`）
+- **列宽自适应回归**（`AutoFitTable`）：在 1000 / 1180 / 1360 / 1600 四种窗宽下，
+  放得下则末列铺满视口、放不下则出现横向滚动条，**任何宽度下都不会把某一列压扁**
 - 单实例锁
 
 ### `verify_web.js` — Web 面板（jsdom 真实执行 `app.js`）
@@ -80,6 +85,16 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（140 项，需 jsdom）
 - 页面导航标题、401 鉴权流程
 
 ## 其他
+
+`audit_layout.py` 是**排版审计**脚本，专门抓「文字被裁切 / 表格列被挤没」：
+
+```bash
+python tests/audit_layout.py
+```
+
+它跑在原生平台（`WA_DontShowOnScreen`，不弹窗）以取得真实字体度量，逐页比对
+`sizeHint()` / `heightForWidth()` 与实际高度，以及 `sizeHintForColumn()` 与列宽；
+发现问题退出码为 1。离屏冒烟可用 `CLOUDTRACE_AUDIT_OFFSCREEN=1`，但结论偏乐观。
 
 `render_screenshots.py` 用于重新生成 `Screenshots/` 下的界面预览图：
 

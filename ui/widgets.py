@@ -7,7 +7,7 @@ from typing import List, Tuple
 from PySide6.QtWidgets import (
     QLayout, QFrame, QLabel, QPushButton, QPlainTextEdit,
     QHBoxLayout, QVBoxLayout, QWidget, QButtonGroup, QSizePolicy,
-    QGraphicsDropShadowEffect,
+    QGraphicsDropShadowEffect, QTableWidget, QHeaderView,
 )
 from PySide6.QtCore import Qt, QRect, QSize, QPoint, Signal
 from PySide6.QtGui import QFont, QColor
@@ -117,6 +117,56 @@ def clear_layout(layout: QLayout):
         if child is not None:
             clear_layout(child)
             child.deleteLater()
+
+
+class AutoFitTable(QTableWidget):
+    """列宽按内容自适应、末列「按需」吸收剩余宽度的表格。
+
+    同时规避 Qt 列宽策略的两个坑：
+    1) 只把某一列设为 Stretch：总宽超出视口时 Qt 会把它压到最小宽度，
+       整列内容直接看不见（旧版「测速类型」被压到 27px 就是这么来的）；
+    2) 全列 ResizeToContents + setStretchLastSection(True)：总宽超出视口时
+       末列会被静默压扁（不出滚动条，内容被裁掉），窗口拉窄时同样是
+       「文字显示不全」。
+
+    做法：常态全列 ResizeToContents；每次尺寸/内容变化后比较「内容总宽」
+    与「视口宽」——放得下就让末列拉伸吸收余量（右侧不留白），放不下就关闭
+    拉伸、交给横向滚动条（任何一列都不会被压扁）。
+
+    注意 ResizeToContents 的实际列宽口径是
+    ``max(sizeHintForColumn(i), header.sectionSizeHint(i))``：表头文字
+    （如「综合评分」）往往比单元格更宽，只用 sizeHintForColumn 会低估。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._syncing = False
+
+    def setup_columns(self):
+        """按内容自适应初始化列宽（在 setColumnCount/表头设置之后调用）。"""
+        header = self.horizontalHeader()
+        for i in range(self.columnCount()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.sync_columns()
+
+    def sync_columns(self):
+        """重新评估是否需要让末列拉伸。内容/尺寸变化后调用（幂等、可重入保护）。"""
+        n = self.columnCount()
+        if self._syncing or n == 0:
+            return
+        self._syncing = True
+        try:
+            header = self.horizontalHeader()
+            need = sum(max(self.sizeHintForColumn(i), header.sectionSizeHint(i))
+                       for i in range(n))
+            header.setStretchLastSection(need <= self.viewport().width())
+        finally:
+            self._syncing = False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.sync_columns()
 
 
 class Segmented(QWidget):

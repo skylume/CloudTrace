@@ -70,7 +70,10 @@ class CloudflareScanUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"CloudTrace 云迹 V{get_version()}")
-        self.resize(1180, 820)
+        # 默认宽度需容纳「结果/测速」两张最宽的表格：测速表 14 列按内容自适应
+        # 约需 1115px，加上左侧导航(~130) 与页面边距，1180 会把末列「测速类型」
+        # 挤到横向滚动条之外（用户反馈的「文字显示不全」之一）。1360 可完整显示。
+        self.resize(1360, 840)
         self.setMinimumSize(1000, 660)
 
         self._setup_window_icon()

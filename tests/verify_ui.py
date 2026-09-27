@@ -384,6 +384,87 @@ n_none = len(win.result_page.checked_ip_infos())
 check("勾选全部 -> 2", n_all == 2, n_all)
 check("清空勾选 -> 0", n_none == 0, n_none)
 
+print("\n== 7b. 控件高度不被 QSS 盒模型裁切（回归：文字显示不全） ==")
+from PySide6.QtWidgets import (
+    QStackedWidget, QLineEdit, QComboBox, QPushButton, QAbstractSpinBox, QTableWidget,
+)
+
+stack = win.findChild(QStackedWidget)
+# 必须真正 show 一次：隐藏状态下 Qt 不做完整布局，表格视口宽度是无效值，
+# 会让「末列拉伸」的宽度计算失真，测出假的「列被压扁」。
+win.resize(1280, 900)
+win.show()
+for _ in range(3):
+    app.processEvents()
+win.speed_page.set_results([{"ip": "104.16.132.229", "latency": 42.3, "download_speed": 28.64,
+                             "score": 24.9, "chinese_name": "中国香港", "iata_code": "HKG",
+                             "port": 443, "test_type": "完全测速", "jitter": 3.4, "loss": 0.0}])
+win.result_page.set_results(rows, scan_mode="tcping")
+
+clipped, crushed = [], []
+for i in range(stack.count()):
+    win._set_page(i)
+    for _ in range(2):
+        app.processEvents()
+    page = stack.widget(i)
+    pname = type(page).__name__
+    for w in page.findChildren(object):
+        if not isinstance(w, (QLineEdit, QComboBox, QPushButton, QAbstractSpinBox)):
+            continue
+        if w.isHidden() or w.height() <= 0:
+            continue
+        need = w.sizeHint().height()
+        if need > w.height():
+            text = w.text() if hasattr(w, "text") else ""
+            clipped.append(f"{pname}/{type(w).__name__} {text[:8]!r} {w.height()}<{need}")
+    for t in page.findChildren(QTableWidget):
+        if t.rowCount() == 0:
+            continue
+        for c in range(t.columnCount()):
+            hint = t.sizeHintForColumn(c)
+            if t.columnWidth(c) < hint:
+                head = t.horizontalHeaderItem(c).text() if t.horizontalHeaderItem(c) else ""
+                crushed.append(f"{pname}/col{c} {head!r} {t.columnWidth(c)}<{hint}")
+
+check("5 个页面均无文字被垂直裁切的控件", not clipped, clipped[:8])
+check("表格无整列被挤到看不见（列宽 >= 内容所需）", not crushed, crushed[:8])
+
+print("\n== 7c. 表格列宽自适应（放不下出横向滚动条，绝不压扁列） ==")
+# 回归 AutoFitTable：旧实现把末列设为 Stretch，总宽超出视口时该列会被静默压扁
+# （无滚动条、内容被裁）；也曾在窄窗口下把「扫描时间」挤没。现在应当：
+#   放得下 → 末列吸收余量、无滚动条；放不下 → 出滚动条、任何列都不小于内容宽。
+_TABLES = [(2, "speed", win.speed_page.table), (1, "result", win.result_page.table)]
+
+
+def _measure(page_idx, tbl):
+    win._set_page(page_idx)
+    for _ in range(3):
+        app.processEvents()
+    h = tbl.horizontalHeader()
+    need = [max(tbl.sizeHintForColumn(c), h.sectionSizeHint(c))
+            for c in range(tbl.columnCount())]
+    widths = [tbl.columnWidth(c) for c in range(tbl.columnCount())]
+    return need, widths
+
+
+for _w, _h in ((1000, 760), (1180, 820), (1360, 840), (1600, 900)):
+    win.resize(_w, _h)
+    for _ in range(2):
+        app.processEvents()
+    for _idx, _name, _t in _TABLES:
+        _need, _widths = _measure(_idx, _t)
+        _vp = _t.viewport().width()
+        _crushed = [i for i in range(_t.columnCount()) if _widths[i] < _need[i]]
+        check(f"[窗宽 {_w}] {_name} 表无列被压扁", not _crushed, _crushed[:6])
+        # 内容放不下时才应出现滚动条；放得下则末列铺满、不留白
+        _overflow = sum(_need) > _vp
+        check(f"[窗宽 {_w}] {_name} 表滚动条与内容宽度一致",
+              _t.horizontalScrollBar().isVisible() == _overflow,
+              (sum(_need), _vp, _t.horizontalScrollBar().isVisible()))
+        if not _overflow:
+            check(f"[窗宽 {_w}] {_name} 表末列铺满视口",
+                  abs(sum(_widths) - _vp) <= 1, (sum(_widths), _vp))
+
 win.bridge.detach()
 win.close()
 app.processEvents()

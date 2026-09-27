@@ -20,7 +20,9 @@ if IS_WIN7:
         pass
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
+from core.constants import FONT_FAMILY
 from ui.main_window import CloudflareScanUI
 
 
@@ -29,8 +31,22 @@ if __name__ == '__main__':
         print("错误: 此程序需要 Python 3.8 或更高版本")
         sys.exit(1)
 
+    # 必须在 QApplication 之前设置：高分屏缩放策略显式声明为 PassThrough
+    # （Qt6 默认值），避免被外部环境变量悄悄改成 Round/Floor 导致布局与字号错位。
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
     app = QApplication(sys.argv)
     app.setApplicationName("CloudTrace 云迹")
+
+    # 统一默认字体为 QSS 使用的同一字体族。
+    # Windows 的系统默认字体是 "Microsoft YaHei UI"，而 QSS 里写的是
+    # "Microsoft YaHei"；两者字宽/字重不同，混用会让未被 QSS 覆盖的控件
+    # （对话框、表格项等）看起来比其它文字更细更虚。这里统一成 13px 整数像素，
+    # 避免点值换算出小数像素导致的栅格化发虚。
+    _app_font = QFont(FONT_FAMILY)
+    _app_font.setPixelSize(13)
+    app.setFont(_app_font)
 
     # 确保最后一个窗口关闭时应用程序也能正确退出
     app.setQuitOnLastWindowClosed(False)

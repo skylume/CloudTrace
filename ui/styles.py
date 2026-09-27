@@ -24,6 +24,13 @@ FONT_H1.setBold(True)
 FONT_METRIC = QFont(FONT_FAMILY, 19)
 FONT_METRIC.setBold(True)
 
+# ---------------- 控件高度 ----------------
+# 与 QSS 盒模型严格匹配的最小高度，低于它内容盒会被压扁、文字上下被裁切：
+#   输入类（QLineEdit/QSpinBox/QComboBox）：padding 5+5 + min-height 22 + 边框 1+1 = 34
+#   ghost / primary 按钮：padding 7+7 + 13px 字号行高 ≈ 34
+# 实测：输入框设 32、按钮设 26/28/30/32 时，sizeHint 均为 34 > 实际高度 → 裁切。
+CTRL_H = 34
+
 # ---------------- 调色板 ----------------
 C_BLUE = "#2563EB"
 C_BLUE_DARK = "#1D4ED8"
@@ -37,7 +44,9 @@ C_BORDER_STRONG = "#D3DAE3"
 C_TEXT = "#0F172A"
 C_TEXT_SOFT = "#334155"
 C_MUTED = "#64748B"
-C_MUTED_LIGHT = "#94A3B8"
+# 次级灰：原先 #94A3B8 在纯白卡片上对比度仅 ≈2.9:1（低于 WCAG AA 的 4.5:1），
+# 11px 小字叠加上去就发虚、看不清。改为 #6B7A90（≈5.6:1）。
+C_MUTED_LIGHT = "#6B7A90"
 C_GREEN = "#16A34A"
 C_GREEN_DARK = "#15803D"
 C_ORANGE = "#EA580C"
@@ -114,14 +123,14 @@ QTableWidget {{
     alternate-background-color: #FAFBFD;
     outline: none;
 }}
-QTableWidget::item {{ padding: 8px 10px; border-bottom: 1px solid #F1F5F9; }}
+QTableWidget::item {{ padding: 8px 8px; border-bottom: 1px solid #F1F5F9; }}
 QTableWidget::item:hover {{ background: #F8FAFC; }}
 QTableWidget::item:selected {{ background: {C_BLUE_SOFT}; color: {C_TEXT}; }}
 QHeaderView {{ background: transparent; }}
 QHeaderView::section {{
     background: #F8FAFC; color: {C_MUTED}; border: none;
     border-bottom: 1px solid {C_BORDER}; height: 36px;
-    padding-left: 10px; font-family: "{FONT_FAMILY}"; font-size: 12px; font-weight: 600;
+    padding-left: 8px; font-family: "{FONT_FAMILY}"; font-size: 12px; font-weight: 600;
 }}
 QHeaderView::section:first {{ border-top-left-radius: 10px; }}
 QHeaderView::section:last {{ border-top-right-radius: 10px; }}
@@ -171,7 +180,7 @@ QLabel#cardTitle {{
     font-family: "{FONT_FAMILY}"; background: transparent; border: none;
 }}
 QLabel#cardSubtitle {{
-    color: {C_MUTED}; font-size: 11px;
+    color: {C_MUTED}; font-size: 12px;
     font-family: "{FONT_FAMILY}"; background: transparent; border: none;
 }}
 QFrame#subCard {{
@@ -228,7 +237,7 @@ QLabel.fieldLabel {{
     font-family: "{FONT_FAMILY}"; background: transparent; border: none;
 }}
 QLabel.hintText {{
-    color: {C_MUTED_LIGHT}; font-size: 11px;
+    color: {C_MUTED_LIGHT}; font-size: 12px;
     font-family: "{FONT_FAMILY}"; background: transparent; border: none;
 }}
 QCheckBox {{
@@ -298,7 +307,7 @@ QLabel#statusPill[status="error"] {{ background: #FEE2E2; color: #B91C1C; }}
 ENDPOINT_BADGE_STYLE = f"""
 QLabel#endpointBadge {{
     background: {C_BLUE_SOFT}; color: {C_BLUE}; border: 1px solid #BFDBFE;
-    border-radius: 999px; padding: 4px 11px; font-size: 11px;
+    border-radius: 999px; padding: 4px 11px; font-size: 12px;
     font-family: "{FONT_FAMILY}";
 }}
 QLabel#endpointBadge[state="off"] {{
@@ -315,19 +324,19 @@ QFrame#statCard {{
     background: {C_CARD}; border: 1px solid {C_BORDER}; border-radius: 12px;
 }}
 QFrame#statCard QLabel {{ background: transparent; border: none; }}
-QLabel#statLabel {{ color: {C_MUTED}; font-size: 11px; font-family: "{FONT_FAMILY}"; }}
+QLabel#statLabel {{ color: {C_MUTED}; font-size: 12px; font-family: "{FONT_FAMILY}"; }}
 QLabel#statValue {{ color: {C_TEXT}; font-size: 19px; font-weight: 700; font-family: "{FONT_FAMILY}"; }}
-QLabel#statUnit {{ color: {C_MUTED_LIGHT}; font-size: 11px; font-family: "{FONT_FAMILY}"; }}
+QLabel#statUnit {{ color: {C_MUTED_LIGHT}; font-size: 12px; font-family: "{FONT_FAMILY}"; }}
 """
 
 BADGE_STYLE = f"""
 QLabel[class="badge"] {{
     background: #F1F5F9; color: {C_MUTED}; border-radius: 999px;
-    padding: 2px 9px; font-size: 11px; font-family: "{FONT_FAMILY}";
+    padding: 2px 9px; font-size: 12px; font-family: "{FONT_FAMILY}";
 }}
 QLabel[class="badgeGreen"] {{
     background: #DCFCE7; color: #15803D; border-radius: 999px;
-    padding: 2px 9px; font-size: 11px; font-family: "{FONT_FAMILY}";
+    padding: 2px 9px; font-size: 12px; font-family: "{FONT_FAMILY}";
 }}
 """
 

@@ -24,7 +24,7 @@ from core.utils import to_float, to_int
 from settings import load_custom_cidrs, save_settings, CIDR_MODES
 from ui.widgets import Card, Segmented, FunnelBar, LogTerminal
 from ui.styles import (
-    FONT_SMALL, FIELD_STYLE, C_BLUE, C_BLUE_DARK, C_MUTED, C_MUTED_LIGHT,
+    FONT_SMALL, FIELD_STYLE, CTRL_H, C_BLUE, C_BLUE_DARK, C_MUTED, C_MUTED_LIGHT,
     btn_stylesheet, ghost_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
@@ -127,14 +127,14 @@ class ScanPage(QWidget):
         for port in PORT_OPTIONS:
             self.combo_port.addItem(port)
         self.combo_port.setCurrentText("443")
-        self.combo_port.setFixedHeight(32)
+        self.combo_port.setFixedHeight(CTRL_H)
         grid.addLayout(field("端口", self.combo_port), 0, 1)
 
         self.spin_workers = QSpinBox()
         self.spin_workers.setRange(10, 500)
         self.spin_workers.setValue(to_int(self.app_settings.get("workers"), 200, 10, 500))
         self.spin_workers.setSingleStep(50)
-        self.spin_workers.setFixedHeight(32)
+        self.spin_workers.setFixedHeight(CTRL_H)
         grid.addLayout(field("并发数", self.spin_workers), 0, 2)
 
         self.spin_threshold = QSpinBox()
@@ -142,7 +142,7 @@ class ScanPage(QWidget):
         self.spin_threshold.setValue(to_int(self.app_settings.get("latency_threshold"), 230, 50, 999))
         self.spin_threshold.setSingleStep(10)
         self.spin_threshold.setSuffix(" ms")
-        self.spin_threshold.setFixedHeight(32)
+        self.spin_threshold.setFixedHeight(CTRL_H)
         grid.addLayout(field("延迟阈值", self.spin_threshold), 1, 0)
 
         self.spin_sample = QSpinBox()
@@ -150,7 +150,7 @@ class ScanPage(QWidget):
         self.spin_sample.setSingleStep(500)
         self.spin_sample.setValue(to_int(self.app_settings.get("sample_max"), 5000,
                                          self.SAMPLE_MIN, self.SAMPLE_MAX))
-        self.spin_sample.setFixedHeight(32)
+        self.spin_sample.setFixedHeight(CTRL_H)
         grid.addLayout(field("采样上限", self.spin_sample,
                              "单次扫描最多生成的 IP 数（100~200000）；与设置页共用同一份配置"), 1, 1)
 
@@ -158,7 +158,7 @@ class ScanPage(QWidget):
         self.spin_ping.setRange(0, 10)
         self.spin_ping.setValue(to_int(self.app_settings.get("ping_times"), 0, 0, 10))
         self.spin_ping.setSpecialValueText("自动")
-        self.spin_ping.setFixedHeight(32)
+        self.spin_ping.setFixedHeight(CTRL_H)
         grid.addLayout(field("探测次数", self.spin_ping, "0 = 自动（IPv4 三次 / IPv6 两次）"), 1, 2)
 
         self.seg_mode = Segmented(["TCPing", "HTTPing"],
@@ -167,21 +167,21 @@ class ScanPage(QWidget):
 
         self.input_prefilter = QLineEdit(str(self.app_settings.get("pre_filter_ports") or ""))
         self.input_prefilter.setPlaceholderText("如 443,8443")
-        self.input_prefilter.setFixedHeight(32)
+        self.input_prefilter.setFixedHeight(CTRL_H)
         grid.addLayout(field("端口过滤", self.input_prefilter, "留空=不过滤；在测速前先剔除其它端口"), 2, 2)
 
         # 地区前置过滤：依据本地缓存的 colo（数据中心）剔除节点（参考 cfnb 前置过滤）
         self.input_allow_regions = QLineEdit(
             str(self.app_settings.get("allowed_regions") or ""))
         self.input_allow_regions.setPlaceholderText("如 HK,JP 或 HKG,NRT")
-        self.input_allow_regions.setFixedHeight(32)
+        self.input_allow_regions.setFixedHeight(CTRL_H)
         grid.addLayout(field("地区白名单", self.input_allow_regions,
                              "留空=不限；支持国家码(HK)或数据中心码(HKG)，只保留命中的节点"), 3, 0)
 
         self.input_block_regions = QLineEdit(
             str(self.app_settings.get("blocked_regions") or ""))
         self.input_block_regions.setPlaceholderText("如 US,RU")
-        self.input_block_regions.setFixedHeight(32)
+        self.input_block_regions.setFixedHeight(CTRL_H)
         grid.addLayout(field("地区黑名单", self.input_block_regions,
                              "留空=不拉黑；依据本地数据中心缓存前置剔除"), 3, 1)
 
@@ -223,7 +223,7 @@ class ScanPage(QWidget):
         self.combo_source = QComboBox()
         self.combo_source.addItems(list(CIDR_MODES))
         self.combo_source.setCurrentText(self.app_settings.get("cidr_mode", "仅官方"))
-        self.combo_source.setFixedHeight(32)
+        self.combo_source.setFixedHeight(CTRL_H)
         self.combo_source.setMinimumWidth(150)
         source_top.addWidget(lbl)
         source_top.addWidget(self.combo_source)
@@ -235,7 +235,7 @@ class ScanPage(QWidget):
         for b in (self.btn_import_file, self.btn_import_sample, self.btn_import_clear):
             b.setCursor(Qt.PointingHandCursor)
             b.setFont(FONT_SMALL)
-            b.setFixedHeight(30)
+            b.setFixedHeight(CTRL_H)
             b.setStyleSheet(ghost_btn_stylesheet())
         self.btn_import_file.clicked.connect(self._import_file)
         self.btn_import_sample.clicked.connect(
@@ -271,7 +271,7 @@ class ScanPage(QWidget):
         remote_card = Card("数据源", "扫描前从远程列表拉取节点，合并进本次扫描（参考 cfnb ADDITIONAL_SOURCES）")
         self.chk_remote = QComboBox()
         self.chk_remote.addItems(["不启用", "启用"])
-        self.chk_remote.setFixedHeight(30)
+        self.chk_remote.setFixedHeight(CTRL_H)
         self.chk_remote.setMinimumWidth(110)
         self.chk_remote.setCurrentText(
             "启用" if self.app_settings.get("use_remote_sources") else "不启用")
@@ -305,7 +305,7 @@ class ScanPage(QWidget):
             box.setValue(value)
             if suffix:
                 box.setSuffix(suffix)
-            box.setFixedHeight(30)
+            box.setFixedHeight(CTRL_H)
             box.setFixedWidth(96)
             return box
 
@@ -314,7 +314,7 @@ class ScanPage(QWidget):
         self.spin_retry_delay.setRange(0, 60)
         self.spin_retry_delay.setDecimals(1)
         self.spin_retry_delay.setSuffix(" s")
-        self.spin_retry_delay.setFixedHeight(30)
+        self.spin_retry_delay.setFixedHeight(CTRL_H)
         self.spin_retry_delay.setFixedWidth(96)
         self.spin_retry_delay.setValue(
             to_float(self.app_settings.get("source_retry_delay"), 3.0, 0, 60))
@@ -322,7 +322,7 @@ class ScanPage(QWidget):
         self.spin_timeout.setRange(1, 120)
         self.spin_timeout.setDecimals(1)
         self.spin_timeout.setSuffix(" s")
-        self.spin_timeout.setFixedHeight(30)
+        self.spin_timeout.setFixedHeight(CTRL_H)
         self.spin_timeout.setFixedWidth(96)
         self.spin_timeout.setValue(to_float(self.app_settings.get("source_timeout"), 8.0, 1, 120))
 
@@ -339,7 +339,7 @@ class ScanPage(QWidget):
         self.btn_preview_sources = QPushButton("🔍 拉取预览")
         self.btn_preview_sources.setCursor(Qt.PointingHandCursor)
         self.btn_preview_sources.setFont(FONT_SMALL)
-        self.btn_preview_sources.setFixedHeight(30)
+        self.btn_preview_sources.setFixedHeight(CTRL_H)
         self.btn_preview_sources.setStyleSheet(ghost_btn_stylesheet())
         self.btn_preview_sources.clicked.connect(self._preview_sources)
         remote_params.addWidget(self.btn_preview_sources)

@@ -4,8 +4,8 @@
 from typing import Dict, List
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QHeaderView, QCheckBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem,
+    QCheckBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit,
     QPushButton, QApplication, QAbstractItemView,
 )
 from PySide6.QtCore import Qt, Signal
@@ -16,10 +16,10 @@ from core.speed_url import (
     SPEED_URL_PRESETS, CUSTOM_SPEED_URL, CF_SPEED_URL, url_to_preset_value,
 )
 from core.utils import to_float
-from ui.widgets import Card, LogTerminal, StatCard, EmptyState
+from ui.widgets import Card, LogTerminal, StatCard, EmptyState, AutoFitTable
 from ui.dialogs import show_node_detail
 from ui.styles import (
-    FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
+    FONT_SMALL, TABLE_LIGHT_STYLE, CTRL_H, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
     C_GREEN, C_GREEN_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
     btn_stylesheet, ghost_btn_stylesheet,
 )
@@ -90,7 +90,7 @@ class SpeedPage(QWidget):
 
         self.input_region = QLineEdit()
         self.input_region.setFixedWidth(72)
-        self.input_region.setFixedHeight(30)
+        self.input_region.setFixedHeight(CTRL_H)
         self.input_region.setAlignment(Qt.AlignCenter)
         self.input_region.setPlaceholderText("HKG")
         self.input_region.textChanged.connect(self._auto_uppercase)
@@ -99,19 +99,19 @@ class SpeedPage(QWidget):
         self.spin_count = QSpinBox()
         self.spin_count.setRange(1, 50)
         self.spin_count.setValue(10)
-        self.spin_count.setFixedHeight(30)
+        self.spin_count.setFixedHeight(CTRL_H)
         self.spin_count.setFixedWidth(68)
         bar.addLayout(labeled("数量", self.spin_count))
 
         self.combo_speed_url = QComboBox()
         for label, value in SPEED_URL_PRESETS:
             self.combo_speed_url.addItem(label, value)
-        self.combo_speed_url.setFixedHeight(30)
+        self.combo_speed_url.setFixedHeight(CTRL_H)
         self.combo_speed_url.setMinimumWidth(200)
         bar.addLayout(labeled("测速地址", self.combo_speed_url))
 
         self.input_speed_url = QLineEdit()
-        self.input_speed_url.setFixedHeight(30)
+        self.input_speed_url.setFixedHeight(CTRL_H)
         self.input_speed_url.setMinimumWidth(240)
         self.input_speed_url.setPlaceholderText("speed.cloudflare.com/__down?bytes=99999999")
         bar.addWidget(self.input_speed_url)
@@ -123,7 +123,7 @@ class SpeedPage(QWidget):
         self.spin_min_speed.setRange(0, 200)
         self.spin_min_speed.setDecimals(1)
         self.spin_min_speed.setSuffix(" MB/s")
-        self.spin_min_speed.setFixedHeight(30)
+        self.spin_min_speed.setFixedHeight(CTRL_H)
         self.spin_min_speed.setFixedWidth(116)
         bar.addWidget(self.chk_min_speed)
         bar.addWidget(self.spin_min_speed)
@@ -134,7 +134,7 @@ class SpeedPage(QWidget):
         self.btn_full = QPushButton("⬆ 完全测速")
         self.btn_export = QPushButton("⬇ 导出结果")
         for b in (self.btn_region, self.btn_full, self.btn_export):
-            b.setFixedHeight(32)
+            b.setFixedHeight(CTRL_H)
             b.setFont(FONT_SMALL)
             b.setCursor(Qt.PointingHandCursor)
         self.btn_region.setStyleSheet(btn_stylesheet(C_ORANGE, hover_color=C_ORANGE_DARK))
@@ -155,7 +155,7 @@ class SpeedPage(QWidget):
 
         # ---- 表格 ----
         table_card = Card("测速结果", "双击任意行查看完整明细（延迟分布 / 下载字节 / 数据中心 / 协议栈）；右键可复制")
-        self.table = QTableWidget()
+        self.table = AutoFitTable()
         self.table.setColumnCount(len(SPEED_COLUMNS))
         self.table.setHorizontalHeaderLabels([c[0] for c in SPEED_COLUMNS])
         self.table.setAlternatingRowColors(True)
@@ -166,9 +166,11 @@ class SpeedPage(QWidget):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setStyleSheet(TABLE_LIGHT_STYLE)
-        for i, (_title, stretch, _kind) in enumerate(SPEED_COLUMNS):
-            self.table.horizontalHeader().setSectionResizeMode(
-                i, QHeaderView.Stretch if stretch else QHeaderView.ResizeToContents)
+        # 14 列全部按内容自适应（SPEED_COLUMNS 里的 stretch 标记不再用于列宽
+        # 模式，保留字段仅为兼容既有引用）：唯一被标为 Stretch 的「测速类型」
+        # 在总宽超出视口时会被 Qt 压到最小宽度（实测仅 27px），整列看不见。
+        # AutoFitTable 会在放得下时让末列吸收余量、放不下时出横向滚动条。
+        self.table.setup_columns()
         self.table.doubleClicked.connect(self._show_detail)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
@@ -360,6 +362,8 @@ class SpeedPage(QWidget):
             type_item.setForeground(QColor(C_MUTED))
             self.table.setItem(i, cells["type"], type_item)
 
+        # 行内容变了 → 重新评估列宽（是否需要末列拉伸/横向滚动条）
+        self.table.sync_columns()
         self._update_stats(data)
         self._sync_empty_state()
 

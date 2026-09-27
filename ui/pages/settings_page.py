@@ -21,7 +21,7 @@ from settings import save_settings, reset_settings, DEFAULT_SETTINGS
 from service.health import validate_settings
 from ui.widgets import Card
 from ui.styles import (
-    FONT_SMALL, C_BLUE, C_BLUE_DARK, C_MUTED, C_MUTED_LIGHT, FIELD_STYLE,
+    FONT_SMALL, CTRL_H, C_BLUE, C_BLUE_DARK, C_MUTED, C_MUTED_LIGHT, FIELD_STYLE,
     btn_stylesheet, ghost_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
@@ -116,7 +116,7 @@ class SettingsPage(QWidget):
         self.combo_scan_mode = QComboBox()
         self.combo_scan_mode.addItems(["tcping", "httping"])
         self.combo_scan_mode.setCurrentText(s.get("scan_mode", "tcping"))
-        self.combo_scan_mode.setFixedHeight(32)
+        self.combo_scan_mode.setFixedHeight(CTRL_H)
         card_scan.body().addLayout(self._row(
             "扫描方式", self.combo_scan_mode,
             "tcping 测握手延迟；httping 测 TTFB，阈值自动换算"))
@@ -125,7 +125,7 @@ class SettingsPage(QWidget):
         self.spin_sample.setRange(100, 200000)
         self.spin_sample.setSingleStep(500)
         self.spin_sample.setValue(to_int(s.get("sample_max"), 5000, 100, 200000))
-        self.spin_sample.setFixedHeight(32)
+        self.spin_sample.setFixedHeight(CTRL_H)
         card_scan.body().addLayout(self._row(
             "采样上限", self.spin_sample,
             "单次扫描最多生成的 IP 数（100~200000）；与「扫描」页共用同一份配置，改完立即生效"))
@@ -140,7 +140,7 @@ class SettingsPage(QWidget):
         self.spin_w_speed.setRange(0, 50)
         self.spin_w_speed.setSingleStep(0.5)
         self.spin_w_speed.setValue(to_float(s.get("score_speed_weight"), 3.0, 0, 50))
-        self.spin_w_speed.setFixedHeight(32)
+        self.spin_w_speed.setFixedHeight(CTRL_H)
         card_score.body().addLayout(self._row(
             "速度权重", self.spin_w_speed,
             "乘在下载速度上。调大 → 更看重带宽（下载快的排前面）"))
@@ -148,7 +148,7 @@ class SettingsPage(QWidget):
         self.spin_w_latency.setRange(0, 50)
         self.spin_w_latency.setSingleStep(0.5)
         self.spin_w_latency.setValue(to_float(s.get("score_latency_weight"), 3.0, 0, 50))
-        self.spin_w_latency.setFixedHeight(32)
+        self.spin_w_latency.setFixedHeight(CTRL_H)
         card_score.body().addLayout(self._row(
             "延迟权重", self.spin_w_latency,
             "做分母的惩罚项（延迟以秒计）。调大 → 更排斥高延迟节点；设为 0 表示完全忽略延迟"))
@@ -162,7 +162,7 @@ class SettingsPage(QWidget):
         preset_row.addWidget(preset_lbl)
         for name, w_speed, w_lat, tip in SCORE_PRESETS:
             btn = QPushButton(name)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(CTRL_H)
             btn.setFont(FONT_SMALL)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(ghost_btn_stylesheet())
@@ -190,11 +190,11 @@ class SettingsPage(QWidget):
         self.combo_speed_url = QComboBox()
         for label, value in SPEED_URL_PRESETS:
             self.combo_speed_url.addItem(label, value)
-        self.combo_speed_url.setFixedHeight(32)
+        self.combo_speed_url.setFixedHeight(CTRL_H)
         self.combo_speed_url.setMinimumWidth(210)
         self.input_speed_url = QLineEdit()
         self.input_speed_url.setPlaceholderText("speed.cloudflare.com/__down?bytes=99999999")
-        self.input_speed_url.setFixedHeight(32)
+        self.input_speed_url.setFixedHeight(CTRL_H)
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
         url_lbl = QLabel("测速地址")
@@ -217,7 +217,7 @@ class SettingsPage(QWidget):
         self.spin_min_speed.setRange(0, 200)
         self.spin_min_speed.setDecimals(1)
         self.spin_min_speed.setSuffix(" MB/s")
-        self.spin_min_speed.setFixedHeight(32)
+        self.spin_min_speed.setFixedHeight(CTRL_H)
         self.spin_min_speed.setValue(to_float(s.get("min_speed"), 0.0, 0, 200))
         card_speed.body().addLayout(self._row(
             "合格阈值", self.spin_min_speed, "低于该速度的节点视为不合格（可用于筛掉假高速）"))
@@ -225,14 +225,14 @@ class SettingsPage(QWidget):
         self.spin_interval = QSpinBox()
         self.spin_interval.setRange(0, 15)
         self.spin_interval.setSuffix(" s")
-        self.spin_interval.setFixedHeight(32)
+        self.spin_interval.setFixedHeight(CTRL_H)
         self.spin_interval.setValue(to_int(s.get("download_interval"), 3, 0, 15))
         card_speed.body().addLayout(self._row(
             "测速间隔", self.spin_interval, "每个 IP 之间的等待时间；间隔过小容易触发 Cloudflare 限速"))
 
         self.spin_speed_workers = QSpinBox()
         self.spin_speed_workers.setRange(1, 16)
-        self.spin_speed_workers.setFixedHeight(32)
+        self.spin_speed_workers.setFixedHeight(CTRL_H)
         self.spin_speed_workers.setValue(to_int(s.get("speed_workers"), 1, 1, 16))
         card_speed.body().addLayout(self._row(
             "测速并发", self.spin_speed_workers,
@@ -240,7 +240,7 @@ class SettingsPage(QWidget):
 
         self.spin_result_limit = QSpinBox()
         self.spin_result_limit.setRange(0, 1000)
-        self.spin_result_limit.setFixedHeight(32)
+        self.spin_result_limit.setFixedHeight(CTRL_H)
         self.spin_result_limit.setSpecialValueText("不限")
         self.spin_result_limit.setValue(to_int(s.get("speed_result_limit"), 0, 0, 1000))
         card_speed.body().addLayout(self._row(
@@ -248,7 +248,7 @@ class SettingsPage(QWidget):
 
         self.spin_region_topn = QSpinBox()
         self.spin_region_topn.setRange(0, 100)
-        self.spin_region_topn.setFixedHeight(32)
+        self.spin_region_topn.setFixedHeight(CTRL_H)
         self.spin_region_topn.setSpecialValueText("不限")
         self.spin_region_topn.setValue(to_int(s.get("per_region_topn"), 0, 0, 100))
         card_speed.body().addLayout(self._row(
@@ -264,7 +264,7 @@ class SettingsPage(QWidget):
 
         self.spin_port = QSpinBox()
         self.spin_port.setRange(1, 65535)
-        self.spin_port.setFixedHeight(32)
+        self.spin_port.setFixedHeight(CTRL_H)
         self.spin_port.setValue(to_int(s.get("http_port"), 17443, 1, 65535))
         card_http.body().addLayout(self._row("监听端口", self.spin_port))
 
@@ -275,14 +275,14 @@ class SettingsPage(QWidget):
         self.input_token = QLineEdit(s.get("http_token", ""))
         self.input_token.setPlaceholderText("留空则不鉴权（仅建议本机使用）")
         self.input_token.setEchoMode(QLineEdit.Password)
-        self.input_token.setFixedHeight(32)
+        self.input_token.setFixedHeight(CTRL_H)
         card_http.body().addLayout(self._row(
             "访问 Token", self.input_token, "启用局域网访问时强烈建议设置 Token"))
 
         self.lbl_http_hint = _hint("")
         card_http.body().addWidget(self.lbl_http_hint)
         self.btn_copy_addr = QPushButton("📋 复制面板地址")
-        self.btn_copy_addr.setFixedHeight(30)
+        self.btn_copy_addr.setFixedHeight(CTRL_H)
         self.btn_copy_addr.setFont(FONT_SMALL)
         self.btn_copy_addr.setCursor(Qt.PointingHandCursor)
         self.btn_copy_addr.setStyleSheet(ghost_btn_stylesheet())

@@ -4,8 +4,8 @@
 from typing import Dict, List, Optional
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QHeaderView, QCheckBox, QSpinBox, QComboBox, QPushButton, QApplication,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem,
+    QCheckBox, QSpinBox, QComboBox, QPushButton, QApplication,
     QAbstractItemView, QGridLayout,
 )
 from PySide6.QtCore import Qt, Signal
@@ -14,10 +14,10 @@ from PySide6.QtGui import QFont, QColor
 from core.constants import FONT_FAMILY
 from core.analytics import region_stats, filter_by_latency
 from core.scanner import effective_latency_threshold
-from ui.widgets import Card, RegionChips, FunnelBar, StatCard, EmptyState
+from ui.widgets import Card, RegionChips, FunnelBar, StatCard, EmptyState, AutoFitTable
 from ui.dialogs import show_node_detail
 from ui.styles import (
-    FONT_SMALL, TABLE_LIGHT_STYLE, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
+    FONT_SMALL, TABLE_LIGHT_STYLE, CTRL_H, C_BLUE, C_BLUE_DARK, C_ORANGE, C_ORANGE_DARK,
     C_GREEN, C_MUTED, C_RED, btn_stylesheet, ghost_btn_stylesheet,
 )
 
@@ -90,7 +90,7 @@ class ResultPage(QWidget):
         self.btn_chip_all = QPushButton("全选")
         self.btn_chip_none = QPushButton("清空")
         for b in (self.btn_chip_all, self.btn_chip_none):
-            b.setFixedHeight(26)
+            b.setFixedHeight(CTRL_H)
             b.setFont(FONT_SMALL)
             b.setCursor(Qt.PointingHandCursor)
             b.setStyleSheet(ghost_btn_stylesheet())
@@ -113,13 +113,13 @@ class ResultPage(QWidget):
         self.spin_latency = QSpinBox()
         self.spin_latency.setRange(50, 9999)
         self.spin_latency.setValue(200)
-        self.spin_latency.setFixedHeight(30)
+        self.spin_latency.setFixedHeight(CTRL_H)
         self.spin_latency.setFixedWidth(96)
         self.spin_latency.setSuffix(" ms")
 
         self.combo_sort = QComboBox()
         self.combo_sort.addItems(["按延迟升序", "按地区排序"])
-        self.combo_sort.setFixedHeight(30)
+        self.combo_sort.setFixedHeight(CTRL_H)
         self.combo_sort.setMinimumWidth(120)
 
         toolbar.addWidget(self.chk_latency)
@@ -143,7 +143,7 @@ class ResultPage(QWidget):
                                 (self.btn_region, C_ORANGE, C_ORANGE_DARK),
                                 (self.btn_full, C_BLUE, C_BLUE_DARK),
                                 (self.btn_export, None, None)):
-            b.setFixedHeight(32)
+            b.setFixedHeight(CTRL_H)
             b.setFont(FONT_SMALL)
             b.setCursor(Qt.PointingHandCursor)
             b.setStyleSheet(ghost_btn_stylesheet() if color is None
@@ -164,7 +164,7 @@ class ResultPage(QWidget):
         toolbar.addWidget(self.btn_export)
         table_card.body().addLayout(toolbar)
 
-        self.table = QTableWidget()
+        self.table = AutoFitTable()
         self.table.setColumnCount(len(SCAN_COLUMNS))
         self.table.setHorizontalHeaderLabels([c[0] for c in SCAN_COLUMNS])
         self.table.setAlternatingRowColors(True)
@@ -176,9 +176,9 @@ class ResultPage(QWidget):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setStyleSheet(TABLE_LIGHT_STYLE)
-        for i, (_title, size, _fn) in enumerate(SCAN_COLUMNS):
-            mode = QHeaderView.Stretch if size == "stretch" else QHeaderView.ResizeToContents
-            self.table.horizontalHeader().setSectionResizeMode(i, mode)
+        # 列宽：全部按内容自适应；空间富余时末列（扫描时间）吸收余量，
+        # 空间不足时出横向滚动条——不会把任何一列压扁（见 AutoFitTable）。
+        self.table.setup_columns()
         # 双击看详情；复制单元格改走右键菜单（详情弹窗里也能一键复制全部）
         self.table.doubleClicked.connect(self._show_detail)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -327,6 +327,9 @@ class ResultPage(QWidget):
                 self.table.setItem(i, 11, time_item)
         finally:
             self._loading_table = False
+
+        # 行内容变了 → 重新评估列宽（是否需要末列拉伸/横向滚动条）
+        self.table.sync_columns()
 
         mode_txt = "HTTPing" if self.scan_mode == "httping" else "TCPing"
         self.lbl_summary.setText(

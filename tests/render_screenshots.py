@@ -206,7 +206,7 @@ def build_window():
         win.tray_icon.hide()
     except Exception:
         pass
-    win.resize(1280, 830)
+    win.resize(1360, 840)
     win.show()
     for _ in range(3):
         app.processEvents()
@@ -262,12 +262,12 @@ def main():
     print("渲染截图:")
     # 扫描页内容较长：README 主图用标准高度（与测速图等宽等高），
     # 另出一张全页长图 preview_scan.png，把「数据源」卡片也纳入
-    snapshot(win, 0, "1.png", size=(1280, 920))
-    snapshot(win, 0, "preview_scan.png", size=(1280, 1500))
-    snapshot(win, 1, "preview_result.png", size=(1280, 830))
-    snapshot(win, 2, "preview_speed.png", size=(1280, 830))
-    snapshot(win, 3, "preview_history.png", size=(1280, 830))
-    snapshot(win, 4, "preview_settings.png", size=(1280, 830))
+    snapshot(win, 0, "1.png", size=(1360, 920))
+    snapshot(win, 0, "preview_scan.png", size=(1360, 1500))
+    snapshot(win, 1, "preview_result.png", size=(1360, 840))
+    snapshot(win, 2, "preview_speed.png", size=(1360, 840))
+    snapshot(win, 3, "preview_history.png", size=(1360, 840))
+    snapshot(win, 4, "preview_settings.png", size=(1360, 840))
 
     # README 用的第二张主图
     import shutil

@@ -14,7 +14,7 @@ from core.constants import FONT_FAMILY
 from settings import get_history_list
 from ui.widgets import Card, Segmented, clear_layout
 from ui.styles import (
-    FONT_SMALL, C_BLUE, C_BLUE_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
+    FONT_SMALL, CTRL_H, C_BLUE, C_BLUE_DARK, C_RED, C_MUTED, C_MUTED_LIGHT,
     C_PURPLE, btn_stylesheet, ghost_btn_stylesheet, danger_btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox
@@ -47,7 +47,7 @@ class HistoryPage(QWidget):
         head.addWidget(self.seg_version)
         head.addStretch()
         self.btn_refresh = QPushButton("🔄 刷新")
-        self.btn_refresh.setFixedHeight(30)
+        self.btn_refresh.setFixedHeight(CTRL_H)
         self.btn_refresh.setFont(FONT_SMALL)
         self.btn_refresh.setCursor(Qt.PointingHandCursor)
         self.btn_refresh.setStyleSheet(ghost_btn_stylesheet())
@@ -118,7 +118,7 @@ class HistoryPage(QWidget):
 
         def op(text, style):
             b = QPushButton(text)
-            b.setFixedSize(62, 28)
+            b.setFixedSize(62, CTRL_H)
             b.setFont(QFont(FONT_FAMILY, 9))
             b.setCursor(Qt.PointingHandCursor)
             b.setStyleSheet(style)
