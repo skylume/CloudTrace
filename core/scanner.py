@@ -50,6 +50,7 @@ class BaseScanner:
                  port=443, max_workers=200, timeout=1.0, ping_times=3,
                  latency_threshold=230, custom_cidrs=None, custom_entries=None,
                  pre_filter_ports=None, remote_fetch=None,
+                 allowed_regions=None, blocked_regions=None, use_ip_cache=True,
                  sample_max=DEFAULT_SAMPLE_MAX, scan_mode="tcping"):
         self.max_workers = max_workers
         self.timeout = timeout
@@ -65,6 +66,12 @@ class BaseScanner:
         self.scan_mode = scan_mode if scan_mode in ("tcping", "httping") else "tcping"
         # 前置端口过滤（参考 cfnb：在 TCP 测试之前就把不可能用的端口剔掉）
         self.pre_filter_ports = self._normalize_ports(pre_filter_ports)
+        # 地区（数据中心）黑白名单前置过滤 + IP 归属地增量缓存（参考 cfnb 前置过滤 / IpInfoAsync）
+        from core.ipinfo import parse_region_list, get_ip_cache
+        self.allowed_regions = parse_region_list(allowed_regions)
+        self.blocked_regions = parse_region_list(blocked_regions)
+        self.use_ip_cache = bool(use_ip_cache)
+        self.ip_cache = get_ip_cache() if self.use_ip_cache else None
         # 远程数据源拉取器：() -> (entries, warnings)；由上层注入，在工作线程里执行
         self.remote_fetch = remote_fetch
         # 逐 IP 覆盖表（自定义/非标导入/远程数据源共用）：ip → port / ip_version / use_tls
@@ -73,11 +80,31 @@ class BaseScanner:
         self._entry_tls: Dict[str, bool] = {}
         self._entry_order: List[str] = []
         self.filtered_out = 0          # 被前置端口过滤掉的节点数
+        self.filtered_by_region = 0   # 被地区（数据中心）黑白名单前置过滤掉的节点数
         self.remote_loaded = 0         # 远程数据源并入的节点数
         # 漏斗计数：生成 → 延迟达标 → 有地区码
         self.funnel = {"generated": 0, "latency_ok": 0, "with_iata": 0}
         if custom_entries:
             self._load_entries(custom_entries)
+
+    def _region_allows(self, ip: str) -> bool:
+        """按缓存里的数据中心地区（colo）判定该 IP 是否放行（未知一律放行）。"""
+        if not self.ip_cache or not (self.allowed_regions or self.blocked_regions):
+            return True
+        from core.ipinfo import filter_ips_by_region
+        kept, _removed = filter_ips_by_region(
+            [ip], self.allowed_regions, self.blocked_regions, self.ip_cache)
+        return bool(kept)
+
+    # 向后兼容别名
+    _country_allows = _region_allows
+
+    def _save_ip_cache(self):
+        if self.ip_cache is not None:
+            try:
+                self.ip_cache.save()
+            except Exception:
+                logger.debug("IP 归属地缓存落盘失败", exc_info=True)
 
     @staticmethod
     def _normalize_ports(ports) -> List[int]:
@@ -99,6 +126,9 @@ class BaseScanner:
                 port = self.port
             if self.pre_filter_ports and port not in self.pre_filter_ports:
                 self.filtered_out += 1
+                continue
+            if not self._region_allows(ip):
+                self.filtered_by_region += 1
                 continue
             if ip in self._entry_ports:
                 continue
@@ -234,6 +264,9 @@ class BaseScanner:
                     detail = await get_node_detail_async(
                         session, ip, self.timeout, port=port,
                         use_tls=self.tls_for(ip, port))
+                    # 增量写入 IP 归属地缓存（loc / colo），供后续扫描复用与前置过滤
+                    if self.ip_cache is not None:
+                        self.ip_cache.update_from_detail(ip, detail)
                     colo = (detail.get("colo") or "").upper()
                     if colo and colo != "UNKNOWN":
                         iata_code = colo
@@ -264,6 +297,19 @@ class BaseScanner:
         return None
 
     async def batch_test_ips(self, ip_list: List[str]):
+        # 地区（数据中心）黑白名单前置过滤：只对缓存里已知 colo 的 IP 生效，
+        # 未知一律保留（首次扫描缓存为空 → 完全不过滤）。
+        if self.ip_cache is not None and (self.allowed_regions or self.blocked_regions):
+            from core.ipinfo import filter_ips_by_region
+            before_n = len(ip_list)
+            ip_list, removed = filter_ips_by_region(
+                ip_list, self.allowed_regions, self.blocked_regions, self.ip_cache)
+            self.filtered_by_region += removed
+            if removed and self.log_callback:
+                self.log_callback(
+                    f"地区前置过滤: 依据本地缓存剔除 {removed} 个节点"
+                    f"（{before_n} → {len(ip_list)}）")
+
         semaphore = asyncio.Semaphore(self.max_workers)
 
         async def test_with_semaphore(session, ip):
@@ -334,6 +380,16 @@ class BaseScanner:
                     self.log_callback(
                         f"端口前置过滤: 仅保留 {', '.join(str(p) for p in self.pre_filter_ports)}"
                         f"（已剔除 {self.filtered_out} 个节点）")
+                if self.allowed_regions or self.blocked_regions:
+                    bits = []
+                    if self.blocked_regions:
+                        bits.append(f"黑名单 {','.join(self.blocked_regions)}")
+                    if self.allowed_regions:
+                        bits.append(f"白名单 {','.join(self.allowed_regions)}")
+                    cached = len(self.ip_cache) if self.ip_cache is not None else 0
+                    self.log_callback(
+                        f"地区前置过滤: {' / '.join(bits)}（本地缓存 {cached} 条，"
+                        f"已剔除 {self.filtered_by_region} 个节点）")
             ip_list = self.generate_ips_from_cidrs()
             if not ip_list:
                 if self.log_callback:
@@ -363,6 +419,9 @@ class BaseScanner:
                 self.log_callback(f"{self.ip_label}扫描过程中出现错误: {str(e)}")
             logger.exception("扫描异常")
             return None
+        finally:
+            # 无论正常结束还是被中止，都把本次新探测到的归属地增量落盘
+            self._save_ip_cache()
 
     def stop(self):
         self.running = False
@@ -510,6 +569,7 @@ class SpeedTestTask:
                  verify_nodes=True, score_weights=None,
                  download_interval=3, label=None,
                  speed_workers=1, result_limit=0, per_region_topn=0,
+                 use_ip_cache=True,
                  max_consecutive_429=DEFAULT_MAX_CONSECUTIVE_429):
         self.results = results
         self.region_code = region_code.upper() if region_code else None
@@ -529,6 +589,9 @@ class SpeedTestTask:
         self.per_region_topn = max(0, int(per_region_topn or 0))
         self.max_consecutive_429 = max(1, int(max_consecutive_429 or DEFAULT_MAX_CONSECUTIVE_429))
         self.test_host, self.download_path, self.speed_url_tls = parse_speed_url(speed_url)
+        # IP 归属地增量缓存（测速阶段同样复用 / 回写，避免重复 trace 查询）
+        from core.ipinfo import get_ip_cache
+        self.ip_cache = get_ip_cache() if use_ip_cache else None
         self.aborted = False          # 用户中止
         self.rate_limited = False     # 触发限速熔断
         self._early_stop = False      # 已收够合格结果
@@ -606,6 +669,8 @@ class SpeedTestTask:
 
         # 一次 trace 探测同时拿到「可用性判定」与「节点明细」（数据中心/落地区域/协议栈）
         detail = probe_node_detail(ip, timeout=3, port=port, use_tls=use_tls)
+        if self.ip_cache is not None:
+            self.ip_cache.update_from_detail(ip, detail)
         verified = bool(detail.get("ok"))
         if self.verify_nodes and not verified:
             self._log(f"  可用性验证失败（非 Cloudflare 节点），跳过: {ip}")
@@ -624,8 +689,11 @@ class SpeedTestTask:
         if err and err != "用户中止":
             self._log(f"  测速失败 {ip}: {err}")
 
-        # 优先复用扫描阶段已解析的地区码，其次用本次 trace 得到的 colo，最后才回查
+        # 优先复用扫描阶段已解析的地区码，其次查本地缓存，最后才重新 trace
         colo = ip_info.get('iata_code') or detail.get("colo")
+        if not colo or str(colo).upper() in ("UNKNOWN", "NONE"):
+            if self.ip_cache is not None:
+                colo = self.ip_cache.colo(ip)
         if not colo or str(colo).upper() in ("UNKNOWN", "NONE"):
             colo = get_iata_code_from_ip(ip, timeout=3, port=port)
         colo = colo.upper() if colo else 'UNKNOWN'
@@ -795,6 +863,13 @@ class SpeedTestTask:
             self._log(f"测速过程中出现错误: {str(e)}")
             logger.exception("测速异常")
             return []
+        finally:
+            # 测速阶段新探测到的归属地同样增量落盘
+            if self.ip_cache is not None:
+                try:
+                    self.ip_cache.save()
+                except Exception:
+                    logger.debug("IP 归属地缓存落盘失败", exc_info=True)
 
     def stop(self):
         self.running = False

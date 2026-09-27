@@ -139,6 +139,14 @@ async def h_scan_start(request):
     pre_filter = parse_port_list(body.get("pre_filter_ports")
                                  if body.get("pre_filter_ports") is not None
                                  else settings.get("pre_filter_ports"))
+    allow_regions = body.get("allowed_regions")
+    if allow_regions is None:
+        allow_regions = settings.get("allowed_regions")
+    block_regions = body.get("blocked_regions")
+    if block_regions is None:
+        block_regions = settings.get("blocked_regions")
+    use_ip_cache = body.get("use_ip_cache")
+    use_ip_cache = settings.get("use_ip_cache", True) if use_ip_cache is None else bool(use_ip_cache)
 
     params = {
         "ip_version": ip_version,
@@ -152,6 +160,9 @@ async def h_scan_start(request):
         "ping_times": to_int(body.get("ping_times", 0), 0, 0, 20),
         "scan_mode": scan_mode,
         "pre_filter_ports": pre_filter,
+        "allowed_regions": allow_regions,
+        "blocked_regions": block_regions,
+        "use_ip_cache": use_ip_cache,
     }
 
     if source_mode != "仅官方":

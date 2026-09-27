@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = {
   tray_on_close: false, cidr_mode: "仅官方", scan_mode: "tcping", sample_max: 5000,
   workers: 200, latency_threshold: 230, ping_times: 0,
   pre_filter_ports: "", use_remote_sources: false,
+  allowed_regions: "", blocked_regions: "", use_ip_cache: true,
   remote_sources: [
     { name: "cm.edu.kg 聚合列表", url: "https://zip.cm.edu.kg/all.txt", enabled: true },
     { name: "countrymerge 聚合列表", url: "https://countrymerge.pages.dev/all.txt", enabled: true },
@@ -743,6 +744,9 @@ async function startScan() {
     ping_times: intVal("in-ping", 0),
     scan_mode: segVal(document.getElementById("seg-mode")),
     pre_filter_ports: document.getElementById("in-prefilter").value.trim(),
+    allowed_regions: document.getElementById("in-allow-regions").value.trim(),
+    blocked_regions: document.getElementById("in-block-regions").value.trim(),
+    use_ip_cache: segVal(document.getElementById("seg-ipcache")) === "on",
     use_remote_sources: remoteOn,
   };
   if (source !== "仅官方") {
@@ -1342,6 +1346,9 @@ function populateSettings(s) {
   document.getElementById("in-retry-delay").value = s.source_retry_delay != null ? s.source_retry_delay : 3;
   document.getElementById("in-source-timeout").value = s.source_timeout != null ? s.source_timeout : 8;
   document.getElementById("in-prefilter").value = s.pre_filter_ports || "";
+  document.getElementById("in-allow-regions").value = s.allowed_regions || "";
+  document.getElementById("in-block-regions").value = s.blocked_regions || "";
+  setSeg(document.getElementById("seg-ipcache"), s.use_ip_cache === false ? "off" : "on");
 
   // Token 永不回显：只显示「是否已设置」，留空 = 不修改
   const tokEl = document.getElementById("set-token");
@@ -1456,6 +1463,9 @@ function collectSettings() {
     source_retry_delay: floatVal("in-retry-delay", 3),
     source_timeout: floatVal("in-source-timeout", 8),
     pre_filter_ports: document.getElementById("in-prefilter").value.trim(),
+    allowed_regions: document.getElementById("in-allow-regions").value.trim(),
+    blocked_regions: document.getElementById("in-block-regions").value.trim(),
+    use_ip_cache: segVal(document.getElementById("seg-ipcache")) !== "off",
   };
   // Token 三态：清除 → ""；输入了新值 → 覆盖；留空且未点清除 → 不提交（后端保持原值）
   const tok = document.getElementById("set-token").value.trim();
@@ -1535,6 +1545,7 @@ document.getElementById("btn-set-health").addEventListener("click", healthCheck)
 async function boot() {
   bindSeg(document.getElementById("seg-version"));
   bindSeg(document.getElementById("seg-mode"));
+  bindSeg(document.getElementById("seg-ipcache"));
   bindSeg(document.getElementById("seg-hist-ver"), v => { histVersion = parseInt(v, 10); loadHistory(); });
   // 测速地址预设下拉必须在首次回填设置之前建好
   fillSpeedUrlSelect(document.getElementById("sel-speed-url"));

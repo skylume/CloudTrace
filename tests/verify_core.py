@@ -192,6 +192,16 @@ check("检出局域网无 Token", "Token" in joined, joined)
 w2 = validate_settings(dict(DEFAULT_SETTINGS))
 check("全默认配置无警告", w2 == [], w2)
 check("坏类型不抛异常", isinstance(validate_settings({"workers": None, "http_port": "x"}), list))
+w3 = validate_settings({"allowed_regions": "CN", "blocked_regions": "US", "use_ip_cache": False})
+check("检出「有国家过滤但关了缓存」",
+      any("归属地缓存" in x for x in w3), w3)
+w4 = validate_settings({"allowed_regions": "CN,US", "blocked_regions": "US", "use_ip_cache": True})
+check("检出黑白名单冲突国家",
+      any("黑名单优先" in x for x in w4), w4)
+_w5 = validate_settings({"allowed_regions": "CN,HK", "blocked_regions": "US",
+                         "use_ip_cache": True})
+check("仅设置国家过滤（缓存开启）不产生国家相关告警",
+      not any("国家" in x or "归属地" in x for x in _w5), _w5)
 
 print("\n== 10. 历史保存 / 读取 / 列表 / 删除 往返 ==")
 from settings import history as hist
@@ -484,6 +494,112 @@ off_task = create_speed_task(region_rows, {"count": 50, "current_port": 443,
                                            "speed_url": "auto", "min_speed": 0}, {})
 check("默认 per_region_topn = 0（不限）", off_task.per_region_topn == 0)
 check("不限时按延迟排序取前 N", len(off_task._pick_targets()) == 6)
+
+print("\n== 18. IP 归属地缓存 + 地区前置过滤（core/ipinfo.py） ==")
+from core.ipinfo import (
+    parse_region_list, format_region_list, IpInfoCache, filter_ips_by_region,
+)
+from core.constants import get_country_from_iata
+
+ipinfo_tmp = tempfile.mkdtemp(prefix="ct_ipinfo_")
+
+check("地区列表解析：2/3 位混用 + 大写化",
+      parse_region_list("hk, NRT; jp  us") == ["HK", "NRT", "JP", "US"],
+      parse_region_list("hk, NRT; jp  us"))
+check("地区列表解析：忽略非法项（1/4 位、数字、空项）",
+      parse_region_list("H, HK, 1234, , NRT, 12") == ["HK", "NRT"],
+      parse_region_list("H, HK, 1234, , NRT, 12"))
+check("地区列表解析：空值 -> []",
+      parse_region_list("") == [] and parse_region_list(None) == [])
+check("地区列表解析：去重", parse_region_list("hk,HK,hk") == ["HK"])
+check("地区列表格式化往返", format_region_list(["hk", "nrt"]) == "HK,NRT")
+
+check("IATA -> 国家映射（HKG->HK / NRT->JP / 未知->None）",
+      get_country_from_iata("HKG") == "HK" and get_country_from_iata("NRT") == "JP"
+      and get_country_from_iata("XXX") is None,
+      (get_country_from_iata("HKG"), get_country_from_iata("NRT"), get_country_from_iata("XXX")))
+
+_cache_tmp = os.path.join(ipinfo_tmp, "ipinfo_cache.json")
+cache = IpInfoCache(path=_cache_tmp, max_entries=100).load()
+check("空缓存初始为 0 条", len(cache) == 0)
+cache.update("1.2.3.4", loc="cn", colo="hkg")
+check("update 后大小写归一", cache.get("1.2.3.4") == ["CN", "HKG"], cache.get("1.2.3.4"))
+check("country / colo 读取", cache.country("1.2.3.4") == "CN" and cache.colo("1.2.3.4") == "HKG")
+check("未知 IP 返回 None", cache.country("9.9.9.9") is None and cache.colo("9.9.9.9") is None)
+cache.update_from_detail("5.6.7.8", {"loc": "US", "colo": "LAX"})
+check("update_from_detail 生效", cache.get("5.6.7.8") == ["US", "LAX"], cache.get("5.6.7.8"))
+cache.update_from_detail("6.6.6.6", {"loc": "XX", "colo": "UNKNOWN"})
+check("trace 无意义值(XX/UNKNOWN)被丢弃", cache.get("6.6.6.6") is None, cache.get("6.6.6.6"))
+cache.update("1.2.3.4", colo="NRT")
+check("部分更新不覆盖已有 loc", cache.get("1.2.3.4") == ["CN", "NRT"], cache.get("1.2.3.4"))
+check("save() 落盘成功", cache.save() is True and os.path.exists(_cache_tmp))
+cache2 = IpInfoCache(path=_cache_tmp).load()
+check("重新加载后内容一致", cache2.get("1.2.3.4") == ["CN", "NRT"], cache2.get("1.2.3.4"))
+check("重新加载后条数一致", len(cache2) == 2, len(cache2))
+
+# 兼容旧写法（紧凑字符串 / dict）
+import json as _json
+with open(_cache_tmp, "w", encoding="utf-8") as _f:
+    _json.dump({"ips": {"7.7.7.7": "DE|FRA", "8.8.8.8": {"loc": "SG", "colo": "SIN"}}}, _f)
+legacy = IpInfoCache(path=_cache_tmp).load()
+check("兼容 \"DE|FRA\" 紧凑写法", legacy.get("7.7.7.7") == ["DE", "FRA"], legacy.get("7.7.7.7"))
+check("兼容 {\"loc\":..,\"colo\":..} 写法", legacy.get("8.8.8.8") == ["SG", "SIN"], legacy.get("8.8.8.8"))
+
+# 地区前置过滤：依据 colo（数据中心），不是 loc（请求方国家）
+#   1.1.1.1 -> HKG(HK)   2.2.2.2 -> LAX(US)   3.3.3.3 -> NRT(JP)
+#   4.4.4.4 -> XYZ(不在映射表，国家未知)        9.9.9.9 -> 缓存中没有
+filter_cache = IpInfoCache(path=os.path.join(ipinfo_tmp, "f.json")).load()
+for ip, colo in (("1.1.1.1", "HKG"), ("2.2.2.2", "LAX"),
+                 ("3.3.3.3", "NRT"), ("4.4.4.4", "XYZ")):
+    filter_cache.update(ip, colo=colo)
+ips = ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4", "9.9.9.9"]
+
+kept, removed = filter_ips_by_region(ips, allow=None, block="LAX", cache=filter_cache)
+check("黑名单按数据中心码(LAX)剔除", sorted(kept) == ["1.1.1.1", "3.3.3.3", "4.4.4.4", "9.9.9.9"], kept)
+check("黑名单(数据中心码)剔除计数正确", removed == 1, removed)
+
+kept, removed = filter_ips_by_region(ips, allow=None, block="US", cache=filter_cache)
+check("黑名单按国家码(US)剔除 LAX", sorted(kept) == ["1.1.1.1", "3.3.3.3", "4.4.4.4", "9.9.9.9"], kept)
+
+kept, removed = filter_ips_by_region(ips, allow="HK,JP", block=None, cache=filter_cache)
+check("白名单国家码(HK,JP)：未知一律保留",
+      sorted(kept) == ["1.1.1.1", "3.3.3.3", "4.4.4.4", "9.9.9.9"], kept)
+check("白名单剔除计数正确", removed == 1, removed)
+
+kept, removed = filter_ips_by_region(ips, allow="HKG,NRT", block=None, cache=filter_cache)
+check("白名单数据中心码：明确不匹配的 XYZ 也被剔除",
+      sorted(kept) == ["1.1.1.1", "3.3.3.3", "9.9.9.9"], kept)
+
+kept, removed = filter_ips_by_region(ips, allow="", block="", cache=filter_cache)
+check("黑白名单都为空 -> 不过滤", kept == ips and removed == 0)
+kept, removed = filter_ips_by_region(ips, allow="HK", block="HK", cache=filter_cache)
+check("黑名单优先于白名单", "1.1.1.1" not in kept, kept)
+
+# 扫描器接线：地区黑名单在进入 TCP 测试前就生效
+from core.factory import create_scanner as _cs
+region_scanner = _cs({
+    "ip_version": 4, "source_mode": "仅自定义", "cidrs": [],
+    "entries": [{"ip": "1.1.1.1", "port": 443, "ip_version": 4},
+                {"ip": "2.2.2.2", "port": 443, "ip_version": 4}],
+    "port": 443, "workers": 10, "threshold": 230, "sample_max": 10,
+    "ping_times": 1, "scan_mode": "tcping",
+    "blocked_regions": "US", "use_ip_cache": True,
+})
+check("扫描器收到规范化黑名单", region_scanner.blocked_regions == ["US"],
+      region_scanner.blocked_regions)
+region_scanner.ip_cache = filter_cache   # 注入测试缓存，避免污染真实 ipinfo_cache.json
+region_scanner._entry_ports.clear()
+region_scanner._entry_versions.clear()
+region_scanner._entry_order.clear()
+region_scanner.filtered_by_region = 0
+region_scanner._load_entries([{"ip": "1.1.1.1", "port": 443, "ip_version": 4},
+                              {"ip": "2.2.2.2", "port": 443, "ip_version": 4}])
+check("扫描器按缓存地区剔除黑名单节点",
+      region_scanner.custom_entry_ips() == ["1.1.1.1"], region_scanner.custom_entry_ips())
+check("扫描器过滤计数正确", region_scanner.filtered_by_region == 1,
+      region_scanner.filtered_by_region)
+
+shutil.rmtree(ipinfo_tmp, ignore_errors=True)
 
 print("\n" + "=" * 56)
 print(f"通过 {len(PASS)} / 失败 {len(FAIL)}")

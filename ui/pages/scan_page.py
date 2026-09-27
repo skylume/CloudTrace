@@ -7,7 +7,7 @@ from typing import List, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QComboBox, QPlainTextEdit, QPushButton, QFileDialog, QScrollArea,
-    QGridLayout, QSizePolicy, QDoubleSpinBox,
+    QGridLayout, QSizePolicy, QDoubleSpinBox, QCheckBox,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
@@ -16,6 +16,7 @@ from core.constants import FONT_FAMILY, PORT_OPTIONS
 from core.importer import (
     parse_source_text, load_source_text_from_file, describe_source_stats,
 )
+from core.ipinfo import format_region_list
 from core.sources import (
     sanitize_sources, format_sources_text, fetch_sources, DEFAULT_SOURCES,
 )
@@ -169,10 +170,32 @@ class ScanPage(QWidget):
         self.input_prefilter.setFixedHeight(32)
         grid.addLayout(field("端口过滤", self.input_prefilter, "留空=不过滤；在测速前先剔除其它端口"), 2, 2)
 
+        # 地区前置过滤：依据本地缓存的 colo（数据中心）剔除节点（参考 cfnb 前置过滤）
+        self.input_allow_regions = QLineEdit(
+            str(self.app_settings.get("allowed_regions") or ""))
+        self.input_allow_regions.setPlaceholderText("如 HK,JP 或 HKG,NRT")
+        self.input_allow_regions.setFixedHeight(32)
+        grid.addLayout(field("地区白名单", self.input_allow_regions,
+                             "留空=不限；支持国家码(HK)或数据中心码(HKG)，只保留命中的节点"), 3, 0)
+
+        self.input_block_regions = QLineEdit(
+            str(self.app_settings.get("blocked_regions") or ""))
+        self.input_block_regions.setPlaceholderText("如 US,RU")
+        self.input_block_regions.setFixedHeight(32)
+        grid.addLayout(field("地区黑名单", self.input_block_regions,
+                             "留空=不拉黑；依据本地数据中心缓存前置剔除"), 3, 1)
+
+        self.chk_ip_cache = QCheckBox("复用归属地缓存")
+        self.chk_ip_cache.setChecked(bool(self.app_settings.get("use_ip_cache", True)))
+        self.chk_ip_cache.setToolTip(
+            "复用 /cdn-cgi/trace 返回的数据中心(colo)与出口国家(loc)做本地增量缓存：\n"
+            "同一 IP 只探测一次，后续扫描可直接复用，并作为地区过滤的依据")
+        grid.addLayout(field("归属地缓存", self.chk_ip_cache), 3, 2)
+
         mode_hint = QLabel("TCPing 测握手延迟；HTTPing 测 TTFB（阈值自动 ×1.3/×4.0 换算），两者数据不可比")
         mode_hint.setProperty("class", "hintText")
         mode_hint.setWordWrap(True)
-        grid.addWidget(mode_hint, 3, 0, 1, 3)
+        grid.addWidget(mode_hint, 4, 0, 1, 3)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 1)
@@ -372,6 +395,9 @@ class ScanPage(QWidget):
             (self.spin_retry_delay, "valueChanged"),
             (self.spin_timeout, "valueChanged"),
             (self.input_prefilter, "textChanged"),
+            (self.input_allow_regions, "textChanged"),
+            (self.input_block_regions, "textChanged"),
+            (self.chk_ip_cache, "toggled"),
         ):
             getattr(widget, signal_name).connect(self._schedule_persist)
 
@@ -486,6 +512,9 @@ class ScanPage(QWidget):
                 self.spin_ping.setValue(to_int(s.get("ping_times"), 0, 0, 10))
                 self.combo_source.setCurrentText(s.get("cidr_mode", "仅官方"))
                 self.input_prefilter.setText(str(s.get("pre_filter_ports") or ""))
+                self.input_allow_regions.setText(str(s.get("allowed_regions") or ""))
+                self.input_block_regions.setText(str(s.get("blocked_regions") or ""))
+                self.chk_ip_cache.setChecked(bool(s.get("use_ip_cache", True)))
                 self.chk_remote.setCurrentText("启用" if s.get("use_remote_sources") else "不启用")
                 self.text_sources.setPlainText(
                     format_sources_text(s.get("remote_sources") or DEFAULT_SOURCES))
@@ -512,6 +541,9 @@ class ScanPage(QWidget):
             "latency_threshold": self.spin_threshold.value(),
             "ping_times": self.spin_ping.value(),
             "pre_filter_ports": self.input_prefilter.text().strip(),
+            "allowed_regions": format_region_list(self.input_allow_regions.text()),
+            "blocked_regions": format_region_list(self.input_block_regions.text()),
+            "use_ip_cache": self.chk_ip_cache.isChecked(),
             "use_remote_sources": self.chk_remote.currentText() == "启用",
             "remote_sources": self._collect_sources(),
             "source_retries": self.spin_retries.value(),
@@ -593,6 +625,9 @@ class ScanPage(QWidget):
             "scan_mode": "tcping" if self.seg_mode.index() == 0 else "httping",
             "cidr_text": source_text,
             "pre_filter_ports": self.input_prefilter.text().strip(),
+            "allowed_regions": format_region_list(self.input_allow_regions.text()),
+            "blocked_regions": format_region_list(self.input_block_regions.text()),
+            "use_ip_cache": self.chk_ip_cache.isChecked(),
             "use_remote_sources": use_remote,
             "remote_sources": self._collect_sources(),
             "source_retries": self.spin_retries.value(),
@@ -608,6 +643,9 @@ class ScanPage(QWidget):
             "sample_max": self.spin_sample.value(),
             "scan_mode": "tcping" if self.seg_mode.index() == 0 else "httping",
             "pre_filter_ports": self.input_prefilter.text().strip(),
+            "allowed_regions": format_region_list(self.input_allow_regions.text()),
+            "blocked_regions": format_region_list(self.input_block_regions.text()),
+            "use_ip_cache": self.chk_ip_cache.isChecked(),
             "use_remote_sources": self.chk_remote.currentText() == "启用",
             "remote_sources": self._collect_sources(),
             "source_retries": self.spin_retries.value(),

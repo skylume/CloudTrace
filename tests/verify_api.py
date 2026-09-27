@@ -199,6 +199,31 @@ async def main():
     await asyncio.sleep(0.2)
     task_manager.stop(wait=True, timeout=10.0)
 
+    # 国家前置过滤 / 归属地缓存开关：应被接受并透传给扫描器
+    r = await client.post("/api/scan/start",
+                          json={"source_mode": "仅自定义", "ip_version": 4,
+                                "source_text": "127.0.0.1\n127.0.0.2", "port": 1,
+                                "workers": 2, "sample_max": 10, "threshold": 2000,
+                                "allowed_regions": "cn, hk", "blocked_regions": "us",
+                                "use_ip_cache": False},
+                          headers={"X-Token": "s3cr3t"})
+    check("国家过滤参数可启动扫描", r.status == 200, (r.status, await r.text()))
+    scanner = getattr(task_manager, "_scanner", None) or getattr(task_manager, "scanner", None)
+    if scanner is not None:
+        check("扫描器收到规范化白名单",
+              getattr(scanner, "allowed_regions", None) == ["CN", "HK"],
+              getattr(scanner, "allowed_regions", None))
+        check("扫描器收到规范化黑名单",
+              getattr(scanner, "blocked_regions", None) == ["US"],
+              getattr(scanner, "blocked_regions", None))
+        check("扫描器收到归属地缓存开关",
+              getattr(scanner, "use_ip_cache", None) is False,
+              getattr(scanner, "use_ip_cache", None))
+    await asyncio.sleep(0.2)
+    task_manager.stop(wait=True, timeout=10.0)
+    await asyncio.sleep(0.2)
+    task_manager.stop(wait=True, timeout=10.0)
+
     print("\n== 9c. /api/sources/preview（远程数据源拉取预览） ==")
     r = await client.post("/api/sources/preview", json={"remote_sources": []},
                           headers={"X-Token": "s3cr3t"})

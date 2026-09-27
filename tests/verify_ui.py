@@ -181,6 +181,29 @@ check("端口前置过滤写回 collect",
       sp.collect().get("pre_filter_ports") == "443,8443",
       sp.collect().get("pre_filter_ports"))
 
+# --- 国家（地区）前置过滤 + 归属地缓存开关 ---
+sp.input_allow_regions.setText("cn,hk")
+sp.input_block_regions.setText("US, RU")
+sp.chk_ip_cache.setChecked(False)
+col_country = sp.collect()
+check("国家白名单写回 collect（规范化）",
+      col_country.get("allowed_regions") == "CN,HK", col_country.get("allowed_regions"))
+check("国家黑名单写回 collect（规范化）",
+      col_country.get("blocked_regions") == "US,RU", col_country.get("blocked_regions"))
+check("归属地缓存开关写回 collect", col_country.get("use_ip_cache") is False,
+      col_country.get("use_ip_cache"))
+sp.persist_scan_params()
+check("国家过滤参数落盘到共享设置",
+      s.get("allowed_regions") == "CN,HK" and s.get("blocked_regions") == "US,RU"
+      and s.get("use_ip_cache") is False,
+      (s.get("allowed_regions"), s.get("blocked_regions"), s.get("use_ip_cache")))
+sp.reload_from_settings(full=True)
+check("reload_from_settings 回填国家过滤",
+      sp.input_allow_regions.text() == "CN,HK"
+      and sp.input_block_regions.text() == "US,RU"
+      and sp.chk_ip_cache.isChecked() is False,
+      (sp.input_allow_regions.text(), sp.input_block_regions.text(), sp.chk_ip_cache.isChecked()))
+
 sp.combo_source.setCurrentText("仅自定义")
 app.processEvents()
 check("切到「仅自定义」显示多形态输入框", sp.text_source.isVisible())

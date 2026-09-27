@@ -31,6 +31,8 @@ logs/
 # 运行时数据
 CloudTrace_history/
 ip_cache.json
+ipinfo_cache.json
+.run.lock
 version.txt
 settings.json
 custom_cidrs.txt

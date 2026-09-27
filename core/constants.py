@@ -172,6 +172,67 @@ AIRPORT_CODES = {
     "JNB": "约翰内斯堡", "CPT": "开普敦", "CAI": "开罗",
 }
 
+# 地区中文名 → ISO 3166-1 alpha-2 国家/地区代码。
+# 用途：Cloudflare 的 `colo` 是 IATA 机场码，本身不含国家信息；
+# 有了这张表就能把「数据中心」映射到「国家」，从而支持按国家过滤节点。
+REGION_NAME_TO_COUNTRY = {
+    # 中国（含港澳台）
+    "香港": "HK", "澳门": "MO", "台北": "TW", "高雄": "TW",
+    # 东亚
+    "东京": "JP", "大阪": "JP", "名古屋": "JP", "福冈": "JP", "札幌": "JP", "冲绳": "JP",
+    "首尔": "KR", "釜山": "KR",
+    # 东南亚
+    "新加坡": "SG", "曼谷": "TH", "普吉岛": "TH", "吉隆坡": "MY",
+    "马尼拉": "PH", "宿务": "PH", "河内": "VN", "胡志明市": "VN",
+    "雅加达": "ID", "巴厘岛": "ID",
+    # 南亚 / 中东
+    "德里": "IN", "孟买": "IN", "金奈": "IN",
+    "迪拜": "AE", "阿布扎比": "AE",
+    # 欧洲
+    "伦敦": "GB", "巴黎": "FR", "法兰克福": "DE", "柏林": "DE", "慕尼黑": "DE",
+    "阿姆斯特丹": "NL", "埃因霍温": "NL", "布鲁塞尔": "BE",
+    "马德里": "ES", "巴塞罗那": "ES", "米兰": "IT", "罗马": "IT",
+    "苏黎世": "CH", "日内瓦": "CH", "维也纳": "AT",
+    "斯德哥尔摩": "SE", "奥斯陆": "NO", "哥本哈根": "DK", "赫尔辛基": "FI",
+    "华沙": "PL", "克拉科夫": "PL", "布拉格": "CZ",
+    # 北美
+    "纽约": "US", "洛杉矶": "US", "旧金山": "US", "西雅图": "US", "芝加哥": "US",
+    "达拉斯": "US", "迈阿密": "US", "亚特兰大": "US", "波士顿": "US", "费城": "US",
+    "华盛顿": "US", "丹佛": "US", "休斯顿": "US", "拉斯维加斯": "US",
+    "菲尼克斯": "US", "波特兰": "US", "奥兰多": "US", "明尼阿波利斯": "US",
+    "圣何塞": "US",
+    "多伦多": "CA", "温哥华": "CA", "蒙特利尔": "CA",
+    # 大洋洲
+    "悉尼": "AU", "墨尔本": "AU", "布里斯班": "AU", "珀斯": "AU", "阿德莱德": "AU",
+    "奥克兰": "NZ", "惠灵顿": "NZ",
+    # 南美 / 非洲
+    "圣保罗": "BR", "里约热内卢": "BR", "布宜诺斯艾利斯": "AR",
+    "圣地亚哥": "CL", "利马": "PE", "波哥大": "CO",
+    "约翰内斯堡": "ZA", "开普敦": "ZA", "开罗": "EG",
+}
+
+
+def get_country_from_iata(iata_code: str) -> Optional[str]:
+    """把 Cloudflare 数据中心 IATA 码映射为 ISO 国家代码；未知返回 None。"""
+    if not iata_code:
+        return None
+    name = AIRPORT_CODES.get(str(iata_code).strip().upper())
+    if not name:
+        return None
+    return REGION_NAME_TO_COUNTRY.get(name)
+
+
+def get_country_name(code: str) -> Optional[str]:
+    """ISO 国家代码 → 中文地区名（取该国家第一个已知数据中心的名字）。"""
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    for name, cc in REGION_NAME_TO_COUNTRY.items():
+        if cc == code:
+            return name
+    return None
+
+
 PORT_OPTIONS = ["443", "2053", "2083", "2087", "2096", "8443"]
 
 

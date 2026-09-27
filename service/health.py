@@ -64,6 +64,19 @@ def validate_settings(settings: Dict) -> List[str]:
                     f"远程数据源最坏情况会等待约 {int(retries * timeout)}s（重试 {retries} × 超时 {timeout}s），"
                     "建议缩短超时或减少重试次数")
 
+    # 地区（数据中心）前置过滤依赖本地归属地缓存
+    from core.ipinfo import parse_region_list
+    allow_c = parse_region_list(settings.get("allowed_regions"))
+    block_c = parse_region_list(settings.get("blocked_regions"))
+    if (allow_c or block_c) and not settings.get("use_ip_cache", True):
+        warnings.append(
+            "已设置地区黑白名单但关闭了归属地缓存：缓存为空时无法判定数据中心，前置过滤不会生效，"
+            "建议开启「归属地缓存」")
+    overlap = sorted(set(allow_c) & set(block_c))
+    if overlap:
+        warnings.append(
+            f"地区白名单与黑名单同时包含 {', '.join(overlap)}：黑名单优先，这些地区会被全部剔除")
+
     topn = to_int(settings.get("per_region_topn"), 0)
     if topn > 20:
         warnings.append(f"分地区 TopN = {topn} 偏大，测速耗时会明显变长")

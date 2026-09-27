@@ -352,6 +352,7 @@ const SPEED = [
     workers: 150, latency_threshold: 180, ping_times: 2, speed_url: "auto", min_speed: 6.5,
     verify_nodes: false, download_interval: 2, speed_workers: 3, speed_result_limit: 40,
     per_region_topn: 5, pre_filter_ports: "443,8443", use_remote_sources: true,
+    allowed_regions: "CN,HK", blocked_regions: "US", use_ip_cache: false,
     remote_sources: [{ name: "S", url: "https://s.example/all.txt", enabled: true }],
     source_retries: 4, source_retry_delay: 2, source_timeout: 6,
     score_speed_weight: 4.0, score_latency_weight: 2.0, http_enabled: true,
@@ -366,6 +367,12 @@ const SPEED = [
   check("同步后分地区 TopN = 5", $("set-region-topn").value === "5", $("set-region-topn").value);
   check("同步后端口过滤 = 443,8443", $("in-prefilter").value === "443,8443",
     $("in-prefilter").value);
+  check("同步后国家白名单 = CN,HK", $("in-allow-regions").value === "CN,HK",
+    $("in-allow-regions").value);
+  check("同步后国家黑名单 = US", $("in-block-regions").value === "US",
+    $("in-block-regions").value);
+  check("同步后归属地缓存开关切到「关闭」",
+    $("seg-ipcache").querySelector("span.on").dataset.v === "off");
   check("同步后远程数据源开关打开", $("sw-remote").classList.contains("on"));
   check("同步后数据源列表刷新", /s\.example/.test($("txt-sources").value), $("txt-sources").value);
   check("同步后重试次数 = 4", $("in-retries").value === "4", $("in-retries").value);
@@ -404,6 +411,9 @@ const SPEED = [
   const sent = putCall ? JSON.parse(putCall.body) : {};
   check("提交含 per_region_topn", sent.per_region_topn === 5, JSON.stringify(sent.per_region_topn));
   check("提交含 pre_filter_ports", sent.pre_filter_ports === "443,8443", sent.pre_filter_ports);
+  check("提交含 allowed_regions", sent.allowed_regions === "CN,HK", sent.allowed_regions);
+  check("提交含 blocked_regions", sent.blocked_regions === "US", sent.blocked_regions);
+  check("提交含 use_ip_cache=false", sent.use_ip_cache === false, sent.use_ip_cache);
   check("提交含 use_remote_sources", sent.use_remote_sources === true, sent.use_remote_sources);
   check("提交含 remote_sources（数组）",
     Array.isArray(sent.remote_sources) && sent.remote_sources.length === 1,

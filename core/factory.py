@@ -42,6 +42,9 @@ def create_scanner(params: Dict) -> object:
         sample_max=to_int(params.get("sample_max", 5000), 5000, 1, 200000),
         scan_mode=params.get("scan_mode", "tcping"),
         pre_filter_ports=params.get("pre_filter_ports") or [],
+        allowed_regions=params.get("allowed_regions") or [],
+        blocked_regions=params.get("blocked_regions") or [],
+        use_ip_cache=params.get("use_ip_cache", True),
         remote_fetch=params.get("remote_fetch"),
     )
     ping_times = to_int(params.get("ping_times", 0), 0, 0, 20)
@@ -96,4 +99,5 @@ def create_speed_task(scan_results: List[Dict], opts: Dict, settings: Dict) -> S
         speed_workers=to_int(settings.get("speed_workers", 1), 1, 1, 16),
         result_limit=to_int(settings.get("speed_result_limit", 0), 0, 0, 10000),
         per_region_topn=to_int(settings.get("per_region_topn", 0), 0, 0, 100),
+        use_ip_cache=settings.get("use_ip_cache", True),
     )

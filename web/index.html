@@ -74,6 +74,18 @@
                 <input type="text" id="in-prefilter" placeholder="如 443,8443">
                 <div class="hint">在延迟测试前先剔除其它端口的节点，省下并发预算</div>
               </div>
+              <div class="field"><label>地区白名单（留空 = 不限）</label>
+                <input type="text" id="in-allow-regions" placeholder="如 HK,JP 或 HKG,NRT">
+                <div class="hint">只保留命中的节点，支持国家码(HK)或数据中心码(HKG)</div>
+              </div>
+              <div class="field"><label>地区黑名单（留空 = 不拉黑）</label>
+                <input type="text" id="in-block-regions" placeholder="如 US,RU">
+                <div class="hint">依据本地数据中心缓存前置剔除</div>
+              </div>
+              <div class="field"><label>归属地缓存</label>
+                <div class="seg" id="seg-ipcache"><span class="on" data-v="on">复用</span><span data-v="off">关闭</span></div>
+                <div class="hint">复用 /cdn-cgi/trace 的 colo/loc 做本地增量缓存，同一 IP 只探测一次</div>
+              </div>
               <div class="field span-3"><label>扫描方式</label>
                 <div class="seg" id="seg-mode"><span class="on" data-v="tcping">TCPing</span><span data-v="httping">HTTPing</span></div>
                 <div class="hint">TCPing 测握手延迟；HTTPing 测 TTFB（阈值 ×1.3/×4.0 自动换算），两者数据不可比</div>

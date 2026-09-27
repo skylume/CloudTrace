@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from core.constants import APP_DIR
 from core.importer import parse_port_list
+from core.ipinfo import format_region_list
 from core.sources import DEFAULT_SOURCES, sanitize_sources
 from core.utils import to_bool, to_float, to_int, atomic_write_json, atomic_write_text
 
@@ -35,6 +36,10 @@ DEFAULT_SETTINGS = {
     "latency_threshold": 230,
     "ping_times": 0,                # 0 = 自动（IPv4 三次 / IPv6 两次）
     "pre_filter_ports": "",         # 空 = 不按端口前置过滤，例如 "443,8443"
+    # 国家（地区）前置过滤 + IP 归属地增量缓存（参考 cfnb BLOCKED/ALLOWED_COUNTRIES）
+    "allowed_regions": "",        # 空 = 不限；非空时只保留这些出口国家的节点，如 "CN,HK"
+    "blocked_regions": "",        # 空 = 不拉黑；非空时剔除这些出口国家的节点，如 "US,RU"
+    "use_ip_cache": True,           # 复用 /cdn-cgi/trace 的 loc/colo 做增量缓存
     # 远程数据源（参考 cfnb ADDITIONAL_SOURCES）
     "use_remote_sources": False,
     "remote_sources": [dict(s) for s in DEFAULT_SOURCES],
@@ -87,6 +92,9 @@ def sanitize_settings(raw: Any) -> Dict[str, Any]:
     out["ping_times"] = to_int(out.get("ping_times"), 0, 0, 20)
     out["pre_filter_ports"] = ",".join(
         str(p) for p in parse_port_list(out.get("pre_filter_ports")))
+    out["allowed_regions"] = format_region_list(out.get("allowed_regions"))
+    out["blocked_regions"] = format_region_list(out.get("blocked_regions"))
+    out["use_ip_cache"] = to_bool(out.get("use_ip_cache"), True)
 
     # 远程数据源
     out["use_remote_sources"] = to_bool(out.get("use_remote_sources"), False)

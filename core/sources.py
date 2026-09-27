@@ -19,6 +19,7 @@ import json
 import time
 import logging
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -28,6 +29,8 @@ logger = logging.getLogger("CloudTrace")
 
 DEFAULT_PORT = 443
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
+# 并发拉取的最大线程数：源通常只有个位数，限制上限避免无谓开线程
+MAX_FETCH_WORKERS = 8
 
 # 内置默认源（地址与 cfnb 参考项目 config.json 所用一致，但该列表由 cm.edu.kg 独立维护，
 # 并非 cfnb 自己的聚合产物，故标签按其真实归属命名；默认「不启用」由上层开关控制）
@@ -252,7 +255,11 @@ def _fetch_one(url: str, timeout: float, retries: int, delay: float) -> Tuple[Op
 def fetch_sources(sources, default_port: int = DEFAULT_PORT,
                   timeout: float = 8.0, retries: int = 3,
                   delay: float = 3.0) -> Tuple[List[Dict], List[str]]:
-    """逐个拉取启用的数据源并解析，返回 (entries, report_lines)。
+    """并发拉取启用的数据源并解析，返回 (entries, report_lines)。
+
+    多个源**并行**抓取（每个源内部仍是串行重试），因此最坏耗时从
+    「源数 × 重试 × 超时」降到「单个源的最坏耗时」，默认两个内置源
+    由最坏约 48s 降到约 24s，且报告顺序与源列表顺序一致。
 
     任一源失败只记录报告，不影响其它源；全部失败则 entries 为空。
     """
@@ -263,9 +270,22 @@ def fetch_sources(sources, default_port: int = DEFAULT_PORT,
     if not enabled:
         return entries, ["未启用任何远程数据源"]
 
-    for src in enabled:
-        url = src["url"]
-        text, error = _fetch_one(url, timeout, retries, delay)
+    # 并发抓取（IO 密集，线程池即可）；结果按 enabled 下标回填，保证报告顺序稳定
+    fetched: List[Tuple[Optional[str], Optional[str]]] = [None] * len(enabled)
+    workers = min(len(enabled), MAX_FETCH_WORKERS)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_fetch_one, src["url"], timeout, retries, delay): idx
+            for idx, src in enumerate(enabled)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                fetched[idx] = future.result()
+            except Exception as e:  # 理论上 _fetch_one 不抛，兜底防止整批失败
+                fetched[idx] = (None, str(e))
+
+    for src, (text, error) in zip(enabled, fetched):
         if text is None:
             report.append(f"数据源 {src['name']} 拉取失败（重试 {retries} 次）: {error}")
             continue
