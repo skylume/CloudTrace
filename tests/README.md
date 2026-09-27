@@ -11,10 +11,10 @@
 python tests/run_all.py
 
 # 或单独运行
-python tests/verify_core.py     # 核心逻辑单测（97 项）
-python tests/verify_api.py      # aiohttp 接口 / SSE / 鉴权 / 导出（48 项）
-python tests/verify_ui.py       # PySide6 离屏冒烟（46 项）
-node  tests/verify_web.js       # Web 面板 DOM 冒烟（91 项，需 jsdom）
+python tests/verify_core.py     # 核心逻辑单测（201 项）
+python tests/verify_api.py      # aiohttp 接口 / SSE / 鉴权 / 导出（62 项）
+python tests/verify_ui.py       # PySide6 离屏冒烟（74 项）
+node  tests/verify_web.js       # Web 面板 DOM 冒烟（140 项，需 jsdom）
 ```
 
 - `verify_ui.py` 会自动设置 `QT_QPA_PLATFORM=offscreen`，无需图形界面；
@@ -36,6 +36,8 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（91 项，需 jsdom）
 - `validate_settings` 配置体检
 - 历史保存 / 读取 / 列表 / 删除往返
 - `SpeedTestTask` 中止语义：`run()` 返回 `None` 而非 `[]`（缺陷 3.2）
+- 扫描中止**保留部分结果**：`run_scan_async()` 中止时返回已扫到的结果并置 `aborted`
+- 测速**增量回调**：`partial_callback` 逐条推送（含 `score`、按评分降序、节流 + `force`）
 - `create_scanner` 参数兜底
 
 ### `verify_api.py` — 服务层
@@ -50,8 +52,9 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（91 项，需 jsdom）
 - 静态资源可达
 
 ### `verify_ui.py` — 桌面 UI（离屏）
-- `WorkerBridge` 9 条订阅全部登记、`detach()` 后归零（缺陷 3.1）
+- `WorkerBridge` 11 条订阅全部登记、`detach()` 后归零（缺陷 3.1）
 - `EV_SPEED_ABORT / EV_SCAN_DONE(None)` 正确映射为中止信号
+- `EV_SCAN_ABORT / EV_SPEED_ABORT` 携带部分结果、`EV_SPEED_PARTIAL` 增量下发
 - `RegionChips` 重建无重影（缺陷 3.6）
 - `FunnelBar` 步骤顺序正确、重建无错位（回归测试）
 - `CustomMessageBox` 自适应尺寸（长文本不被裁切）
@@ -60,6 +63,7 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（91 项，需 jsdom）
 - 各页面构建、设置回填、主窗口页面切换
 - 设置广播后桌面表单同步（缺陷 3.3）
 - 测速中止后状态为「已停止」而非「完成」（缺陷 3.2）
+- 中止后**保留部分结果**：扫描中止仍可勾选测速、测速中止仍显示已测结果
 - 结果表勾选全部 / 清空
 - 单实例锁
 
@@ -71,6 +75,7 @@ node  tests/verify_web.js       # Web 面板 DOM 冒烟（91 项，需 jsdom）
 - 地区芯片全选/清空、勾选全部/清空、延迟筛选联动
 - 导出弹窗（csv/json/txt）与**测速页无结果时的导出兜底**（缺陷 3.9）
 - `speed_done` / `speed_abort` 的中止语义（缺陷 3.2）
+- `speed_partial` 边测边出、`scan_abort` 保留部分结果并跳转结果页
 - SSE `settings` → 表单同步（缺陷 3.3）
 - 页面导航标题、401 鉴权流程
 

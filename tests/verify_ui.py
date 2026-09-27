@@ -37,7 +37,10 @@ from PySide6.QtCore import Qt
 
 from settings import reset_settings, get_settings
 from service.task_manager import task_manager
-from service.events import EV_SPEED_ABORT, EV_SCAN_DONE, EV_SPEED_DONE, EV_SETTINGS, EV_STATE
+from service.events import (
+    EV_SPEED_ABORT, EV_SCAN_DONE, EV_SCAN_ABORT, EV_SPEED_PARTIAL,
+    EV_SPEED_DONE, EV_SETTINGS, EV_STATE,
+)
 
 app = QApplication.instance() or QApplication(sys.argv)
 
@@ -54,11 +57,14 @@ reset_settings()
 print("\n== 1. WorkerBridge 订阅生命周期（缺陷 3.1） ==")
 from ui.bridge import WorkerBridge
 b = WorkerBridge()
-check("9 条订阅全部登记", len(b._unsubs) == 9, len(b._unsubs))
+check("11 条订阅全部登记", len(b._unsubs) == 11, len(b._unsubs))
 
 got = {}
 b.speed_aborted.connect(lambda: got.__setitem__("speed_abort", True))
 b.scan_aborted.connect(lambda: got.__setitem__("scan_abort", True))
+b.scan_aborted.connect(lambda r: got.__setitem__("scan_abort_results", r))
+b.speed_aborted.connect(lambda r: got.__setitem__("speed_abort_results", r))
+b.speed_partial.connect(lambda r: got.__setitem__("speed_partial", r))
 b.speed_completed.connect(lambda r: got.__setitem__("speed_done", r))
 b.scan_completed.connect(lambda r: got.__setitem__("scan_done", r))
 b.settings_changed.connect(lambda s: got.__setitem__("settings", s))
@@ -74,6 +80,25 @@ check("EV_SPEED_DONE -> speed_completed", got.get("speed_done") == [{"ip": "1.1.
 task_manager.bus.emit(EV_SCAN_DONE, None)
 app.processEvents()
 check("EV_SCAN_DONE(None) -> scan_aborted", got.get("scan_abort") is True)
+
+# 中止也要把已扫到 / 已测到的部分结果带过来（否则 UI 只能清空，无法继续测速）
+task_manager.bus.emit(EV_SCAN_ABORT, [{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}])
+app.processEvents()
+check("EV_SCAN_ABORT -> scan_aborted 携带部分结果",
+      got.get("scan_abort_results") == [{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}],
+      got.get("scan_abort_results"))
+
+task_manager.bus.emit(EV_SPEED_ABORT, [{"ip": "1.1.1.1", "download_speed": 12.3}])
+app.processEvents()
+check("EV_SPEED_ABORT -> speed_aborted 携带部分结果",
+      got.get("speed_abort_results") == [{"ip": "1.1.1.1", "download_speed": 12.3}],
+      got.get("speed_abort_results"))
+
+task_manager.bus.emit(EV_SPEED_PARTIAL, [{"ip": "1.1.1.1", "download_speed": 9.9}])
+app.processEvents()
+check("EV_SPEED_PARTIAL -> speed_partial（边测边出）",
+      got.get("speed_partial") == [{"ip": "1.1.1.1", "download_speed": 9.9}],
+      got.get("speed_partial"))
 
 task_manager.bus.emit(EV_SETTINGS, {"workers": 3})
 app.processEvents()
@@ -317,6 +342,38 @@ check("设置广播后 settings 页 speed_workers 同步为 4",
 win._speed_aborted()
 app.processEvents()
 check("中止后状态为「已停止」", win.lbl_pill.text() == "已停止", win.lbl_pill.text())
+
+# ---- 中止不再丢结果：扫描中止后必须能继续勾选测速 ----
+from ui.main_window import PAGE_RESULT
+
+win._on_speed_partial([{"ip": "1.1.1.1", "download_speed": 12.3, "latency": 20.0}])
+app.processEvents()
+check("测速增量回调即时写入测速页", len(win.speed_page.all_results) == 1,
+      len(win.speed_page.all_results))
+win._speed_aborted([{"ip": "1.1.1.1", "download_speed": 12.3, "latency": 20.0}])
+app.processEvents()
+check("中止测速后保留已测到的部分结果", len(win.speed_results) == 1, win.speed_results)
+
+abort_rows = [{"ip": "1.1.1.1", "latency": 12.0, "iata_code": "HKG",
+               "chinese_name": "中国香港", "port": 443, "scan_mode": "tcping",
+               "scan_time": "2026-01-12 21:04:11"},
+              {"ip": "1.1.1.2", "latency": 18.0, "iata_code": "NRT",
+               "chinese_name": "日本", "port": 443, "scan_mode": "tcping",
+               "scan_time": "2026-01-12 21:04:11"}]
+win._scan_aborted(abort_rows)
+app.processEvents()
+check("中止扫描后保留已扫到的部分结果", len(win.scan_results) == 2, win.scan_results)
+check("中止扫描后结果页有数据", len(win.result_page.all_results) == 2,
+      len(win.result_page.all_results))
+check("中止扫描后自动切到结果页", win.current_page == PAGE_RESULT, win.current_page)
+check("中止扫描后状态提示含「保留」", "保留" in win.lbl_pill.text(), win.lbl_pill.text())
+check("中止扫描后仍可勾选 IP 用于测速",
+      len(win.result_page._visible_results()) == 2, win.result_page._visible_results())
+win.result_page._set_all_checked(True)
+check("中止结果可被勾选（测速入口可用）",
+      len(win.result_page.checked_ip_infos()) == 2,
+      len(win.result_page.checked_ip_infos()))
+win.result_page._set_all_checked(False)
 
 # 表格 checkbox 全选/清空（result page）
 win.result_page.set_results(rows, scan_mode="tcping")

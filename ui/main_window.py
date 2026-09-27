@@ -106,6 +106,7 @@ class CloudflareScanUI(QWidget):
         self.bridge.scan_completed.connect(self._scan_finished)
         self.bridge.scan_aborted.connect(self._scan_aborted)
         self.bridge.speed_progress.connect(self._on_speed_progress)
+        self.bridge.speed_partial.connect(self._on_speed_partial)
         self.bridge.speed_completed.connect(self._speed_finished)
         self.bridge.speed_aborted.connect(self._speed_aborted)
         self.bridge.state_changed.connect(self._on_state_snapshot)
@@ -406,6 +407,13 @@ class CloudflareScanUI(QWidget):
         self.lbl_speed.setText(f"已完成 {current}/{total} · 有效 {success}")
         self._set_status(f"测速 {current}/{total}", "busy")
 
+    def _on_speed_partial(self, results: List[Dict]):
+        """测速过程中的增量结果 → 表格边测边刷新（不再等全部跑完）。"""
+        results = list(results or [])
+        self.speed_results = results
+        if hasattr(self, "speed_page"):
+            self.speed_page.set_results(results)
+
     # ================= 扫描 =================
     def _start_scan_from_page(self):
         if task_manager.busy:
@@ -489,11 +497,33 @@ class CloudflareScanUI(QWidget):
 
         self._set_busy(False)
 
-    def _scan_aborted(self):
+    def _scan_aborted(self, results: List[Dict] = None):
+        """用户中止扫描：**保留**已扫到的部分结果，供结果页查看/勾选后测速。
+
+        旧实现直接清空表格并把进度归零，导致「中止后无法选中 IP 去测速」。
+        部分结果不写入历史（避免半截数据污染归档），但一定留在内存里。
+        """
         self.scanning = False
-        self.progress_bar.setValue(0)
-        self._set_status("已停止", "idle")
+        results = list(results or [])
+        self.scan_results = results
         self._set_busy(False)
+
+        if results:
+            self.current_ip_version = self._history_ip_version(results, self.current_ip_version)
+            self.current_scan_mode = results[0].get("scan_mode", self.current_scan_mode)
+            self.current_scan_port = results[0].get("port", self.current_scan_port)
+            self.result_page.set_results(results, dict(self.current_funnel), self.current_scan_mode)
+            self.progress_bar.setValue(100)
+            self._set_status(f"已停止 · 保留 {len(results)} IP", "idle")
+            self.scan_page.log(
+                f"⏹ 扫描已中止：保留已完成的 {len(results)} 个可用 IP（未写入历史）")
+            for line in self._region_lines(results)[:10]:
+                self.scan_page.log(line)
+            self._set_page(PAGE_RESULT)
+        else:
+            self.progress_bar.setValue(0)
+            self._set_status("已停止", "idle")
+            self.scan_page.log("⏹ 扫描已中止（本次没有可用的结果）")
 
     def _region_lines(self, results: List[Dict]) -> List[str]:
         return [f"  {s['code']}  {s['name']}: {s['count']}" for s in region_stats(results)]
@@ -585,11 +615,22 @@ class CloudflareScanUI(QWidget):
         self._set_busy(False)
         self._set_page(PAGE_SPEED)
 
-    def _speed_aborted(self):
-        """用户中止测速：结果不写入历史，也不显示「完成」。"""
+    def _speed_aborted(self, results: List[Dict] = None):
+        """用户中止测速：结果不写入历史，但**保留**已测到的部分结果供查看。"""
         self.speed_testing = False
-        self.progress_bar.setValue(0)
-        self._set_status("已停止", "idle")
+        results = list(results or self.speed_results or [])
+        self.speed_results = results
+        if results:
+            self.speed_page.set_results(results)
+            best = results[0]
+            self._set_status(
+                f"已停止 · 保留 {len(results)} 条 · 最快 {best.get('download_speed', 0)} MB/s",
+                "idle")
+            self.speed_page.log(
+                f"⏹ 测速已停止：保留已完成的 {len(results)} 条结果（未写入历史）")
+        else:
+            self.progress_bar.setValue(0)
+            self._set_status("已停止", "idle")
         self._set_busy(False)
 
     # ================= 停止 =================

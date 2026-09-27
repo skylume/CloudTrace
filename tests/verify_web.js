@@ -314,18 +314,55 @@ const SPEED = [
   check("排名第 1 行有 rank1 样式",
     doc.querySelector("#speed-tbody tr td").classList.contains("rank1"));
 
-  console.log("\n== 10. 测速中止语义（缺陷 3.2） ==");
+  console.log("\n== 10. 测速中止语义 + 增量显示（缺陷 3.2 / 实时性） ==");
   window.__stateResponse.stage = "testing";
   window.__sse._emit("state", Object.assign({}, window.__stateResponse, { stage: "testing" }));
   await tick();
   check("测速中状态为 busy", txt("status-pill") === "测速中…", txt("status-pill"));
-  window.__stateResponse.stage = "idle";
-  window.__sse._emit("speed_abort", null);
+
+  // 增量结果：边测边出，不需要等 speed_done
+  window.__sse._emit("state", Object.assign({}, window.__stateResponse, {
+    scan_results: SCAN, speed_results: [], stage: "testing",
+  }));
   await tick();
-  check("中止后状态为「已停止」", txt("status-pill") === "已停止", txt("status-pill"));
+  check("测速开始前结果表为空", !!doc.querySelector("#speed-tbody td.empty"),
+    doc.querySelector("#speed-tbody").textContent.trim());
+  window.__sse._emit("speed_partial", [SPEED[0]]);
+  await tick();
+  check("speed_partial 即时渲染 1 行（不再等全部完成）",
+    doc.querySelectorAll("#speed-tbody tr").length === 1,
+    doc.querySelectorAll("#speed-tbody tr").length);
+  check("speed_partial 即时更新「最快下载」", txt("sstat-best") === "12.50MB/s", txt("sstat-best"));
+
+  window.__stateResponse.stage = "idle";
+  window.__sse._emit("speed_abort", [SPEED[0]]);
+  await tick();
+  check("中止后状态含「已停止」", /已停止/.test(txt("status-pill")), txt("status-pill"));
   check("中止不产生「完成」提示", !/完成/.test(txt("status-pill")), txt("status-pill"));
+  check("中止保留已测到的部分结果（不白测）",
+    doc.querySelectorAll("#speed-tbody tr").length === 1,
+    doc.querySelectorAll("#speed-tbody tr").length);
   const toasts = [...doc.querySelectorAll("#toasts .toast")].map((t) => t.textContent);
   check("中止弹出提示", toasts.some((t) => /已停止/.test(t)), toasts.join(" | "));
+
+  console.log("\n== 10b. 扫描中止保留部分结果（缺陷：中止即丢结果） ==");
+  window.__sse._emit("state", Object.assign({}, window.__stateResponse, {
+    scan_results: [], speed_results: [], stage: "scanning",
+  }));
+  await tick();
+  check("中止前扫描结果表为空", !!doc.querySelector("#scan-tbody td.empty"),
+    doc.querySelector("#scan-tbody").textContent.trim());
+  window.__sse._emit("scan_abort", SCAN.slice(0, 2));
+  await tick();
+  check("scan_abort 保留已扫到的部分结果",
+    doc.querySelectorAll("#scan-tbody tr").length === 2,
+    doc.querySelectorAll("#scan-tbody tr").length);
+  check("scan_abort 后自动跳到结果页", $("page-result").classList.contains("show"));
+  check("scan_abort 状态含「已停止」", /已停止/.test(txt("status-pill")), txt("status-pill"));
+  check("scan_abort 不写「完成」提示", !/完成/.test(txt("status-pill")), txt("status-pill"));
+  check("scan_abort 后仍可勾选 IP 用于测速",
+    doc.querySelectorAll("#scan-tbody input[type=checkbox][data-ip]").length === 2,
+    doc.querySelectorAll("#scan-tbody input[type=checkbox][data-ip]").length);
 
   console.log("\n== 11. 测速页无结果时导出兜底（缺陷 3.9） ==");
   window.__sse._emit("state", Object.assign({}, window.__stateResponse, {

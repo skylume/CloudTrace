@@ -601,6 +601,108 @@ check("扫描器过滤计数正确", region_scanner.filtered_by_region == 1,
 
 shutil.rmtree(ipinfo_tmp, ignore_errors=True)
 
+print("\n== 19. 扫描中止保留部分结果（缺陷：中止即丢结果） ==")
+import asyncio
+import time
+
+from core.scanner import BaseScanner
+
+
+class _AbortScanner(BaseScanner):
+    """把 batch_test_ips 换成「扫到第 2 个时用户点停止」，不发起任何网络请求。"""
+
+    ip_version = 4
+
+    def __init__(self, stop_after: int = 2):
+        super().__init__(use_ip_cache=False)
+        self.stop_after = stop_after
+        self.probed = []
+
+    @property
+    def ip_label(self) -> str:
+        return "IPv4"
+
+    def generate_ips_from_cidrs(self):
+        return ["1.1.1.%d" % i for i in range(1, 6)]
+
+    async def batch_test_ips(self, ip_list):
+        results = []
+        for i, ip in enumerate(ip_list):
+            if i == self.stop_after:
+                self.stop()          # 模拟用户点「停止」
+            if not self.running:
+                break
+            self.probed.append(ip)
+            results.append({"ip": ip, "latency": 10.0 + i, "iata_code": "HKG",
+                            "chinese_name": "中国香港", "success": True})
+        return results
+
+
+def _run_scan(scanner):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(scanner.run_scan_async())
+    finally:
+        loop.close()
+
+
+sc_abort = _AbortScanner(stop_after=2)
+check("BaseScanner 默认未中止", sc_abort.aborted is False, sc_abort.aborted)
+abort_res = _run_scan(sc_abort)
+check("中止时仍返回已扫到的部分结果（不再整批丢弃）",
+      [r["ip"] for r in (abort_res or [])] == ["1.1.1.1", "1.1.1.2"], abort_res)
+check("中止后 aborted 标记为真", sc_abort.aborted is True, sc_abort.aborted)
+check("中止后不再继续探测剩余 IP", sc_abort.probed == ["1.1.1.1", "1.1.1.2"], sc_abort.probed)
+
+sc_full = _AbortScanner(stop_after=99)
+full_res = _run_scan(sc_full)
+check("未中止时正常返回全部结果", len(full_res or []) == 5, len(full_res or []))
+check("未中止时 aborted 保持为假", sc_full.aborted is False, sc_full.aborted)
+
+print("\n== 20. 测速增量回调（边测边出，缺陷：只在全部完成后才显示） ==")
+partial_task = create_speed_task(
+    [{"ip": "1.1.1.1", "latency": 20.0}, {"ip": "1.1.1.2", "latency": 30.0},
+     {"ip": "1.1.1.3", "latency": 40.0}],
+    {"region_code": None, "selected_ips": None, "count": 10, "current_port": 443,
+     "speed_url": "auto", "min_speed": 0.0, "label": None}, {})
+check("SpeedTestTask 默认无增量回调", partial_task.partial_callback is None,
+      partial_task.partial_callback)
+
+pushed = []
+partial_task.partial_callback = lambda rs: pushed.append(rs)
+partial_task.partial_interval = 0          # 关掉节流，验证「每出一条推一条」
+partial_task.download_interval = 0
+
+_seq = [("ok", {"ip": "1.1.1.1", "latency": 20.0, "download_speed": 30.0,
+                "chinese_name": "中国香港", "iata_code": "HKG"}),
+        ("skip", "1.1.1.2"),
+        ("ok", {"ip": "1.1.1.3", "latency": 40.0, "download_speed": 10.0,
+                "chinese_name": "日本", "iata_code": "NRT"})]
+partial_task._test_one = lambda info: _seq.pop(0)
+partial_task.verify_nodes = False
+serial_res = partial_task._run_serial([{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}, {"ip": "1.1.1.3"}])
+check("增量回调逐条推送（跳过 skip）",
+      [[r["ip"] for r in p] for p in pushed] == [["1.1.1.1"], ["1.1.1.1", "1.1.1.3"]], pushed)
+check("增量结果已带 score（上层可直接渲染）",
+      bool(pushed) and all("score" in r for p in pushed for r in p), pushed)
+check("增量结果按评分降序（速度快的在前）",
+      [r["ip"] for r in pushed[-1]] == ["1.1.1.1", "1.1.1.3"], pushed[-1])
+check("增量回调传的是副本（避免跨线程改同一对象）",
+      pushed[-1][0] is not serial_res[0], (pushed[-1][0] is serial_res[0]))
+
+# 节流：默认间隔内不重复推送，force=True 必须推送
+throttled = []
+t2 = create_speed_task([{"ip": "1.1.1.1", "latency": 20.0}],
+                       {"region_code": None, "selected_ips": None, "count": 1,
+                        "current_port": 443, "speed_url": "auto", "min_speed": 0.0,
+                        "label": None}, {})
+t2.partial_callback = lambda rs: throttled.append(len(rs))
+t2._last_partial_emit = time.time()        # 刚推过 → 处于节流窗口内
+t2._emit_partial([{"ip": "a", "download_speed": 1.0, "latency": 1.0}])
+check("节流窗口内不重复推送", throttled == [], throttled)
+t2._emit_partial([{"ip": "a", "download_speed": 1.0, "latency": 1.0}], force=True)
+check("force=True 一定推送", throttled == [1], throttled)
+
 print("\n" + "=" * 56)
 print(f"通过 {len(PASS)} / 失败 {len(FAIL)}")
 if FAIL:

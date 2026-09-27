@@ -12,10 +12,12 @@ logger = logging.getLogger("CloudTrace")
 EV_LOG = "log"                    # payload: str
 EV_PROGRESS = "progress"          # payload: (completed, total, success, ips_per_second)
 EV_FUNNEL = "funnel"              # payload: dict
-EV_SCAN_DONE = "scan_done"        # payload: list | None (None=中止/出错)
+EV_SCAN_DONE = "scan_done"        # payload: list（正常完成，可能为空）
+EV_SCAN_ABORT = "scan_abort"      # payload: list | None（用户中止，携带已扫到的部分结果）
 EV_SPEED_PROGRESS = "speed_progress"  # payload: (current, total, success)
+EV_SPEED_PARTIAL = "speed_partial"    # payload: list（测速过程中的增量结果，边测边显示）
 EV_SPEED_DONE = "speed_done"      # payload: list（正常完成）
-EV_SPEED_ABORT = "speed_abort"    # payload: None（用户中止，结果不写入历史）
+EV_SPEED_ABORT = "speed_abort"    # payload: list（用户中止，携带已测到的部分结果；不写入历史）
 EV_STATE = "state"                # payload: dict (状态快照变化)
 EV_SETTINGS = "settings"          # payload: dict (设置变更，双 UI 需重新回填表单)
 

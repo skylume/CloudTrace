@@ -6,7 +6,8 @@ from PySide6.QtCore import QObject, Signal
 from service.task_manager import task_manager
 from service.events import (
     EV_LOG, EV_PROGRESS, EV_FUNNEL, EV_STATE,
-    EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_SPEED_ABORT, EV_SETTINGS,
+    EV_SCAN_DONE, EV_SCAN_ABORT, EV_SPEED_PROGRESS, EV_SPEED_PARTIAL,
+    EV_SPEED_DONE, EV_SPEED_ABORT, EV_SETTINGS,
 )
 
 
@@ -25,10 +26,11 @@ class WorkerBridge(QObject):
     status_message = Signal(str)
     funnel_updated = Signal(dict)
     scan_completed = Signal(list)
-    scan_aborted = Signal()
+    scan_aborted = Signal(list)     # 载荷：已扫到的部分结果（出错/无结果时为空列表）
     speed_progress = Signal(int, int, float)
+    speed_partial = Signal(list)    # 载荷：测速过程中的增量结果（边测边显示）
     speed_completed = Signal(list)
-    speed_aborted = Signal()
+    speed_aborted = Signal(list)    # 载荷：已测到的部分结果
     state_changed = Signal(dict)
     settings_changed = Signal(dict)
 
@@ -42,6 +44,8 @@ class WorkerBridge(QObject):
             bus.subscribe(EV_FUNNEL, self.funnel_updated.emit),
             bus.subscribe(EV_SPEED_PROGRESS, lambda p: self.speed_progress.emit(*p)),
             bus.subscribe(EV_SCAN_DONE, self._on_scan_done),
+            bus.subscribe(EV_SCAN_ABORT, self._on_scan_abort),
+            bus.subscribe(EV_SPEED_PARTIAL, lambda r: self.speed_partial.emit(list(r or []))),
             bus.subscribe(EV_SPEED_DONE, self.speed_completed.emit),
             bus.subscribe(EV_SPEED_ABORT, self._on_speed_abort),
             # EV_STATE / EV_SETTINGS 载荷为完整快照：供主窗口同步「另一侧 UI」写入的数据
@@ -63,7 +67,11 @@ class WorkerBridge(QObject):
         if results is not None:
             self.scan_completed.emit(results)
         else:
-            self.scan_aborted.emit()
+            self.scan_aborted.emit([])
 
-    def _on_speed_abort(self, _payload=None):
-        self.speed_aborted.emit()
+    def _on_scan_abort(self, results):
+        """用户中止扫描：把已扫到的部分结果一并交给主窗口展示。"""
+        self.scan_aborted.emit(list(results or []))
+
+    def _on_speed_abort(self, payload=None):
+        self.speed_aborted.emit(list(payload or []))

@@ -57,6 +57,7 @@ class BaseScanner:
         self.ping_times = ping_times
         self.latency_threshold = latency_threshold
         self.running = True
+        self.aborted = False          # 用户中止（中止时仍会带回已扫到的部分结果）
         self.log_callback = log_callback
         self.progress_callback = progress_callback
         self.funnel_callback = funnel_callback
@@ -403,9 +404,15 @@ class BaseScanner:
                 self.log_callback(f"开始延迟测试...")
             results = await self.batch_test_ips(ip_list)
             if not self.running:
+                # 用户中止：**保留**已扫到的部分结果（旧实现直接 return None，
+                # 把 batch_test_ips 已收集的可用 IP 整批丢弃，导致结果页为空、
+                # 中止后无法选中 IP 去测速）。中止标记交给上层区分语义。
+                self.aborted = True
                 if self.log_callback:
-                    self.log_callback(f"{self.ip_label}扫描被用户中止")
-                return None
+                    self.log_callback(
+                        f"{self.ip_label}扫描被用户中止，保留已完成的 "
+                        f"{len(results)} 个可用结果（未写入历史）")
+                return results
             if results:
                 with_iata = sum(1 for r in results if r.get('iata_code'))
                 if self.log_callback:
@@ -562,6 +569,10 @@ class SpeedTestTask:
 
     中止语义：用户点「停止」时 `run()` 返回 **None**（而非部分结果），
     上层据此发 EV_SPEED_ABORT，避免把半截结果当成「完成」写进历史。
+
+    实时语义：每测到一个合格结果就通过 `partial_callback` 增量推送当前
+    已测到的结果（节流 ~0.4s），上层据此「边测边显示」；中止时也会
+    force 推送一次，保证已经测到的结果不会丢。
     """
 
     def __init__(self, results, region_code=None, max_test_count=10, current_port=443,
@@ -598,10 +609,33 @@ class SpeedTestTask:
         # 回调由 TaskManager 注入
         self.log_callback: Optional[Callable[[str], None]] = None
         self.progress_callback: Optional[Callable[[int, int, int], None]] = None
+        # 增量结果回调：payload 为「当前已测到的全部结果」（含 score，按评分降序）
+        self.partial_callback: Optional[Callable[[List[Dict]], None]] = None
+        self.partial_interval = 0.4          # 节流间隔（秒），避免高频重排表格
+        self._last_partial_emit = 0.0
 
     def _log(self, msg: str):
         if self.log_callback:
             self.log_callback(msg)
+
+    def _emit_partial(self, speed_results: List[Dict], force: bool = False):
+        """把当前已测到的结果增量推给上层（边测边显示）。
+
+        - 节流：默认每 `partial_interval` 秒最多推一次；
+        - `force=True` 立即推送（用于中止/收尾，保证最后一条不丢）；
+        - 传入浅拷贝的 dict，避免工作线程与 UI 线程同时改同一个对象。
+        """
+        if not self.partial_callback or not speed_results:
+            return
+        now = time.time()
+        if not force and (now - self._last_partial_emit) < self.partial_interval:
+            return
+        self._last_partial_emit = now
+        try:
+            scored = apply_scores([dict(r) for r in speed_results], self.score_weights)
+            self.partial_callback(scored)
+        except Exception:
+            logger.debug("测速增量回调失败", exc_info=True)
 
     def _should_run(self) -> bool:
         return self.running and not self._early_stop
@@ -747,6 +781,8 @@ class SpeedTestTask:
             state["consecutive_429"] = 0
             speed_results.append(payload)
             self._log(f"  测速结果: {payload['download_speed']} MB/s, 地区: {payload['chinese_name']}")
+            # 边测边显示：每测到一个合格结果就增量推送（内部节流）
+            self._emit_partial(speed_results)
             if self.result_limit and len(speed_results) >= self.result_limit:
                 self._log(f"已达到合格结果上限 {self.result_limit}，提前结束测速")
                 self._early_stop = True
@@ -837,7 +873,12 @@ class SpeedTestTask:
             if not self.running:
                 self.aborted = True
             if self.aborted:
-                self._log("测速被用户中止，本次结果不写入历史")
+                # 中止：已测到的结果此前已通过 partial_callback 增量推送，
+                # 这里再 force 一次，确保最后一条也一定送达上层。
+                self._emit_partial(speed_results, force=True)
+                self._log(
+                    f"测速被用户中止，保留已完成的 {len(speed_results)} 条结果"
+                    "（本次结果不写入历史）")
                 return None
 
             if self.min_speed > 0:

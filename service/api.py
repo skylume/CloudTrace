@@ -25,7 +25,8 @@ from settings import (
 from service.task_manager import task_manager
 from service.events import (
     EV_LOG, EV_PROGRESS, EV_FUNNEL, EV_STATE,
-    EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_SPEED_ABORT, EV_SETTINGS,
+    EV_SCAN_DONE, EV_SCAN_ABORT, EV_SPEED_PROGRESS, EV_SPEED_PARTIAL,
+    EV_SPEED_DONE, EV_SPEED_ABORT, EV_SETTINGS,
 )
 from service.health import validate_settings
 
@@ -33,8 +34,8 @@ from service.health import validate_settings
 logger = logging.getLogger("CloudTrace")
 
 SSE_EVENTS = (EV_LOG, EV_PROGRESS, EV_FUNNEL, EV_STATE,
-              EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_SPEED_ABORT,
-              EV_SETTINGS)
+              EV_SCAN_DONE, EV_SCAN_ABORT, EV_SPEED_PROGRESS, EV_SPEED_PARTIAL,
+              EV_SPEED_DONE, EV_SPEED_ABORT, EV_SETTINGS)
 
 # 客户端只读、不可通过 PUT 覆盖的派生字段
 _READONLY_SETTING_KEYS = {"http_token_set"}

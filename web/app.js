@@ -504,6 +504,28 @@ function connectSSE() {
       toast("扫描已停止", "warn");
     }
   });
+  /* 用户中止扫描：携带已扫到的部分结果，必须保留下来才能继续勾选测速 */
+  es.addEventListener("scan_abort", e => {
+    const results = JSON.parse(e.data) || [];
+    state.stage = "idle";
+    scanResults = results;
+    checkedIps = new Set();
+    selectedChips = new Set();
+    lastDoneNote = results.length ? `已停止 · 保留 ${results.length} IP` : "已停止";
+    renderResultStats();
+    renderResult();
+    renderStatus();
+    if (results.length) setPage("result");
+    appendLog(`⏹ 扫描已中止：保留已完成的 ${results.length} 个可用 IP（未写入历史）`);
+    toast(results.length ? `扫描已停止，保留 ${results.length} 个 IP` : "扫描已停止", "warn");
+  });
+  /* 测速过程中的增量结果 → 边测边出，不再等全部跑完 */
+  es.addEventListener("speed_partial", e => {
+    const results = JSON.parse(e.data) || [];
+    speedResults = results;
+    renderSpeedStats();
+    renderSpeed();
+  });
   es.addEventListener("speed_done", e => {
     const results = JSON.parse(e.data);
     state.stage = "idle";
@@ -523,13 +545,21 @@ function connectSSE() {
     renderStatus();
     setPage("speed");
   });
-  /* 停止测速是「中止」而非「完成」：不能覆盖提示，也不能写历史 */
-  es.addEventListener("speed_abort", () => {
+  /* 停止测速是「中止」而非「完成」：不能覆盖提示，也不能写历史；
+     但已测到的部分结果要保留下来（payload 为结果数组）。 */
+  es.addEventListener("speed_abort", e => {
+    let results = speedResults || [];
+    if (e.data) {
+      try { results = JSON.parse(e.data) || results; } catch (err) { /* 兼容空载荷 */ }
+    }
     state.stage = "idle";
-    lastDoneNote = "已停止";
-    appendLog("⏹ 测速已停止（未写入历史）");
+    speedResults = results;
+    lastDoneNote = results.length ? `已停止 · 保留 ${results.length} 条` : "已停止";
+    renderSpeedStats();
+    renderSpeed();
     renderStatus();
-    toast("测速已停止", "warn");
+    appendLog(`⏹ 测速已停止：保留已完成的 ${results.length} 条结果（未写入历史）`);
+    toast(results.length ? `测速已停止，保留 ${results.length} 条结果` : "测速已停止", "warn");
   });
   /* 桌面端或另一端改了设置 → 面板同步回填 */
   es.addEventListener("settings", e => {

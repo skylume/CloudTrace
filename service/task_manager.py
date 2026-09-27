@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 from core.compat import get_event_loop_policy
 from service.events import (
     EventBus, EV_LOG, EV_PROGRESS, EV_FUNNEL,
-    EV_SCAN_DONE, EV_SPEED_PROGRESS, EV_SPEED_DONE, EV_SPEED_ABORT,
-    EV_STATE, EV_SETTINGS,
+    EV_SCAN_DONE, EV_SCAN_ABORT, EV_SPEED_PROGRESS, EV_SPEED_PARTIAL,
+    EV_SPEED_DONE, EV_SPEED_ABORT, EV_STATE, EV_SETTINGS,
 )
 
 
@@ -161,6 +161,7 @@ class TaskManager:
 
     def _run_scan(self, scanner, ip_version: int):
         results = None
+        aborted = False
         try:
             asyncio.set_event_loop_policy(get_event_loop_policy())
             loop = asyncio.new_event_loop()
@@ -169,12 +170,15 @@ class TaskManager:
                 results = loop.run_until_complete(scanner.run_scan_async())
             finally:
                 loop.close()
+            aborted = bool(getattr(scanner, "aborted", False))
         except Exception as e:
             self.last_error = str(e)
             self._log(f"{scanner.ip_label}扫描线程异常: {e}")
             logger.exception("扫描线程异常")
             results = None
 
+        # 中止时也保留已扫到的部分结果：结果页可查看、可勾选后去测速。
+        # （旧实现只在 results is not None 时落盘，且中止返回 None → 结果整批丢失）
         if results is not None:
             with self._lock:
                 self.scan_results = results
@@ -182,7 +186,10 @@ class TaskManager:
             self._scan_thread = None
         if self.stage == STAGE_SCANNING:
             self._set_stage(STAGE_IDLE)
-        self.bus.emit(EV_SCAN_DONE, results)
+        if aborted:
+            self.bus.emit(EV_SCAN_ABORT, results)
+        else:
+            self.bus.emit(EV_SCAN_DONE, results)
 
     # ---------------- 测速任务 ----------------
     def start_speed_test(self, speed_task) -> bool:
@@ -210,6 +217,7 @@ class TaskManager:
 
         speed_task.log_callback = self._log
         speed_task.progress_callback = self._on_speed_progress
+        speed_task.partial_callback = self._on_speed_partial
 
         self._emit_state()
         thread.start()
@@ -218,6 +226,12 @@ class TaskManager:
     def _on_speed_progress(self, current: int, total: int, speed: int = 0):
         self.last_speed_progress = (current, total, speed)
         self.bus.emit(EV_SPEED_PROGRESS, (current, total, speed))
+
+    def _on_speed_partial(self, results: List[Dict]):
+        """测速过程中的增量结果：边测边显示（已按评分降序）。"""
+        with self._lock:
+            self.speed_results = list(results or [])
+        self.bus.emit(EV_SPEED_PARTIAL, list(results or []))
 
     def _run_speed(self, speed_task):
         results = None
@@ -235,9 +249,10 @@ class TaskManager:
         if self.stage == STAGE_TESTING:
             self._set_stage(STAGE_IDLE)
         # 中止（None）与「正常完成但无结果」（[]）必须区分：
-        # 前者不能触发「完成」语义，否则会覆盖停止提示并写入半截历史。
+        # 前者不能触发「完成」语义，否则会覆盖停止提示并写入半截历史；
+        # 但中止时要把已测到的部分结果一并带上（边测边显示的结果不能白测）。
         if results is None:
-            self.bus.emit(EV_SPEED_ABORT, None)
+            self.bus.emit(EV_SPEED_ABORT, list(self.speed_results))
         else:
             self.bus.emit(EV_SPEED_DONE, results)
 
