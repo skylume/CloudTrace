@@ -141,11 +141,13 @@ func download(ctx context.Context, rawURL string, duration time.Duration, transp
 
 	// 标准库的传输层已经解好 chunked 编码，读到的是纯载荷；
 	// 这里不需要也不应该再手工处理分块头，否则会把块头字节算进速度。
-	return measure(ctx, resp.Body, duration)
+	return measure(ctx, resp.Body, duration, time.Now)
 }
 
 // measure 在时长窗口内按固定片数采样，返回平滑后的速率（MB/s）。
-func measure(ctx context.Context, body io.Reader, duration time.Duration) (float64, error) {
+//
+// now 由调用方注入，便于在测试里模拟时钟不推进的环境。
+func measure(ctx context.Context, body io.Reader, duration time.Duration, now func() time.Time) (float64, error) {
 	slice := duration / downloadSlices
 	if slice <= 0 {
 		slice = time.Millisecond
@@ -154,7 +156,7 @@ func measure(ctx context.Context, body io.Reader, duration time.Duration) (float
 	buffer := make([]byte, downloadBufferSize)
 	meter := newEWMA(downloadAlpha)
 
-	start := time.Now()
+	start := now()
 	deadline := start.Add(duration)
 	nextBoundary := start.Add(slice)
 
@@ -164,34 +166,39 @@ func measure(ctx context.Context, body io.Reader, duration time.Duration) (float
 	// settle 把「上次结算之后新读到的字节」按实际耗时折算成瞬时速率。
 	// 用实际耗时而不是固定的片长：收尾那一段往往不满一片，按片长折算
 	// 会系统性低估。
-	settle := func(now time.Time) {
+	//
+	// 实际耗时可能小到测不出来：虚拟机上时钟粒度能到毫秒级，一次几毫秒
+	// 的传输会整个落在同一个刻度里，差值为零。这时退回按片长折算——宁可
+	// 保守，也不能丢掉这一段字节。丢掉会让已经下到数据的目标得到 0 MB/s，
+	// 而 0 的含义是「没测过」，等于把快节点挤出结果。
+	settle := func(at time.Time) {
 		if total <= settled {
 			return
 		}
-		elapsed := now.Sub(settledAt).Seconds()
+		elapsed := at.Sub(settledAt).Seconds()
 		if elapsed <= 0 {
-			return
+			elapsed = slice.Seconds()
 		}
 		meter.add(float64(total-settled) / elapsed)
 		settled = total
-		settledAt = now
+		settledAt = at
 	}
 
 	for {
 		n, readErr := body.Read(buffer)
 		total += int64(n)
-		now := time.Now()
+		at := now()
 
-		if now.After(nextBoundary) {
-			settle(now)
-			nextBoundary = now.Add(slice)
+		if at.After(nextBoundary) {
+			settle(at)
+			nextBoundary = at.Add(slice)
 		}
 
 		if readErr != nil {
 			// 收尾：把最后一段结算进去，而不是把剩余时间按 0 计入——
 			// 后者会把结果严重拉低。一个字节都没读到就结束（数据已传完）
 			// 的情况不产生样本。
-			settle(now)
+			settle(at)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				if meter.count() > 0 {
 					break
@@ -203,7 +210,7 @@ func measure(ctx context.Context, body io.Reader, duration time.Duration) (float
 			}
 			break
 		}
-		if now.After(deadline) {
+		if at.After(deadline) {
 			break
 		}
 	}

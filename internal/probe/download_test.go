@@ -101,7 +101,7 @@ func TestMeasureStopsAtEOF(t *testing.T) {
 	reader := &pacedReader{remaining: 100 * 1024, chunk: 4096, delay: time.Millisecond}
 
 	start := time.Now()
-	speed, err := measure(context.Background(), reader, duration)
+	speed, err := measure(context.Background(), reader, duration, time.Now)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -116,7 +116,7 @@ func TestMeasureStopsAtEOF(t *testing.T) {
 }
 
 func TestMeasureEmptyBodyReturnsZero(t *testing.T) {
-	speed, err := measure(context.Background(), strings.NewReader(""), time.Second)
+	speed, err := measure(context.Background(), strings.NewReader(""), time.Second, time.Now)
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -126,7 +126,7 @@ func TestMeasureEmptyBodyReturnsZero(t *testing.T) {
 }
 
 func TestMeasureReturnsErrorOnImmediateFailure(t *testing.T) {
-	speed, err := measure(context.Background(), failingReader{err: errors.New("连接被重置")}, time.Second)
+	speed, err := measure(context.Background(), failingReader{err: errors.New("连接被重置")}, time.Second, time.Now)
 	if err == nil {
 		t.Fatal("一个字节都没读到就失败时应返回错误")
 	}
@@ -139,12 +139,107 @@ func TestMeasureReturnsContextErrorWhenCancelledEarly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	speed, err := measure(ctx, failingReader{err: errors.New("读失败")}, time.Second)
+	speed, err := measure(ctx, failingReader{err: errors.New("读失败")}, time.Second, time.Now)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v，期望 context.Canceled", err)
 	}
 	if speed != 0 {
 		t.Errorf("speed = %v，期望 0", speed)
+	}
+}
+
+// frozenClock 返回永远不走的时钟，模拟时钟粒度过粗（虚拟机上常见）
+// 导致一次短传输完全落在同一个刻度里的情形。
+func frozenClock() func() time.Time {
+	at := time.Now()
+	return func() time.Time { return at }
+}
+
+// steppingClock 每次取时返回当前值并把时钟往前推固定步长，用来在测试里
+// 精确制造「跨过切片边界」和「走到窗口末端」这类时间条件。
+func steppingClock(step time.Duration) func() time.Time {
+	at := time.Now()
+	return func() time.Time {
+		current := at
+		at = at.Add(step)
+		return current
+	}
+}
+
+func TestMeasureFrozenClockStillReportsPositiveSpeed(t *testing.T) {
+	// 数据全部读完但时钟一次都没走：不能因为「算不出耗时」就丢掉这段字节。
+	// 丢掉的后果是已经下到数据的目标得到 0 MB/s，而 0 表示「没测过」，
+	// 会被排除出结果。
+	const duration = 5 * time.Second
+	body := strings.NewReader(strings.Repeat("x", 512*1024))
+
+	speed, err := measure(context.Background(), body, duration, frozenClock())
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("时钟不走时 speed = %v，期望为正", speed)
+	}
+	// 退回按片长折算：512KiB / 50ms ≈ 10 MB/s。这里比对具体数值是为了
+	// 锁住折算口径——若误按整段窗口折算会得到 0.1 MB/s 量级。
+	slice := duration / downloadSlices
+	want := float64(512*1024) / slice.Seconds() / 1024 / 1024
+	if !closeTo(speed, want) {
+		t.Errorf("speed = %v，期望约 %v（按片长折算）", speed, want)
+	}
+}
+
+func TestMeasureClampsTinySlice(t *testing.T) {
+	// 时长短到切片为零时必须钳到 1ms：否则片长为零，折算会退化成无穷大。
+	speed, err := measure(context.Background(), strings.NewReader("y"), time.Nanosecond, frozenClock())
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
+	}
+}
+
+func TestMeasureSettlesAtSliceBoundaries(t *testing.T) {
+	// 每次取时都跨过一格边界，逐片结算要被真正走到。
+	const duration = time.Second
+	reader := &pacedReader{remaining: 4 * 1024, chunk: 1024}
+
+	speed, err := measure(context.Background(), reader, duration, steppingClock(11*time.Millisecond))
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
+	}
+}
+
+func TestMeasureStopsAtDeadline(t *testing.T) {
+	// 数据一直有、也一直没到 EOF，时钟走到窗口末端就必须停。
+	reader := &pacedReader{remaining: 1 << 20, chunk: 1024}
+
+	speed, err := measure(context.Background(), reader, time.Second, steppingClock(200*time.Millisecond))
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
+	}
+}
+
+func TestMeasureKeepsPartialResultWhenCancelled(t *testing.T) {
+	// 中途被取消时，已经读到的数据要结算出来并返回：半截结果好过零，
+	// 零会被上层当成「没测过」。
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	reader := &pacedReader{remaining: 4 * 1024, chunk: 1024}
+	speed, err := measure(ctx, reader, time.Second, steppingClock(11*time.Millisecond))
+	if err != nil {
+		t.Fatalf("已有样本时不应返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
 	}
 }
 
@@ -304,6 +399,51 @@ func TestDownloadStopsWhenContextCancelled(t *testing.T) {
 
 	if _, err := Download(ctx, "127.0.0.1", 1, "https://example.com/a", time.Second, false); err == nil {
 		t.Error("已取消的 context 上应返回错误")
+	}
+}
+
+func TestDownloadReturnsPromptlyWhenCancelledMidBody(t *testing.T) {
+	// 服务端发完头部就挂着不再发数据。若取消时不把响应体关掉，读会一直
+	// 阻塞到传输层超时，「点停止立刻生效」就落空了。
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1048576")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	port := server.Listener.Addr().(*net.TCPAddr).Port
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		// 窗口给到 10 秒：只有取消真的打断了读取，才会远早于此返回。
+		_, err := Download(ctx, "127.0.0.1", port, server.URL+"/__down", 10*time.Second, false)
+		done <- err
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	cancel()
+
+	select {
+	case <-done:
+		if elapsed := time.Since(start); elapsed > 5*time.Second {
+			t.Errorf("取消后耗时 %v，说明没有立刻返回", elapsed)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("取消 context 后 Download 没有返回")
 	}
 }
 

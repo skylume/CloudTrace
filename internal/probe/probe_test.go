@@ -163,8 +163,11 @@ func TestValidateTarget(t *testing.T) {
 func TestElapsedMS(t *testing.T) {
 	start := time.Now().Add(-1500 * time.Microsecond)
 	got := elapsedMS(start)
-	if got < 1.4 || got > 5 {
-		t.Errorf("elapsedMS = %v，期望落在 1.4..5 毫秒之间", got)
+	// 下界确认换算成毫秒而不是秒；上界只需要拦住量级错误（例如误按微秒
+	// 返回会得到 1500）。不收紧上界是因为时钟粒度可能有好几毫秒，两次
+	// 取时之间正好跨过一格的话，读数会多出一格。
+	if got < 1.4 || got > 100 {
+		t.Errorf("elapsedMS = %v，期望落在 1.4..100 毫秒之间", got)
 	}
 }
 
