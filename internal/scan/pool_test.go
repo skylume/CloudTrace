@@ -60,19 +60,6 @@ func candidateKeys(candidates []Candidate) []string {
 	return out
 }
 
-func TestIsHTTPSPort(t *testing.T) {
-	for _, port := range []int{443, 8443, 2053, 2083, 2087, 2096} {
-		if !IsHTTPSPort(port) {
-			t.Errorf("端口 %d 应判定为 HTTPS", port)
-		}
-	}
-	for _, port := range []int{0, 80, 8080, 22, 4443} {
-		if IsHTTPSPort(port) {
-			t.Errorf("端口 %d 不应判定为 HTTPS", port)
-		}
-	}
-}
-
 func TestMatchesIPVersion(t *testing.T) {
 	tests := []struct {
 		ip      string

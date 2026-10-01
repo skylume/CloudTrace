@@ -10,25 +10,9 @@ import (
 
 	"cloudtrace/assets"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/probe"
 	"cloudtrace/internal/source"
 )
-
-// httpsPorts 是「按端口推断是否走 TLS」的端口集合。
-//
-// 配置里的 use_tls 有 auto / true / false 三态，auto 走的就是这个集合：
-// Cloudflare 除 443 之外还提供几个备用 HTTPS 端口，只认 443 会让这些节点
-// 全部测不通，看起来像是节点坏了。
-var httpsPorts = map[int]bool{
-	443:  true,
-	8443: true,
-	2053: true,
-	2083: true,
-	2087: true,
-	2096: true,
-}
-
-// IsHTTPSPort 报告端口是否按 HTTPS 处理。
-func IsHTTPSPort(port int) bool { return httpsPorts[port] }
 
 // poolOptions 是候选池生成的输入。
 type poolOptions struct {
@@ -177,7 +161,7 @@ func makeCandidate(ip string, port int, opts poolOptions) Candidate {
 		IP:     ip,
 		Port:   port,
 		Host:   opts.Host,
-		UseTLS: IsHTTPSPort(port),
+		UseTLS: probe.IsHTTPSPort(port),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/probe"
 	"cloudtrace/internal/source"
+	"cloudtrace/internal/task"
 )
 
 // 扫描流程的常量。
@@ -231,10 +232,10 @@ func NewRunner(opts Options) (*Runner, error) {
 // 流水线顺序不可调换：前置过滤必须在任何 TCP 探测之前，延迟阈值过滤必须
 // 在探测之后，归属地解析必须在明细采集之后（它复用的就是采集到的 trace
 // 字段，零额外请求）。
-func (r *Runner) Run(rep Reporter) (int, error) {
+func (r *Runner) Run(rep task.Reporter) (int, error) {
 	ctx := rep.Context()
 	funnel := NewFunnel(func(f model.Funnel) { rep.SetFunnel(f) })
-	st := &stages{rep: rep}
+	st := task.NewStages(rep)
 	sink := &resultSink{rep: rep}
 
 	// ① 生成候选池。
@@ -292,7 +293,7 @@ func (r *Runner) Run(rep Reporter) (int, error) {
 	// ⑦ 汇总。
 	funnel.Set(StageRegionOK, countRegion(records))
 	funnel.Set(StageUsable, len(records))
-	st.finish()
+	st.Finish()
 
 	r.logger.Info("扫描结束",
 		"generated", len(pool.Candidates),

@@ -65,6 +65,9 @@ func (f *fakeReporter) Emit(topic string, payload any) {
 	f.events[topic] = append(f.events[topic], payload)
 }
 
+// SetPreset 是编排层接口的一部分，扫描流程用不到；留着只为满足接口。
+func (f *fakeReporter) SetPreset(string) {}
+
 func (f *fakeReporter) snapshot() (total, done int, funnel model.Funnel) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

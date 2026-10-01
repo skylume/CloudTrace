@@ -25,7 +25,7 @@ type verified struct {
 // 几千条记录塞进一个 WebSocket 帧会顶到帧上限，前端也要在一帧里做完全部
 // 渲染。
 type resultSink struct {
-	rep Reporter
+	rep task.Reporter
 
 	mu     sync.Mutex
 	buffer []model.IPRecord
@@ -63,7 +63,7 @@ func (s *resultSink) flush() {
 //
 // 出错（含中止）时把已经产出的记录一并返回：中止保留部分结果是硬要求，
 // 把计数丢成 0 会让界面显示「已中止，保留 0 条」。
-func (r *Runner) collect(ctx context.Context, rep Reporter, st *stages, sink *resultSink, items []probed) ([]model.IPRecord, error) {
+func (r *Runner) collect(ctx context.Context, rep task.Reporter, st *task.Stages, sink *resultSink, items []probed) ([]model.IPRecord, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
@@ -71,7 +71,7 @@ func (r *Runner) collect(ctx context.Context, rep Reporter, st *stages, sink *re
 		return collectWithoutTrace(items, sink), nil
 	}
 
-	st.begin(len(items))
+	st.Begin(len(items))
 	checked, err := task.RunBounded(ctx, items, r.params.Workers,
 		func(cctx context.Context, item probed) (verified, bool) {
 			out := r.verifyItem(cctx, item)
@@ -82,7 +82,7 @@ func (r *Runner) collect(ctx context.Context, rep Reporter, st *stages, sink *re
 			// 「够了」这回事，返回 true 会让它在第一项之后就不派发了。
 			return out, false
 		},
-		func(done, _ int) { st.advance(done) },
+		func(done, _ int) { st.Advance(done) },
 	)
 	return keptRecords(checked), err
 }

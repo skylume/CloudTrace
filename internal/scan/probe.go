@@ -24,9 +24,9 @@ type probed struct {
 // 两阶段模式下阶段一只测一次、只覆盖粗扫规模，阶段二只重测达标的那批。
 // 两阶段共用同一个 context：中止必须一次停掉全部，各用各的 context 会
 // 出现「点了停止，另一个阶段还在跑」。
-func (r *Runner) probeStages(ctx context.Context, rep Reporter, st *stages, funnel *Funnel, items []Candidate) ([]probed, error) {
+func (r *Runner) probeStages(ctx context.Context, rep task.Reporter, st *task.Stages, funnel *Funnel, items []Candidate) ([]probed, error) {
 	if !r.params.TwoPhase {
-		st.begin(len(items))
+		st.Begin(len(items))
 		got, err := r.probePhase(ctx, rep, st, items, r.params.PingTimes, func(n int) {
 			funnel.Set(StageLatencyOK, n)
 		})
@@ -38,7 +38,7 @@ func (r *Runner) probeStages(ctx context.Context, rep Reporter, st *stages, funn
 		return passing, nil
 	}
 
-	st.begin(len(items))
+	st.Begin(len(items))
 	coarse, err := r.probePhase(ctx, rep, st, items, 1, func(n int) {
 		funnel.Set(StageLatencyOK, n)
 	})
@@ -47,7 +47,7 @@ func (r *Runner) probeStages(ctx context.Context, rep Reporter, st *stages, funn
 	}
 	passing := r.keepPassing(coarse)
 	funnel.Set(StageLatencyOK, len(passing))
-	st.advance(len(items))
+	st.Advance(len(items))
 	if len(passing) == 0 {
 		// 粗扫一个都没达标，精扫只是把同样的失败再跑一遍。
 		r.logger.Info("粗扫无候选达标，跳过精扫", "probed", len(items))
@@ -58,7 +58,7 @@ func (r *Runner) probeStages(ctx context.Context, rep Reporter, st *stages, funn
 	for _, item := range passing {
 		targets = append(targets, item.cand)
 	}
-	st.begin(len(targets))
+	st.Begin(len(targets))
 	// 精扫不再更新「延迟达标」：那一级记录的是粗扫筛出来的规模，精扫只是
 	// 在其中做更准的测量，让它回退会让漏斗看起来在倒着走。
 	fine, err := r.probePhase(ctx, rep, st, targets, r.params.PingTimes, nil)
@@ -75,8 +75,8 @@ func (r *Runner) probeStages(ctx context.Context, rep Reporter, st *stages, funn
 // 不动。为 nil 表示这一阶段不需要更新漏斗。
 func (r *Runner) probePhase(
 	ctx context.Context,
-	rep Reporter,
-	st *stages,
+	rep task.Reporter,
+	st *task.Stages,
 	items []Candidate,
 	times int,
 	onPass func(int),
@@ -94,7 +94,7 @@ func (r *Runner) probePhase(
 			return item, false
 		},
 		func(done, _ int) {
-			st.advance(done)
+			st.Advance(done)
 			if onPass != nil {
 				onPass(int(pass.Load()))
 			}
