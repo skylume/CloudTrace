@@ -145,6 +145,51 @@ func httping(ctx context.Context, host string, useTLS bool, times int, transport
 	return result, nil
 }
 
+// FetchTrace 取回 ip:port 上 trace 端点的全部字段，用于节点明细采集。
+//
+// 与 HTTPing 的区别是它不关心耗时，与 VerifyCF 的区别是它不做判据判断。
+// 调用方在关闭明细采集时不应调用它——那正是「开关关掉了请求照发」的
+// 高发位置，判定开关必须在调用点之前。
+func FetchTrace(ctx context.Context, ip string, port int, host string, useTLS bool, timeout time.Duration) (map[string]string, error) {
+	if err := validateTarget(ip, port); err != nil {
+		return nil, err
+	}
+	if host == "" {
+		return nil, errors.New("测试域名不能为空")
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("超时 %v 必须为正", timeout)
+	}
+
+	transport := DirectTransport(ip, port, host, useTLS, timeout)
+	defer transport.CloseIdleConnections()
+	return fetchTrace(ctx, host, useTLS, transport)
+}
+
+// fetchTrace 是 FetchTrace 的实现体，传输层由调用方注入以便测试。
+func fetchTrace(ctx context.Context, host string, useTLS bool, transport http.RoundTripper) (map[string]string, error) {
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+
+	req, err := newTraceRequest(ctx, scheme+"://"+host+TracePath, host)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		return nil, fmt.Errorf("取 trace 失败：%w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTraceBody))
+	if err != nil {
+		return nil, fmt.Errorf("读 trace 响应失败：%w", err)
+	}
+	return ParseTrace(string(body))
+}
+
 // newTraceRequest 构造 trace 请求：URL 用测试域名，Host 头显式指定。
 func newTraceRequest(ctx context.Context, endpoint, host string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

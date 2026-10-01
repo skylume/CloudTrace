@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -296,6 +297,161 @@ func TestHTTPingStopsWhenContextCancelled(t *testing.T) {
 	}
 	if got.Sent != 0 {
 		t.Errorf("Sent = %d，期望 0：取消后不应再发起请求", got.Sent)
+	}
+}
+
+// TestFetchTraceAgainstLocalServer 走完整的导出路径：URL 用测试域名，
+// 连接被强制打到本地服务端，返回值应包含 trace 的全部字段。
+func TestFetchTraceAgainstLocalServer(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		hosts []string
+		uas   []string
+		paths []string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hosts = append(hosts, r.Host)
+		uas = append(uas, r.Header.Get("User-Agent"))
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		_, _ = w.Write([]byte("ip=1.1.1.1\ncolo=NRT\nloc=JP\nhttp=http/2\n"))
+	}))
+	defer server.Close()
+
+	port := server.Listener.Addr().(*net.TCPAddr).Port
+	trace, err := FetchTrace(context.Background(), "127.0.0.1", port, "edge.example.com", false, 2*time.Second)
+	if err != nil {
+		t.Fatalf("FetchTrace 返回错误：%v", err)
+	}
+	want := map[string]string{"ip": "1.1.1.1", "colo": "NRT", "loc": "JP", "http": "http/2"}
+	for key, value := range want {
+		if trace[key] != value {
+			t.Errorf("trace[%q] = %q，期望 %q", key, trace[key], value)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hosts) != 1 {
+		t.Fatalf("服务端收到 %d 次请求，期望 1", len(hosts))
+	}
+	if hosts[0] != "edge.example.com" {
+		t.Errorf("Host 头 = %q，期望 %q", hosts[0], "edge.example.com")
+	}
+	if uas[0] != ChromeUA {
+		t.Errorf("User-Agent = %q，期望 %q", uas[0], ChromeUA)
+	}
+	if paths[0] != TracePath {
+		t.Errorf("请求路径 = %q，期望 %q", paths[0], TracePath)
+	}
+}
+
+// TestFetchTraceOverTLS 覆盖 TLS 分支：用测试服务端自带的传输层，
+// 这样证书校验能真正走通而不必关掉它。
+func TestFetchTraceOverTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ip=2606:4700::1\ncolo=HKG\nloc=HK\n"))
+	}))
+	defer server.Close()
+
+	host := server.Listener.Addr().String()
+	trace, err := fetchTrace(context.Background(), host, true, server.Client().Transport)
+	if err != nil {
+		t.Fatalf("fetchTrace 返回错误：%v", err)
+	}
+	if got := ExtractColo(trace); got != "HKG" {
+		t.Errorf("colo = %q，期望 %q", got, "HKG")
+	}
+	if got := ExtractLoc(trace); got != "HK" {
+		t.Errorf("loc = %q，期望 %q", got, "HK")
+	}
+}
+
+// TestFetchTraceNonTraceBody 验证响应体不是 trace 格式时报错，
+// 而不是返回一张空表让调用方以为采集成功。
+func TestFetchTraceNonTraceBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<html><body>not a trace</body></html>"))
+	}))
+	defer server.Close()
+
+	host := server.Listener.Addr().String()
+	if _, err := fetchTrace(context.Background(), host, false, server.Client().Transport); err == nil {
+		t.Error("期望返回错误，实际为 nil")
+	}
+}
+
+// TestFetchTraceCapsBodySize 验证响应体被截断到上限：放在上限之后的字段
+// 不应出现在结果里，否则异常节点可以用超大响应把内存吃满。
+func TestFetchTraceCapsBodySize(t *testing.T) {
+	filler := strings.Repeat("pad=xxxxxxxxxx\n", maxTraceBody/14+64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("colo=HKG\n" + filler + "marker=afterlimit\n"))
+	}))
+	defer server.Close()
+
+	host := server.Listener.Addr().String()
+	trace, err := fetchTrace(context.Background(), host, false, server.Client().Transport)
+	if err != nil {
+		t.Fatalf("fetchTrace 返回错误：%v", err)
+	}
+	if got := ExtractColo(trace); got != "HKG" {
+		t.Errorf("colo = %q，期望 %q：上限之内的字段必须保留", got, "HKG")
+	}
+	if _, ok := trace["marker"]; ok {
+		t.Error("上限之外的字段不应被读到")
+	}
+}
+
+func TestFetchTraceInvalidParams(t *testing.T) {
+	tests := []struct {
+		name    string
+		ip      string
+		port    int
+		host    string
+		timeout time.Duration
+	}{
+		{name: "空 IP", ip: "", port: 443, host: "a.com", timeout: time.Second},
+		{name: "端口越界", ip: "1.1.1.1", port: 0, host: "a.com", timeout: time.Second},
+		{name: "空域名", ip: "1.1.1.1", port: 443, host: "", timeout: time.Second},
+		{name: "超时为负", ip: "1.1.1.1", port: 443, host: "a.com", timeout: -time.Second},
+		{name: "超时为零", ip: "1.1.1.1", port: 443, host: "a.com", timeout: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := FetchTrace(context.Background(), tt.ip, tt.port, tt.host, false, tt.timeout); err == nil {
+				t.Error("期望返回错误，实际为 nil")
+			}
+		})
+	}
+}
+
+// TestFetchTraceUnreachable 验证连不上目标时返回错误——与 HTTPing 不同，
+// 这里没有「全部失败」这种可接受的结果，调用方需要能区分。
+func TestFetchTraceUnreachable(t *testing.T) {
+	if _, err := FetchTrace(context.Background(), "127.0.0.1", freePort(t), "edge.example.com", false, 300*time.Millisecond); err == nil {
+		t.Error("期望返回错误，实际为 nil")
+	}
+}
+
+func TestFetchTraceStopsWhenContextCancelled(t *testing.T) {
+	var hits int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		_, _ = w.Write([]byte("colo=HKG\n"))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	host := server.Listener.Addr().String()
+	if _, err := fetchTrace(ctx, host, false, server.Client().Transport); err == nil {
+		t.Error("期望返回错误，实际为 nil")
+	}
+	if got := atomic.LoadInt32(&hits); got != 0 {
+		t.Errorf("服务端收到 %d 次请求，期望 0：取消后不应再发起请求", got)
 	}
 }
 
