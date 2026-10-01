@@ -9,6 +9,10 @@ dist/
 build/
 *.egg
 
+# 例外：内嵌进 Go 二进制的前端产物必须纳入版本控制
+!web/dist/
+!web/dist/**
+
 /docs/
 
 # PyInstaller
