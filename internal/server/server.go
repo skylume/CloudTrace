@@ -11,6 +11,7 @@ import (
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/speed"
 )
 
 // StateProvider 提供任务状态快照。
@@ -28,6 +29,10 @@ type server struct {
 	auth   *authStore
 	hub    *wsHub
 	static *staticHandler
+
+	// speedSource 解析测速源。它必须跨任务复用：出口 ISP 探测结果按十分钟
+	// 缓存，每次测速新建一个解析器等于每次都要重新探测。
+	speedSource *speed.SourceResolver
 }
 
 // New 构造唯一的前后端入口 handler（静态资源 + REST + WebSocket）。
@@ -48,13 +53,17 @@ func New(cfg *config.Store, svc *app.Services) (http.Handler, error) {
 	}
 
 	s := &server{
-		cfg:    cfg,
-		svc:    svc,
-		logger: svc.Logger,
-		auth:   newAuthStore(time.Duration(cfg.Get().Server.SessionTTLMin) * time.Minute),
-		hub:    newWSHub(svc.Logger),
-		static: static,
+		cfg:         cfg,
+		svc:         svc,
+		logger:      svc.Logger,
+		auth:        newAuthStore(time.Duration(cfg.Get().Server.SessionTTLMin) * time.Minute),
+		hub:         newWSHub(svc.Logger),
+		static:      static,
+		speedSource: speed.NewSourceResolver(nil, time.Now, speed.DefaultSourceTTL),
 	}
+	s.speedSource.SetLogger(func(format string, args ...any) {
+		svc.Logger.Info(fmt.Sprintf(format, args...))
+	})
 
 	// 任务状态与任务事件 → 广播给所有 WS 连接。
 	// 订阅的取消由服务关闭时的总线关闭统一完成，这里无需另行保存。

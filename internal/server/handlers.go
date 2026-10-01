@@ -9,27 +9,38 @@ import (
 	"cloudtrace/internal/event"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/scan"
+	"cloudtrace/internal/speed"
 	"cloudtrace/internal/task"
 )
 
-// 扫描相关的 WS 命令与事件名。
+// 任务相关的 WS 命令与事件名。
 //
 // 事件名与事件总线上的 topic 是同一套字符串，不做映射：多一层映射就多
 // 一处会改漏的地方。
 const (
-	cmdScanStart = "scan/start"
-	cmdScanStop  = "scan/stop"
+	cmdScanStart  = "scan/start"
+	cmdScanStop   = "scan/stop"
+	cmdSpeedStart = "speed/start"
+	cmdSpeedStop  = "speed/stop"
 
 	eventProgress  = "progress"
 	eventScanDone  = "scan/done"
 	eventScanAbort = "scan/abort"
 )
 
-// scanHandlers 返回扫描相关的命令表。
-func (s *server) scanHandlers() map[string]commandHandler {
+// phases 是需要向前端转发终止事件的阶段。
+//
+// 扫描与测速共用一个任务编排器，因此两者天然互斥：一个在跑时另一个会拿到
+// E_BUSY，不需要另设互斥逻辑。
+var phases = []string{model.PhaseScan, model.PhaseSpeed}
+
+// taskHandlers 返回任务相关的命令表。
+func (s *server) taskHandlers() map[string]commandHandler {
 	return map[string]commandHandler{
-		cmdScanStart: s.handleScanStart,
-		cmdScanStop:  s.handleScanStop,
+		cmdScanStart:  s.handleScanStart,
+		cmdScanStop:   s.handleScanStop,
+		cmdSpeedStart: s.handleSpeedStart,
+		cmdSpeedStop:  s.handleSpeedStop,
 	}
 }
 
@@ -43,15 +54,19 @@ type subscription struct {
 //
 // state 与 error 需要加工，其余原样转发。
 func (s *server) taskSubscriptions() []subscription {
-	phase := model.PhaseScan
-	return []subscription{
+	subs := []subscription{
 		{topic: app.TopicState, fn: s.onStateChanged},
 		{topic: task.TopicProgress, fn: s.forward(task.TopicProgress)},
 		{topic: scan.TopicResult, fn: s.forward(scan.TopicResult)},
+		{topic: speed.TopicPartial, fn: s.forward(speed.TopicPartial)},
 		{topic: task.TopicError, fn: s.onTaskError},
-		{topic: task.DoneTopic(phase), fn: s.forward(task.DoneTopic(phase))},
-		{topic: task.AbortTopic(phase), fn: s.forward(task.AbortTopic(phase))},
 	}
+	for _, phase := range phases {
+		for _, topic := range []string{task.DoneTopic(phase), task.AbortTopic(phase)} {
+			subs = append(subs, subscription{topic: topic, fn: s.forward(topic)})
+		}
+	}
+	return subs
 }
 
 // forward 把总线上的 topic 原样广播给所有连接。
@@ -69,7 +84,14 @@ func (s *server) onTaskError(payload any) {
 		s.logger.Warn("error 事件的载荷不是错误，已忽略")
 		return
 	}
-	s.hub.broadcast(eventError, errorPayload{Code: CodeUnknown, Msg: err.Error()})
+
+	// 限流熔断属于网络类问题：用户要看到的是「换个源或过会儿再试」，
+	// 而不是「未分类错误」。
+	code := CodeUnknown
+	if errors.Is(err, speed.ErrRateLimited) {
+		code = CodeNetwork
+	}
+	s.hub.broadcast(eventError, errorPayload{Code: code, Msg: err.Error()})
 }
 
 // handleScanStart 校验参数并启动扫描任务。
@@ -99,17 +121,52 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	err = s.svc.Tasks.Start(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
+	return s.startTask(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
 		count, runErr := runner.Run(rep)
 		return task.Outcome{Count: count}, runErr
 	})
-	if err != nil {
-		if errors.Is(err, task.ErrBusy) {
-			return fail(CodeBusy, err.Error())
+}
+
+// handleSpeedStart 校验参数并启动测速任务。
+func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
+	var params model.SpeedParams
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &params); err != nil {
+			return fail(CodeInvalidParam, "测速参数不是合法 JSON")
 		}
+	}
+	params = speed.NormalizeParams(params)
+	if err := speed.ValidateParams(params); err != nil {
 		return fail(CodeInvalidParam, err.Error())
 	}
-	return nil
+
+	runner, err := speed.NewRunner(speed.Options{
+		Params: params,
+		// 选源器挂在服务端而不是每次新建：出口 ISP 探测结果要跨任务复用。
+		Source: s.speedSource.Resolve,
+		Logger: s.logger,
+	})
+	if err != nil {
+		return fail(CodeInvalidParam, err.Error())
+	}
+
+	return s.startTask(model.PhaseSpeed, func(rep task.Reporter) (task.Outcome, error) {
+		count, runErr := runner.Run(rep)
+		return task.Outcome{Count: count}, runErr
+	})
+}
+
+// startTask 启动任务并把编排层的失败翻译成错误码。
+func (s *server) startTask(phase string, runFn task.RunFunc) error {
+	err := s.svc.Tasks.Start(phase, runFn)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, task.ErrBusy):
+		return fail(CodeBusy, err.Error())
+	default:
+		return fail(CodeInvalidParam, err.Error())
+	}
 }
 
 // handleScanStop 中止当前扫描。
@@ -117,6 +174,12 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 // 「没有任务在跑」不算错误：用户连点两次停止是常事，为此报错只会带来
 // 困惑，而且前端本来就得处理这种竞态。
 func (s *server) handleScanStop(_ *wsConn, _ json.RawMessage) error {
+	s.svc.Tasks.Abort()
+	return nil
+}
+
+// handleSpeedStop 中止当前测速，语义与停止扫描一致。
+func (s *server) handleSpeedStop(_ *wsConn, _ json.RawMessage) error {
 	s.svc.Tasks.Abort()
 	return nil
 }

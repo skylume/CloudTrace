@@ -329,7 +329,7 @@ func (s *server) commands() map[string]commandHandler {
 			return nil
 		},
 	}
-	for name, handler := range s.scanHandlers() {
+	for name, handler := range s.taskHandlers() {
 		handlers[name] = handler
 	}
 	return handlers
