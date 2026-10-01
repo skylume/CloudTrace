@@ -35,3 +35,40 @@ func (p ScanParams) UsesOfficial() bool {
 func (p ScanParams) UsesCustom() bool {
 	return p.SourceMode == "custom" || p.SourceMode == "both"
 }
+
+// 测速范围。
+const (
+	// SpeedScopeSingle 只测调用方勾选的记录。
+	SpeedScopeSingle = "single"
+	// SpeedScopeRegion 测某个地区的全部记录。
+	SpeedScopeRegion = "region"
+	// SpeedScopeAll 测全部记录，并按配置决定是否分地区取 TopN。
+	SpeedScopeAll = "all"
+)
+
+// SpeedParams 是一次测速的完整参数快照。
+//
+// 待测记录由调用方挑好后随参数一起传进来，服务端不保存「上一次扫描的结果
+// 集」：那会让测速依赖隐式的会话状态，重连、切页、重启之后行为都不一样。
+type SpeedParams struct {
+	// Scope 是测速范围，取值见 SpeedScope* 常量。它只影响 TopN 是否生效。
+	Scope string `json:"scope"`
+	// Targets 是本次要测的记录，已由调用方按范围挑好。
+	Targets []IPRecord `json:"targets"`
+
+	URLMode           string  `json:"url_mode"`            // auto | official | mobile_friendly | mobile_only | custom
+	CustomURL         string  `json:"custom_url"`          // URLMode = custom 时的测速地址
+	UseTLS            string  `json:"use_tls"`             // auto | true | false
+	Concurrency       int     `json:"concurrency"`         // 测速并发
+	TargetQualified   int     `json:"target_qualified"`    // 收够多少个合格结果就提前收敛
+	IntervalMS        int     `json:"interval_ms"`         // 相邻两次测速之间的间隔
+	MinSpeed          float64 `json:"min_speed"`           // 合格线（MB/s）
+	WeightSpeed       float64 `json:"weight_speed"`        // 评分权重：速度
+	WeightLatency     float64 `json:"weight_latency"`      // 评分权重：延迟
+	WeightJitter      float64 `json:"weight_jitter"`       // 评分权重：抖动
+	PerRegionTopN     int     `json:"per_region_topn"`     // 完全测速时每个地区取前 N 个（0 = 不限）
+	DownloadDurationS int     `json:"download_duration_s"` // 单个目标的下载时长
+	Breaker429        int     `json:"breaker_429"`         // 连续多少次限流即熔断
+	UsabilityCheck    bool    `json:"usability_check"`     // 测速前是否先做可用性校验
+	TimeoutMS         int     `json:"timeout_ms"`          // 可用性校验的单次超时
+}
