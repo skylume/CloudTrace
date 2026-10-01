@@ -1,0 +1,114 @@
+name: CI
+
+# 每次推送与 PR 都跑，作为合并前的门禁。
+# 发布走 release.yml，本文件不产出分发包。
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 Win7 线锁定的工具链保持一致，避免两套 Go 行为差异。
+  GO_VERSION: '1.27.x'
+
+jobs:
+  check:
+    name: 格式 / 静态检查 / 构建 / 测试
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # 竞态检测依赖 cgo，cgo 依赖 C 编译器；runner 上缺失时补装。
+      - name: 确保 C 工具链可用
+        shell: pwsh
+        run: |
+          if (Get-Command gcc -ErrorAction SilentlyContinue) {
+            Write-Host "已找到 gcc：$((gcc --version | Select-Object -First 1))"
+          }
+          else {
+            Write-Host '未找到 gcc，安装 MinGW'
+            choco install mingw -y --no-progress
+            Add-Content -Path $env:GITHUB_PATH -Value 'C:\ProgramData\mingw64\mingw64\bin'
+          }
+
+      # 前端产物经 go:embed 进二进制；已入库，但引入构建链后需重新生成。
+      - name: 构建前端（若已引入构建链）
+        shell: pwsh
+        run: |
+          if (Test-Path web/package.json) {
+            Push-Location web
+            npm ci
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            Pop-Location
+          }
+          else {
+            Write-Host 'web/package.json 不存在，使用已入库的 web/dist 产物'
+          }
+          if (-not (Test-Path web/dist/index.html)) {
+            Write-Error 'web/dist/index.html 缺失，go:embed 会编译失败'
+            exit 1
+          }
+
+      - name: 格式检查
+        shell: pwsh
+        run: |
+          $out = gofmt -l ./cmd ./internal ./web
+          if ($out) {
+            Write-Host '以下文件未格式化：'
+            Write-Host $out
+            exit 1
+          }
+          Write-Host 'gofmt 通过'
+
+      - name: 静态检查
+        run: go vet ./...
+
+      - name: 构建（两个构建标签都要能编过）
+        shell: pwsh
+        run: |
+          go build -tags panel ./...
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          go build -tags desktop ./...
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 单元测试 + 竞态检测 + 覆盖率
+        shell: pwsh
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          go test ./... -race -count=1 -timeout 600s -covermode=atomic -coverprofile=coverage.out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # 核心包低于阈值直接失败；里程碑未到达的包会被自动跳过。
+      - name: 覆盖率门禁
+        shell: pwsh
+        run: |
+          ./scripts/check-coverage.ps1 `
+            -CoverProfile coverage.out `
+            -Threshold 70 `
+            -Package cloudtrace/internal/probe, cloudtrace/internal/source, cloudtrace/internal/scan, cloudtrace/internal/speed, cloudtrace/internal/history, cloudtrace/internal/score, cloudtrace/internal/geo
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+          if-no-files-found: ignore
+          retention-days: 7

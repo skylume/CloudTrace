@@ -1,0 +1,324 @@
+name: Release
+
+# 推一个 v* 标签即发版；也可以手动触发做一次「只出产物、不建 Release」的演练。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.0）。留空则用 tag 名去掉前缀 v'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.27.x'
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 解析版本号，并探测哪些发行版入口已经就绪。
+  # 桌面版入口尚未实现时，相关 job 会被跳过而不是让整条流水线变红。
+  # ---------------------------------------------------------------------
+  prepare:
+    name: 准备
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      desktop: ${{ steps.meta.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本号与可用入口
+        id: meta
+        shell: pwsh
+        run: |
+          $ver = '${{ inputs.version }}'.Trim()
+          if ([string]::IsNullOrWhiteSpace($ver)) {
+            $ver = '${{ github.ref_name }}' -replace '^v', ''
+          }
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = 'dev' }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$ver"
+
+          $desktop = Test-Path cmd/desktop
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "desktop=$($desktop.ToString().ToLowerInvariant())"
+
+          Write-Host "版本号：$ver"
+          if (-not $desktop) {
+            Write-Warning 'cmd/desktop 尚未实现：本次将跳过两个桌面版产物。'
+          }
+
+  # ---------------------------------------------------------------------
+  # 前端只构建一次，产物通过 artifact 共享给后面 4 个构建 job。
+  # ---------------------------------------------------------------------
+  build-web:
+    name: 构建前端（一次）
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建前端产物
+        shell: pwsh
+        run: |
+          if (Test-Path web/package.json) {
+            Push-Location web
+            npm ci
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            Pop-Location
+          }
+          else {
+            Write-Host 'web/package.json 不存在，沿用已入库的 web/dist 产物'
+          }
+          if (-not (Test-Path web/dist/index.html)) {
+            Write-Error 'web/dist/index.html 缺失，go:embed 会编译失败'
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # 产物 1：面板版（官方 Go）
+  # ---------------------------------------------------------------------
+  panel-modern:
+    name: 产物 1 · 面板版 Win10+
+    needs: [prepare, build-web]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: 构建并打包
+        shell: pwsh
+        run: |
+          ./scripts/release.ps1 -Only panel-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-panel-modern
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # 产物 2：桌面版（官方 Go + wails）
+  # ---------------------------------------------------------------------
+  desktop-modern:
+    name: 产物 2 · 桌面版 Win10+
+    needs: [prepare, build-web]
+    if: needs.prepare.outputs.desktop == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: 安装 wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: 构建并打包
+        shell: pwsh
+        run: |
+          ./scripts/release.ps1 -Only desktop-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-desktop-modern
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # 产物 3：面板版（Win7 工具链）
+  # ---------------------------------------------------------------------
+  panel-win7:
+    name: 产物 3 · 面板版 Win7
+    needs: [prepare, build-web]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      # 与主构建的官方 Go 完全隔离成两个 GOROOT，互不污染。
+      - name: 准备 Win7 工具链
+        shell: pwsh
+        run: |
+          ./scripts/fetch-toolchain.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 构建并打包
+        shell: pwsh
+        run: |
+          ./scripts/release.ps1 -Only panel-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-panel-win7
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # 产物 4 + 5：桌面版（Win7）lite 与 full
+  # 同一个 job 内先打 lite，再复制一份加 webview2/ 打成 full。
+  # ---------------------------------------------------------------------
+  desktop-win7:
+    name: 产物 4+5 · 桌面版 Win7（lite / full）
+    needs: [prepare, build-web]
+    if: needs.prepare.outputs.desktop == 'true'
+    runs-on: windows-latest
+    env:
+      # 固定版本 WebView2 的下载地址；未配置时 full 变体会被跳过。
+      WEBVIEW2_CAB_URL: ${{ vars.WEBVIEW2_CAB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: 安装 wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: 准备 Win7 工具链
+        shell: pwsh
+        run: |
+          ./scripts/fetch-toolchain.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 构建并打包
+        shell: pwsh
+        run: |
+          ./scripts/release.ps1 -Only desktop-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-desktop-win7
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # 汇总：把全部产物挂到同一个 Release。
+  # ---------------------------------------------------------------------
+  release:
+    name: 汇总发布
+    needs: [prepare, build-web, panel-modern, desktop-modern, panel-win7, desktop-win7]
+    if: always() && startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 检查上游 job 是否全部成功
+        shell: pwsh
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          $needs = $RESULTS | ConvertFrom-Json
+          $bad = @()
+          foreach ($name in $needs.PSObject.Properties.Name) {
+            $result = $needs.$name.result
+            # 被跳过的 job 是预期行为（入口尚未实现），不算失败。
+            if ($result -eq 'failure' -or $result -eq 'cancelled') {
+              $bad += "$name=$result"
+            }
+          }
+          if ($bad.Count -gt 0) {
+            Write-Error ("以下 job 未成功，终止发布：" + ($bad -join ', '))
+            exit 1
+          }
+
+      - name: 收集全部产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: 生成 Release 说明
+        shell: pwsh
+        run: |
+          $ver = '${{ needs.prepare.outputs.version }}'
+          $files = Get-ChildItem artifacts -Filter '*.zip' | Sort-Object Name
+          $lines = @()
+          $lines += "# CloudTrace $ver"
+          $lines += ""
+          $lines += "## 下载哪个"
+          $lines += ""
+          $lines += "| 文件 | 适用系统 | 说明 |"
+          $lines += "| :--- | :--- | :--- |"
+          foreach ($f in $files) {
+            $note = switch -Wildcard ($f.Name) {
+              '*panel*win-x64*'        { '推荐绝大多数人：解压即用，浏览器访问面板' }
+              '*panel*win7*'           { 'Windows 7：需配 Chrome 109 / Firefox ESR 115' }
+              '*desktop*win-x64*'      { 'Windows 10/11：原生窗口，使用系统 WebView2' }
+              '*desktop*win7*lite*'    { 'Windows 7：需自行安装 WebView2 109' }
+              '*desktop*win7*full*'    { 'Windows 7：已捆绑 WebView2 109，解压即用' }
+              default                  { '' }
+            }
+            $lines += "| ``$($f.Name)`` | | $note |"
+          }
+          $lines += ""
+          $lines += "## 说明"
+          $lines += ""
+          $lines += "- 绿色免安装：解压后直接运行，数据默认落在程序同级 ``data/`` 目录。"
+          $lines += "- Windows 7 桌面版固定使用 WebView2 ``109.0.1518.140``（最后一个支持 Win7 的版本），该版本已停止安全更新，建议优先升级系统。"
+          $lines += "- Windows 7 支持由社区分支 Go 工具链提供，主构建使用官方 Go。"
+          Set-Content -Path RELEASE_NOTES.md -Value ($lines -join "`n") -Encoding utf8
+          Get-Content RELEASE_NOTES.md
+
+      - name: 创建或更新 Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $files = (Get-ChildItem artifacts -Filter '*.zip' | ForEach-Object { $_.FullName })
+          if ($files.Count -eq 0) {
+            Write-Error '没有收集到任何产物，终止'
+            exit 1
+          }
+          Write-Host "本次共 $($files.Count) 个产物："
+          $files | ForEach-Object { Write-Host "    $_" }
+
+          gh release view $tag --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Release 已存在，改为追加/覆盖产物'
+            gh release upload $tag @files --clobber
+          }
+          else {
+            gh release create $tag --title "CloudTrace $tag" --notes-file RELEASE_NOTES.md @files
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }

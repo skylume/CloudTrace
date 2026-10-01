@@ -57,3 +57,8 @@ cf_scan_*.csv
 cf_speed_*.csv
 node_modules/
 
+# Go 构建与测试产物
+/coverage.out
+/.toolchain/
+/vendor/
+
