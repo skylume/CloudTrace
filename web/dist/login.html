@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudTrace · 登录</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1419; --panel:#171d24; --border:#263039;
+          --text:#e6edf3; --muted:#9aa7b4; --accent:#4c9aff; --bad:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:var(--bg); color:var(--text);
+         font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif; }
+  form { background:var(--panel); border:1px solid var(--border); border-radius:12px;
+         padding:28px; width:360px; }
+  h1 { font-size:18px; margin:0 0 6px; }
+  p.hint { color:var(--muted); font-size:12px; margin:0 0 18px; }
+  input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+          background:#0f1419; color:var(--text); font-size:14px; }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { width:100%; margin-top:14px; padding:10px; border:0; border-radius:8px;
+           background:var(--accent); color:#fff; font-size:14px; cursor:pointer; }
+  button:hover { filter:brightness(1.1); }
+  .err { color:var(--bad); font-size:12px; margin-top:10px; min-height:18px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>CloudTrace</h1>
+  <p class="hint">面板已开放局域网访问，请输入启动时控制台打印的访问 Token。</p>
+  <input id="token" type="password" placeholder="访问 Token" autocomplete="off" autofocus>
+  <button type="submit">登录</button>
+  <div class="err" id="err"></div>
+</form>
+<script>
+(function () {
+  var f = document.getElementById('f');
+  var err = document.getElementById('err');
+  f.onsubmit = function (e) {
+    e.preventDefault();
+    err.textContent = '';
+    fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: document.getElementById('token').value })
+    }).then(function (r) {
+      if (r.ok) { location.href = '/'; return null; }
+      return r.json().catch(function () { return {}; });
+    }).then(function (body) {
+      if (body) err.textContent = body.msg || '登录失败';
+    }).catch(function () { err.textContent = '网络错误'; });
+  };
+})();
+</script>
+</body>
+</html>

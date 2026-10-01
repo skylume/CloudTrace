@@ -1,0 +1,187 @@
+package config
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// FieldError 描述单个配置项的问题。
+type FieldError struct {
+	Key    string `json:"key"`
+	Value  any    `json:"value"`
+	Reason string `json:"reason"`
+}
+
+// ValidationError 汇总所有非法配置项。
+//
+// 前端收到 E_INVALID_PARAM 时应定位到具体字段并高亮，
+// 因此这里必须给出**全部**问题而不是遇到第一个就返回。
+type ValidationError struct {
+	Fields []FieldError
+}
+
+func (e *ValidationError) Error() string {
+	parts := make([]string, 0, len(e.Fields))
+	for _, f := range e.Fields {
+		parts = append(parts, fmt.Sprintf("%s=%v（%s）", f.Key, f.Value, f.Reason))
+	}
+	return "配置校验失败：" + strings.Join(parts, "；")
+}
+
+// Keys 返回所有出错的配置键，便于前端高亮。
+func (e *ValidationError) Keys() []string {
+	out := make([]string, 0, len(e.Fields))
+	for _, f := range e.Fields {
+		out = append(out, f.Key)
+	}
+	return out
+}
+
+// Validate 校验配置的范围与枚举。
+//
+// 约定：
+//   - 越界（超出硬上限）→ 报错，拒绝保存；
+//   - 危险但允许（如并发 > WarnWorkers、阈值 < WarnLatency）→ **不报错**，
+//     由 UI 警示与配置体检（internal/health）负责提示。
+func (c Config) Validate() error {
+	var fields []FieldError
+	add := func(key string, value any, reason string) {
+		fields = append(fields, FieldError{Key: key, Value: value, Reason: reason})
+	}
+
+	// ---- scan.* ----
+	if !oneOf(c.Scan.Mode, "tcping", "httping") {
+		add("scan.mode", c.Scan.Mode, "只能是 tcping 或 httping")
+	}
+	if c.Scan.Workers < 1 || c.Scan.Workers > MaxWorkersHard {
+		add("scan.workers", c.Scan.Workers, fmt.Sprintf("必须在 1–%d 之间", MaxWorkersHard))
+	}
+	if c.Scan.SampleMax < 0 || c.Scan.SampleMax > MaxSampleMax {
+		add("scan.sample_max", c.Scan.SampleMax, fmt.Sprintf("必须在 0–%d 之间（0 = 不限制）", MaxSampleMax))
+	}
+	if c.Scan.LatencyThreshold < 1 || c.Scan.LatencyThreshold > 10000 {
+		add("scan.latency_threshold", c.Scan.LatencyThreshold, "必须在 1–10000 之间")
+	}
+	if c.Scan.PingTimes < 1 || c.Scan.PingTimes > 100 {
+		add("scan.ping_times", c.Scan.PingTimes, "必须在 1–100 之间")
+	}
+	if !validPort(c.Scan.Port) {
+		add("scan.port", c.Scan.Port, "必须是 1–65535 的端口")
+	}
+	if !oneOf(c.Scan.SourceMode, "official", "custom", "both") {
+		add("scan.source_mode", c.Scan.SourceMode, "只能是 official / custom / both")
+	}
+	for _, p := range c.Scan.PreFilterPorts {
+		if !validPort(p) {
+			add("scan.pre_filter_ports", p, "必须是 1–65535 的端口")
+			break
+		}
+	}
+	if c.Scan.TimeoutMS < 1 || c.Scan.TimeoutMS > 60000 {
+		add("scan.timeout_ms", c.Scan.TimeoutMS, "必须在 1–60000 之间")
+	}
+	if c.Scan.Retry < 0 || c.Scan.Retry > 10 {
+		add("scan.retry", c.Scan.Retry, "必须在 0–10 之间")
+	}
+	if c.Scan.SourceMode == "custom" && strings.TrimSpace(c.Scan.CustomSource) == "" {
+		add("scan.custom_source", "", "source_mode = custom 时必须填写来源")
+	}
+
+	// ---- history.* ----
+	if c.History.KeepCount < 1 || c.History.KeepCount > 1000 {
+		add("history.keep_count", c.History.KeepCount, "必须在 1–1000 之间")
+	}
+	if !oneOf(c.History.KeepMode, "count", "days") {
+		add("history.keep_mode", c.History.KeepMode, "只能是 count 或 days")
+	}
+	if c.History.KeepDays < 1 || c.History.KeepDays > 3650 {
+		add("history.keep_days", c.History.KeepDays, "必须在 1–3650 之间")
+	}
+
+	// ---- ui.* ----
+	if !oneOf(c.UI.Theme, "dark", "light", "system") {
+		add("ui.theme", c.UI.Theme, "只能是 dark / light / system")
+	}
+	if !oneOf(c.UI.Lang, "zh", "en") {
+		add("ui.lang", c.UI.Lang, "只能是 zh 或 en")
+	}
+	if !oneOf(c.UI.FontScale, "small", "medium", "large") {
+		add("ui.font_scale", c.UI.FontScale, "只能是 small / medium / large")
+	}
+	if !oneOf(c.UI.Density, "auto", "simple", "advanced") {
+		add("ui.density", c.UI.Density, "只能是 auto / simple / advanced")
+	}
+	if !oneOf(c.UI.TableDensity, "compact", "normal", "comfortable") {
+		add("ui.table_density", c.UI.TableDensity, "只能是 compact / normal / comfortable")
+	}
+	if !oneOf(c.UI.StartPage, "scan", "result", "speed", "history", "settings") {
+		add("ui.start_page", c.UI.StartPage, "不是有效的页面名")
+	}
+	if c.UI.PageSize < 1 || c.UI.PageSize > 1000 {
+		add("ui.page_size", c.UI.PageSize, "必须在 1–1000 之间")
+	}
+
+	// ---- server.* ----
+	if !validPort(c.Server.Port) {
+		add("server.port", c.Server.Port, "必须是 1–65535 的端口")
+	}
+	if !oneOf(c.Server.Bind, "127.0.0.1", "0.0.0.0") {
+		add("server.bind", c.Server.Bind, "只能是 127.0.0.1 或 0.0.0.0")
+	}
+	if c.Server.SessionTTLMin < 1 || c.Server.SessionTTLMin > 10080 {
+		add("server.session_ttl_min", c.Server.SessionTTLMin, "必须在 1–10080 分钟之间")
+	}
+	// 局域网暴露必须要有 Token，否则等于把面板完全敞开。
+	if c.Server.Bind == "0.0.0.0" && strings.TrimSpace(c.Server.Token) == "" {
+		add("server.token", "", "bind = 0.0.0.0 时必须设置访问 Token")
+	}
+
+	// ---- advanced.* ----
+	if !oneOf(c.Advanced.LogLevel, "debug", "info", "warn", "error") {
+		add("advanced.log_level", c.Advanced.LogLevel, "只能是 debug / info / warn / error")
+	}
+	if c.Advanced.LogKeepDays < 1 || c.Advanced.LogKeepDays > 365 {
+		add("advanced.log_keep_days", c.Advanced.LogKeepDays, "必须在 1–365 之间")
+	}
+
+	if len(fields) == 0 {
+		return nil
+	}
+	sort.Slice(fields, func(i, j int) bool { return fields[i].Key < fields[j].Key })
+	return &ValidationError{Fields: fields}
+}
+
+// Warnings 返回「危险但允许」的配置项，供界面警示与配置体检使用。
+//
+// 这些**不是错误**：任何高级选项都要有合理默认值，同时也要求
+// 危险值给出后果说明，因此这里只提示、不拒绝。
+func (c Config) Warnings() []FieldError {
+	var out []FieldError
+	if c.Scan.Workers > WarnWorkers {
+		out = append(out, FieldError{
+			Key:    "scan.workers",
+			Value:  c.Scan.Workers,
+			Reason: fmt.Sprintf("并发超过 %d 可能导致断网或路由器过载，建议降到 %d 以内", WarnWorkers, MaxWorkersPreset),
+		})
+	}
+	if c.Scan.LatencyThreshold < WarnLatency {
+		out = append(out, FieldError{
+			Key:    "scan.latency_threshold",
+			Value:  c.Scan.LatencyThreshold,
+			Reason: fmt.Sprintf("阈值低于 %dms 会大幅减少可用结果，建议提到 200 左右", WarnLatency),
+		})
+	}
+	return out
+}
+
+func oneOf(v string, allowed ...string) bool {
+	for _, a := range allowed {
+		if v == a {
+			return true
+		}
+	}
+	return false
+}
+
+func validPort(p int) bool { return p >= 1 && p <= 65535 }

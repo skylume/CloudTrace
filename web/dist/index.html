@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudTrace</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1419;
+    --panel: #171d24;
+    --border: #263039;
+    --text: #e6edf3;
+    --muted: #9aa7b4;
+    --accent: #4c9aff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .card .k { color: var(--muted); font-size: 12px; letter-spacing: .3px; }
+  .card .v { font-size: 18px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  section { margin-top: 20px; }
+  section > h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 7px 14px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { filter: brightness(1.1); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .warn { color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="dot" id="dot"></span>
+    <h1>CloudTrace</h1>
+    <span style="color:var(--muted)" id="conn">正在连接…</span>
+    <span style="flex:1"></span>
+    <button id="ping">发送 ping</button>
+  </header>
+
+  <div class="grid">
+    <div class="card"><div class="k">阶段</div><div class="v" id="phase">-</div></div>
+    <div class="card"><div class="k">状态</div><div class="v" id="status">-</div></div>
+    <div class="card"><div class="k">进度</div><div class="v" id="progress">-</div></div>
+    <div class="card"><div class="k">已耗时</div><div class="v" id="elapsed">-</div></div>
+    <div class="card"><div class="k">预计剩余</div><div class="v" id="eta">-</div></div>
+    <div class="card"><div class="k">档位</div><div class="v" id="preset">-</div></div>
+  </div>
+
+  <section>
+    <h2>漏斗</h2>
+    <table>
+      <thead><tr><th>阶段</th><th style="text-align:right">数量</th></tr></thead>
+      <tbody id="funnel"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>服务信息</h2>
+    <table>
+      <tbody id="health"></tbody>
+    </table>
+  </section>
+
+  <p class="note">
+    这是骨架阶段的占位页面，用于验证「内嵌静态资源 → WebSocket → 事件总线」链路是否打通。
+    收到的 <code>state</code> 快照会实时显示在上方。
+  </p>
+  <p class="note warn" id="warn"></p>
+</div>
+
+<script>
+(function () {
+  var dot = document.getElementById('dot');
+  var conn = document.getElementById('conn');
+  var ws = null;
+  var retry = 0;
+
+  function setText(id, v) { document.getElementById(id).textContent = v; }
+  function fmtSec(s) {
+    if (!s || s <= 0) return '-';
+    if (s < 60) return s.toFixed(1) + ' s';
+    var m = Math.floor(s / 60);
+    return m + ' 分 ' + Math.round(s - m * 60) + ' 秒';
+  }
+
+  function renderState(st) {
+    if (!st) return;
+    setText('phase', st.phase || '-');
+    setText('status', st.status || '-');
+    setText('progress', (st.done || 0) + ' / ' + (st.total || 0));
+    setText('elapsed', fmtSec(st.elapsed_s));
+    setText('eta', fmtSec(st.eta_s));
+    setText('preset', st.preset || '-');
+
+    var f = st.funnel || {};
+    var rows = [
+      ['生成候选', f.generated || 0],
+      ['延迟达标', f.latency_ok || 0],
+      ['地区解析', f.region_ok || 0],
+      ['最终可用', f.usable || 0]
+    ];
+    document.getElementById('funnel').innerHTML = rows.map(function (r) {
+      return '<tr><td>' + r[0] + '</td><td class="num">' + r[1] + '</td></tr>';
+    }).join('');
+  }
+
+  function renderHealth(h) {
+    var rows = [
+      ['版本', h.version || '-'],
+      ['协议版本', h.protocol_version || '-'],
+      ['已运行', fmtSec(h.uptime_s)],
+      ['数据目录', h.data_dir || '-']
+    ];
+    document.getElementById('health').innerHTML = rows.map(function (r) {
+      return '<tr><th>' + r[0] + '</th><td>' + r[1] + '</td></tr>';
+    }).join('');
+    if (h.warnings && h.warnings.length) {
+      document.getElementById('warn').textContent = '启动警告：' + h.warnings.join('；');
+    }
+  }
+
+  function connect() {
+    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    ws = new WebSocket(proto + location.host + '/ws');
+
+    ws.onopen = function () {
+      retry = 0;
+      dot.className = 'dot on';
+      conn.textContent = '已连接';
+    };
+    ws.onclose = function () {
+      dot.className = 'dot off';
+      conn.textContent = '连接已断开，重连中…';
+      retry = Math.min(retry + 1, 6);
+      setTimeout(connect, 500 * retry);
+    };
+    ws.onerror = function () { ws.close(); };
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type === 'state') renderState(msg.data);
+      else if (msg.type === 'error') conn.textContent = '错误：' + (msg.data && msg.data.msg);
+    };
+  }
+
+  document.getElementById('ping').onclick = function () {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  };
+
+  fetch('/api/health').then(function (r) { return r.json(); }).then(renderHealth).catch(function () {});
+  connect();
+})();
+</script>
+</body>
+</html>
