@@ -56,10 +56,12 @@ func New(cfg *config.Store, svc *app.Services) (http.Handler, error) {
 		static: static,
 	}
 
-	// 任务状态变更 → 广播给所有 WS 连接。
+	// 任务状态与任务事件 → 广播给所有 WS 连接。
 	// 订阅的取消由服务关闭时的总线关闭统一完成，这里无需另行保存。
-	if _, err := svc.Bus.Subscribe(app.TopicState, s.onStateChanged); err != nil {
-		return nil, fmt.Errorf("server: 订阅状态事件失败：%w", err)
+	for _, sub := range s.taskSubscriptions() {
+		if _, err := svc.Bus.Subscribe(sub.topic, sub.fn); err != nil {
+			return nil, fmt.Errorf("server: 订阅 %s 事件失败：%w", sub.topic, err)
+		}
 	}
 
 	return s.routes(), nil

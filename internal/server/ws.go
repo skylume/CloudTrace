@@ -323,10 +323,14 @@ func (s *server) handleWS(w http.ResponseWriter, r *http.Request) {
 //
 // 未出现在这里的命令一律由 readPump 回复 E_UNKNOWN。
 func (s *server) commands() map[string]commandHandler {
-	return map[string]commandHandler{
+	handlers := map[string]commandHandler{
 		"ping": func(c *wsConn, _ json.RawMessage) error {
 			c.sendEvent(eventPong, nil)
 			return nil
 		},
 	}
+	for name, handler := range s.scanHandlers() {
+		handlers[name] = handler
+	}
+	return handlers
 }

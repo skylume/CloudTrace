@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/task"
 )
 
 // ---------------------------------------------------------------------------
@@ -138,6 +140,98 @@ func send(t *testing.T, conn *websocket.Conn, payload string) {
 	t.Helper()
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(payload)); err != nil {
 		t.Fatalf("发送命令失败：%v", err)
+	}
+}
+
+// readStream 持续读取事件，直到 stop 判定为真，返回途中收到的全部报文。
+//
+// 为什么不能按固定顺序逐个 readUntil：每条订阅各有一个投递 goroutine，
+// 事件到达前端的顺序不保证，按顺序读会把先到的那条当噪音丢掉。
+// 因此判定条件写成「这一批报文里已经出现过什么」，与到达顺序无关。
+func readStream(t *testing.T, conn *websocket.Conn, timeout time.Duration, desc string, stop func([]message) bool) []message {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var out []message
+	for {
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			t.Fatalf("设置读超时失败：%v", err)
+		}
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("等待%s时读取失败：%v（已收到 %v）", desc, err, eventTypes(out))
+		}
+		var m message
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatalf("报文不是合法 JSON：%v", err)
+		}
+		out = append(out, m)
+		if stop(out) {
+			return out
+		}
+	}
+}
+
+// findEvent 取报文流里指定类型的最后一条，并报告是否存在。
+func findEvent(msgs []message, want string) (message, bool) {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Type == want {
+			return msgs[i], true
+		}
+	}
+	return message{}, false
+}
+
+// hasEvent 判断报文流里是否出现过指定类型的事件。
+func hasEvent(msgs []message, want string) bool {
+	_, ok := findEvent(msgs, want)
+	return ok
+}
+
+// mustEvent 取报文流里指定类型的最后一条，不存在则判定用例失败。
+func mustEvent(t *testing.T, msgs []message, want string) message {
+	t.Helper()
+	m, ok := findEvent(msgs, want)
+	if !ok {
+		t.Fatalf("报文流里没有 %q 事件，实际有 %v", want, eventTypes(msgs))
+	}
+	return m
+}
+
+// stateIs 判断报文流里最后一条 state 快照是否处于指定状态。
+func stateIs(t *testing.T, msgs []message, status string) bool {
+	t.Helper()
+	st, ok := lastState(t, msgs)
+	return ok && st.Status == status
+}
+
+// lastState 解析报文流里最后一条 state 快照，并报告是否存在。
+func lastState(t *testing.T, msgs []message) (model.TaskState, bool) {
+	t.Helper()
+	m, ok := findEvent(msgs, eventState)
+	if !ok {
+		return model.TaskState{}, false
+	}
+	var st model.TaskState
+	if err := json.Unmarshal(m.Data, &st); err != nil {
+		t.Fatalf("state 载荷不是合法 JSON：%v", err)
+	}
+	return st, true
+}
+
+// eventTypes 汇总报文流里的事件类型，用于断言失败时定位。
+func eventTypes(msgs []message) []string {
+	out := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, m.Type)
+	}
+	return out
+}
+
+// decode 把报文载荷解析到目标结构体。
+func decode(t *testing.T, m message, target any) {
+	t.Helper()
+	if err := json.Unmarshal(m.Data, target); err != nil {
+		t.Fatalf("%s 载荷不是合法 JSON：%v（原文 %s）", m.Type, err, m.Data)
 	}
 }
 
@@ -444,34 +538,186 @@ func TestWSReceivesInitialState(t *testing.T) {
 	}
 }
 
-// 状态变更必须经事件总线广播到已连接的前端。
+// 状态变更与任务事件必须经事件总线广播到已连接的前端。
+//
+// 用真实任务驱动状态机：任务状态只有一个来源，测试也走生产同一条路径。
 func TestWSReceivesStateBroadcast(t *testing.T) {
 	st := newTestStack(t, nil)
 	conn := st.mustDial(t)
 	readUntil(t, conn, eventState, 3*time.Second)
 
-	st.svc.SetState(model.TaskState{
-		Phase:  model.PhaseScan,
-		Status: model.StatusRunning,
-		Done:   3,
-		Total:  10,
-		Funnel: model.Funnel{Generated: 100, LatencyOK: 40},
+	ch := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	// 用例中途失败也要放行，否则任务一直挂着，退出时的等待会白等满上限。
+	t.Cleanup(release)
+
+	if err := st.svc.Tasks.Start(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
+		rep.SetTotal(10)
+		rep.SetDone(3)
+		rep.SetFunnel(model.Funnel{Generated: 100, LatencyOK: 40})
+		<-ch
+		return task.Outcome{Count: 7}, nil
+	}); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+
+	// 启动瞬间先来一条 running 快照，随后是进度事件。
+	msgs := readStream(t, conn, 5*time.Second, "running 快照与进度事件", func(ms []message) bool {
+		return stateIs(t, ms, model.StatusRunning) && hasEvent(ms, eventProgress)
 	})
 
-	m := readUntil(t, conn, eventState, 3*time.Second)
-	var state model.TaskState
-	if err := json.Unmarshal(m.Data, &state); err != nil {
-		t.Fatalf("state 载荷不是合法 JSON：%v", err)
+	var running model.TaskState
+	decode(t, mustEvent(t, msgs, eventState), &running)
+	if running.Phase != model.PhaseScan {
+		t.Errorf("phase = %q，期望 %q", running.Phase, model.PhaseScan)
 	}
-	if state.Phase != model.PhaseScan || state.Status != model.StatusRunning {
-		t.Errorf("phase/status = %q/%q，期望 scan/running", state.Phase, state.Status)
+
+	// 进度事件按 250ms 节流，能收到的第一条是 SetTotal 触发的领先沿，
+	// 因此只断言总数透传；逐次推进的数值由最终快照断言。
+	var progress task.Progress
+	decode(t, mustEvent(t, msgs, eventProgress), &progress)
+	if progress.Phase != model.PhaseScan || progress.Total != 10 {
+		t.Errorf("phase/total = %q/%d，期望 scan/10", progress.Phase, progress.Total)
 	}
-	if state.Done != 3 || state.Total != 10 {
-		t.Errorf("done/total = %d/%d，期望 3/10", state.Done, state.Total)
+
+	// 收尾后是 done 快照与 scan/done 事件，后者带上结果条数。
+	release()
+	msgs = readStream(t, conn, 5*time.Second, "done 快照与 scan/done", func(ms []message) bool {
+		return stateIs(t, ms, model.StatusDone) && hasEvent(ms, eventScanDone)
+	})
+
+	var outcome task.Outcome
+	decode(t, mustEvent(t, msgs, eventScanDone), &outcome)
+	if outcome.Count != 7 {
+		t.Errorf("outcome.Count = %d，期望 7", outcome.Count)
 	}
-	if state.Funnel.Generated != 100 || state.Funnel.LatencyOK != 40 {
-		t.Errorf("漏斗数据未透传：%+v", state.Funnel)
+
+	var final model.TaskState
+	decode(t, mustEvent(t, msgs, eventState), &final)
+	if final.Status != model.StatusDone {
+		t.Errorf("最终状态 = %q，期望 %q", final.Status, model.StatusDone)
 	}
+	if final.Done != 3 || final.Total != 10 {
+		t.Errorf("最终进度 = %d/%d，期望 3/10", final.Done, final.Total)
+	}
+	if final.Funnel.Generated != 100 || final.Funnel.LatencyOK != 40 {
+		t.Errorf("最终漏斗数据未透传：%+v", final.Funnel)
+	}
+}
+
+// 中止任务要发 scan/abort，且**不得**发 scan/done。
+//
+// 把中止当成完成，前端会把它当成功结果存档。
+func TestWSReceivesScanAbort(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	ch := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+
+	if err := st.svc.Tasks.Start(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
+		rep.SetTotal(100)
+		rep.SetDone(37)
+		select {
+		case <-rep.Context().Done():
+		case <-ch:
+		}
+		return task.Outcome{Count: 37}, rep.Context().Err()
+	}); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"scan/stop"}`)
+
+	// 中止后是 scan/abort 与 aborted 快照，两者到达顺序同样不保证。
+	msgs := readStream(t, conn, 3*time.Second, "scan/abort 与 aborted 快照", func(ms []message) bool {
+		return hasEvent(ms, eventScanAbort) && stateIs(t, ms, model.StatusAborted)
+	})
+
+	var outcome task.Outcome
+	decode(t, mustEvent(t, msgs, eventScanAbort), &outcome)
+	if outcome.Count != 37 {
+		t.Errorf("中止时保留的结果数 = %d，期望 37", outcome.Count)
+	}
+
+	// 最终状态是 aborted，不是 done。
+	var final model.TaskState
+	decode(t, mustEvent(t, msgs, eventState), &final)
+	if final.Status != model.StatusAborted {
+		t.Errorf("最终状态 = %q，期望 %q", final.Status, model.StatusAborted)
+	}
+
+	// 中止不得走完成分支：前端会把它当成功结果存档。
+	if hasEvent(msgs, eventScanDone) {
+		t.Errorf("中止后不应出现 %q 事件", eventScanDone)
+	}
+}
+
+// scan/start 的参数非法时必须同步回 E_INVALID_PARAM，不能等任务跑起来再报。
+func TestWSScanStartRejectsInvalidParams(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"scan/start","data":{"port":70000,"workers":8,"latency_threshold":230,"ping_times":2,"timeout_ms":1000,"source_mode":"official","ip_version":4,"mode":"tcping"}}`)
+
+	m := readUntil(t, conn, eventError, 3*time.Second)
+	var p errorPayload
+	if err := json.Unmarshal(m.Data, &p); err != nil {
+		t.Fatalf("error 载荷不是合法 JSON：%v", err)
+	}
+	if p.Code != CodeInvalidParam {
+		t.Errorf("code = %q，期望 %q", p.Code, CodeInvalidParam)
+	}
+}
+
+// 已有任务在跑时，第二个 scan/start 必须回 E_BUSY，不得并行。
+func TestWSScanStartReturnsBusy(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	ch := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+
+	if err := st.svc.Tasks.Start(model.PhaseScan, func(task.Reporter) (task.Outcome, error) {
+		<-ch
+		return task.Outcome{}, nil
+	}); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"scan/start","data":{"port":443,"workers":8,"latency_threshold":230,"ping_times":2,"timeout_ms":1000,"source_mode":"official","ip_version":4,"mode":"tcping"}}`)
+
+	m := readUntil(t, conn, eventError, 3*time.Second)
+	var p errorPayload
+	if err := json.Unmarshal(m.Data, &p); err != nil {
+		t.Fatalf("error 载荷不是合法 JSON：%v", err)
+	}
+	if p.Code != CodeBusy {
+		t.Errorf("code = %q，期望 %q", p.Code, CodeBusy)
+	}
+}
+
+// 没有任务在跑时点停止不算错误：用户连点两次是常事。
+func TestWSScanStopWhenIdleIsNotAnError(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"scan/stop"}`)
+
+	// 紧跟一条 ping，能正常收到 pong 就说明连接与命令循环都还健在。
+	send(t, conn, `{"type":"ping"}`)
+	readUntil(t, conn, eventPong, 3*time.Second)
 }
 
 func TestWSPingPong(t *testing.T) {
