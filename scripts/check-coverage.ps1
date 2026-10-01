@@ -44,7 +44,11 @@ if (-not (Test-Path $CoverProfile)) {
 # ---- 1. 按包聚合 --------------------------------------------------------
 # `go tool cover -func` 每行形如：
 #   cloudtrace/internal/config/config.go:120:  Default  100.0%
-$rows = & go tool cover -func=$CoverProfile
+#
+# 注意 -func= 的值必须先拼成字符串再传：写成 `-func=$CoverProfile` 时
+# PowerShell 不会做变量展开，go 会收到字面量 "$CoverProfile" 并报文件不存在。
+$coverArg = "-func=$CoverProfile"
+$rows = & go tool cover $coverArg
 if ($LASTEXITCODE -ne 0) {
     throw 'go tool cover 执行失败'
 }
