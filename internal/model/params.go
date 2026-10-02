@@ -55,6 +55,11 @@ type SpeedParams struct {
 	Scope string `json:"scope"`
 	// Targets 是本次要测的记录，已由调用方按范围挑好。
 	Targets []IPRecord `json:"targets"`
+	// IPVersion 是这批目标属于 4 还是 6，决定历史归档到哪一类。
+	//
+	// 不从 Targets 里现推：目标可能混着两个版本，而「这次任务是在哪个模式下
+	// 跑的」是调用方本来就掌握的信息。
+	IPVersion int `json:"ip_version"`
 
 	URLMode           string  `json:"url_mode"`            // auto | official | mobile_friendly | mobile_only | custom
 	CustomURL         string  `json:"custom_url"`          // URLMode = custom 时的测速地址

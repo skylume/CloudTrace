@@ -44,6 +44,20 @@ func (r IPRecord) Reachable() bool {
 	return r.Recv > 0 && r.Latency != Unreachable
 }
 
+// TaskResult 是一次任务跑完之后的完整产出。
+//
+// 它只交给一个地方：任务执行器的完成回调。刻意不走事件总线——总线在队列
+// 满时会丢事件，前端丢几条只是少渲染几行，而存档丢几条就是永久缺数据。
+type TaskResult struct {
+	Records []IPRecord
+	Summary Summary
+}
+
+// NewTaskResult 从结果集汇总出完整产出。
+func NewTaskResult(records []IPRecord) TaskResult {
+	return TaskResult{Records: records, Summary: Summarize(records)}
+}
+
 // Summary 是一次任务的统计摘要。
 type Summary struct {
 	Funnel Funnel `json:"funnel"`

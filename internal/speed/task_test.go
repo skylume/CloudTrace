@@ -259,6 +259,7 @@ func TestNormalizeParams(t *testing.T) {
 	want := model.SpeedParams{
 		Scope:             model.SpeedScopeSingle,
 		Targets:           []model.IPRecord{target("1.1.1.1", 443)},
+		IPVersion:         4,
 		URLMode:           URLModeAuto,
 		UseTLS:            probe.UseTLSAuto,
 		Concurrency:       defaultConcurrency,
@@ -288,6 +289,7 @@ func TestNormalizeParamsKeepsExplicitValues(t *testing.T) {
 	in := model.SpeedParams{
 		Scope:             model.SpeedScopeAll,
 		Targets:           []model.IPRecord{target("1.1.1.1", 443)},
+		IPVersion:         6,
 		URLMode:           URLModeCustom,
 		CustomURL:         "example.com/down",
 		UseTLS:            probe.UseTLSOn,

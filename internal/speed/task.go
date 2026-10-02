@@ -64,6 +64,15 @@ type Options struct {
 	// Now 取时间，为 nil 时用 time.Now。注入是为了让推送节流可测。
 	Now    func() time.Time
 	Logger *slog.Logger
+
+	// OnDone 在任务**正常跑完**时回调一次，交出本次的完整结果。
+	//
+	// 提前收敛也算正常跑完：用户要的就是够用的那批，把收敛后的结果存下来
+	// 正是这个功能的意义。中止则不算——中止的结果残缺，存档会污染历史。
+	//
+	// 结果走这里而不是走事件总线：总线在队列满时会丢事件，前端丢几条只是
+	// 少渲染几行，存档丢几条就是永久缺数据。
+	OnDone func(model.TaskResult)
 }
 
 // Runner 按固定流水线执行一次测速。
@@ -74,6 +83,7 @@ type Runner struct {
 	sourceFn   SourceFunc
 	now        func() time.Time
 	logger     *slog.Logger
+	onDone     func(model.TaskResult)
 }
 
 // NormalizeParams 把缺省字段补成可用值。
@@ -86,6 +96,9 @@ func NormalizeParams(p model.SpeedParams) model.SpeedParams {
 	}
 	if p.UseTLS == "" {
 		p.UseTLS = probe.UseTLSAuto
+	}
+	if p.IPVersion == 0 {
+		p.IPVersion = 4
 	}
 	if p.Concurrency == 0 {
 		p.Concurrency = defaultConcurrency
@@ -195,6 +208,7 @@ func NewRunner(opts Options) (*Runner, error) {
 		sourceFn:   opts.Source,
 		now:        opts.Now,
 		logger:     opts.Logger,
+		onDone:     opts.OnDone,
 	}
 	if r.now == nil {
 		r.now = time.Now
@@ -228,6 +242,12 @@ func NewRunner(opts Options) (*Runner, error) {
 // 流水线：挑目标 → 可用性预校验（可关）→ 选源 → 下载测速 → 熔断与收敛 →
 // 评分并实时推送 → 汇总。顺序不可调换：可用性校验放在下载之后就没有意义，
 // 选源放在下载之后则无处可用。
+// SetOnDone 设置任务跑完后的结果回调。
+//
+// 与构造参数里的 OnDone 等价，单独给一个设置入口是为了让调用方能在拿到
+// 执行器之后再接线：回调里往往要用到执行器本身。
+func (r *Runner) SetOnDone(fn func(model.TaskResult)) { r.onDone = fn }
+
 func (r *Runner) Run(rep task.Reporter) (int, error) {
 	ctx := rep.Context()
 
@@ -272,7 +292,20 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	st.Finish()
 	r.logger.Info("测速结束",
 		"targets", len(targets), "usable", len(usable), "qualified", len(results), "url", url)
+
+	r.finish(ctx, results)
 	return len(results), nil
+}
+
+// finish 在任务正常跑完时把完整结果交出去。
+//
+// 提前收敛也算「正常跑完」：用户要的就是够用的那批结果，把收敛后的结果存
+// 下来正是这个功能的意义。中止则不算——中止的结果残缺，存档会污染历史。
+func (r *Runner) finish(ctx context.Context, records []model.IPRecord) {
+	if r.onDone == nil || ctx.Err() != nil {
+		return
+	}
+	r.onDone(model.NewTaskResult(records))
 }
 
 // usability 是一个目标及其是否通过可用性校验。

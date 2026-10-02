@@ -81,6 +81,15 @@ type Options struct {
 	Remote   RemoteFunc
 	Resolver source.Resolver
 	Logger   *slog.Logger
+
+	// OnDone 在任务**正常跑完**时回调一次，交出本次的完整结果。
+	//
+	// 中止时不调用：中止的结果是残缺的，把它存档会污染历史列表，用户下次
+	// 复用历史时会拿到一批根本没扫完的节点。
+	//
+	// 结果走这里而不是走事件总线：总线在队列满时会丢事件，前端丢几条只是
+	// 少渲染几行，存档丢几条就是永久缺数据。
+	OnDone func(model.TaskResult)
 }
 
 // Runner 按固定流水线执行一次扫描。
@@ -96,6 +105,7 @@ type Runner struct {
 	remoteFn RemoteFunc
 	resolver source.Resolver
 	logger   *slog.Logger
+	onDone   func(model.TaskResult)
 }
 
 // NormalizeParams 把缺省字段补成可用值。
@@ -182,6 +192,7 @@ func NewRunner(opts Options) (*Runner, error) {
 		remoteFn:   opts.Remote,
 		resolver:   opts.Resolver,
 		logger:     opts.Logger,
+		onDone:     opts.OnDone,
 	}
 	if r.host == "" {
 		r.host = defaultTestHost
@@ -226,6 +237,12 @@ func NewRunner(opts Options) (*Runner, error) {
 	}
 	return r, nil
 }
+
+// SetOnDone 设置任务跑完后的结果回调。
+//
+// 与构造参数里的 OnDone 等价，单独给一个设置入口是为了让调用方能在拿到
+// 执行器之后再接线：回调里往往要用到执行器本身。
+func (r *Runner) SetOnDone(fn func(model.TaskResult)) { r.onDone = fn }
 
 // Run 按流水线执行一次扫描，返回最终结果条数。
 //
@@ -299,5 +316,18 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		"generated", len(pool.Candidates),
 		"latency_ok", funnel.Snapshot().LatencyOK,
 		"usable", len(records))
+
+	r.finish(ctx, records)
 	return len(records), nil
+}
+
+// finish 在任务正常跑完时把完整结果交出去。
+//
+// 判定用的是 context 而不是「函数有没有返回错误」：取消本身也会让流水线
+// 返回错误，但那不是任务失败，而是用户按了停止。
+func (r *Runner) finish(ctx context.Context, records []model.IPRecord) {
+	if r.onDone == nil || ctx.Err() != nil {
+		return
+	}
+	r.onDone(model.NewTaskResult(records))
 }
