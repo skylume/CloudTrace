@@ -333,6 +333,45 @@ func TestFilenameNeverEmpty(t *testing.T) {
 	}
 }
 
+// 预设清单也要下发：前端自己写一份中文名，早晚会与后端对不上。
+func TestPresetsAreSelfDescribing(t *testing.T) {
+	presets := Presets()
+	if len(presets) != 3 {
+		t.Fatalf("预设数 = %d，期望 3（全部 / 精简 / 仅 IP:端口）", len(presets))
+	}
+
+	known := map[string]bool{}
+	for _, f := range Fields() {
+		known[f.Key] = true
+	}
+
+	ids := map[string]bool{}
+	for _, p := range presets {
+		if p.ID == "" || p.Name == "" {
+			t.Errorf("预设定义不完整：%+v", p)
+		}
+		if ids[p.ID] {
+			t.Errorf("预设标识重复：%s", p.ID)
+		}
+		ids[p.ID] = true
+		if len(p.Keys) == 0 {
+			t.Errorf("预设 %s 没有任何字段", p.ID)
+		}
+		for _, k := range p.Keys {
+			if !known[k] {
+				t.Errorf("预设 %s 引用了不存在的字段 %q", p.ID, k)
+			}
+		}
+	}
+
+	// 预设的键必须与 PresetKeys 一致，否则前端拿到的是两套。
+	for _, p := range presets {
+		if len(p.Keys) != len(PresetKeys(p.ID)) {
+			t.Errorf("预设 %s 的键与 PresetKeys 不一致", p.ID)
+		}
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

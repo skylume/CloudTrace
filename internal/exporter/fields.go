@@ -84,6 +84,28 @@ var slimKeys = []string{
 
 var ipPortKeys = []string{"ip", "port"}
 
+// Preset 是一个字段预设。
+type Preset struct {
+	// ID 是预设标识，与配置里的 export.default_fields 取值一致。
+	ID string `json:"id"`
+	// Name 是界面上显示的名字。
+	Name string `json:"name"`
+	// Keys 是预设包含的字段键。
+	Keys []string `json:"keys"`
+}
+
+// Presets 返回全部字段预设，顺序即界面上的排列顺序。
+//
+// 预设的中文名也由后端下发，理由与字段清单完全相同：前端各写一份就必然会
+// 漂移，而且「后端加了预设、前端还没跟上」这种不同步没有地方能发现。
+func Presets() []Preset {
+	return []Preset{
+		{ID: PresetAll, Name: "全部字段", Keys: PresetKeys(PresetAll)},
+		{ID: PresetSlim, Name: "精简", Keys: PresetKeys(PresetSlim)},
+		{ID: PresetIPPort, Name: "仅 IP:端口", Keys: PresetKeys(PresetIPPort)},
+	}
+}
+
 // PresetKeys 返回预设对应的字段键列表。
 //
 // 未知预设按 all 处理：多一个预设不该让导出直接失败，用户选了什么就导出
