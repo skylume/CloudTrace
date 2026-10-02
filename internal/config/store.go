@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 
@@ -240,7 +239,11 @@ func mergePatch(base Config, patch map[string]any) (Config, error) {
 	}
 	var out Config
 	if err := json.Unmarshal(merged, &out); err != nil {
-		return Config{}, fmt.Errorf("合并配置补丁失败：%w", err)
+		// 归到校验错误而不是 IO 错误：补丁结构与配置对不上是调用方写错了，
+		// 前端该做的是把它标在字段上，而不是提示「文件读写失败」。
+		return Config{}, &ValidationError{Fields: []FieldError{
+			{Key: "patch", Value: patch, Reason: "补丁与配置结构不符：" + err.Error()},
+		}}
 	}
 	return out, nil
 }
