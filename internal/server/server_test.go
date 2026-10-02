@@ -476,8 +476,14 @@ func TestLoginFlowGrantsAccess(t *testing.T) {
 	}
 
 	page := get(t, st.ts.URL+"/", session)
-	if body := bodyOf(t, page); !strings.Contains(body, "发送 ping") {
+	body := bodyOf(t, page)
+	// 用「有没有应用挂载点」而不是某段文案来判断：文案会随界面改动，
+	// 挂载点是前端入口页的结构，改它意味着换了一套前端框架。
+	if !strings.Contains(body, `id="app"`) {
 		t.Errorf("登录后未返回主页面：%s", truncate(body, 120))
+	}
+	if strings.Contains(body, "login-form") {
+		t.Error("登录后返回的仍是登录页")
 	}
 
 	conn, _, err := st.dial(t, session)
