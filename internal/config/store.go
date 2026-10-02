@@ -32,10 +32,16 @@ type Store struct {
 // 保存抹掉」——例如后续才加入的 speed.* / geo.* 配置。
 var knownSections = map[string]bool{
 	"scan":     true,
+	"speed":    true,
+	"source":   true,
+	"net":      true,
+	"geo":      true,
 	"history":  true,
 	"data":     true,
+	"export":   true,
 	"ui":       true,
 	"server":   true,
+	"notify":   true,
 	"advanced": true,
 	"origins":  true,
 }

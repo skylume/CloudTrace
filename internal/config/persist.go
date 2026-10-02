@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloudtrace/internal/atomicfile"
+	"cloudtrace/internal/model"
 )
 
 // filePerm 是配置文件权限：仅当前用户可读写。
@@ -73,6 +74,56 @@ func SaveFile(path string, cfg Config) error {
 // writeFileAtomic 是原子写的唯一实现，配置与档位等文件共用。
 func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	return atomicfile.Write(path, data, perm)
+}
+
+// ImportFile 读取一份待导入的配置并校验。
+//
+// 与 LoadFile 的区别是**文件不存在要报错**：导入时选错了路径很常见，静默
+// 变成默认值会让用户以为导入成功了。内容损坏则与 LoadFile 同口径——备份
+// 原文件、返回默认值并报出原因，由调用方决定是否继续。
+func ImportFile(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Config{}, fmt.Errorf("配置文件 %s 不存在", path)
+		}
+		return Config{}, err
+	}
+
+	cfg := Default()
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		backup, berr := backupBroken(path)
+		if berr != nil {
+			return Config{}, &CorruptedError{Path: path, Backup: "", Reason: err.Error()}
+		}
+		return Config{}, &CorruptedError{Path: path, Backup: backup, Reason: err.Error()}
+	}
+	cfg.normalize()
+	return cfg, nil
+}
+
+// ExportTo 把当前配置另存到 path（配置导出 / 备份）。
+//
+// 写的是当前内存中的配置而不是重读磁盘：用户可能在设置页改了但还没保存，
+// 导出去的应该是他看到的那一版。
+func (s *Store) ExportTo(path string) error {
+	return SaveFile(path, s.Get())
+}
+
+// Reset 恢复到推荐默认配置。
+//
+// 服务相关三项刻意保留：Token 换掉等于把所有已登录的会话踢下线；端口与
+// 监听地址改了要重启才生效，静默重置会让用户下次启动时找不到面板。
+// 其余全部回到默认值，参数来源标记一并清空——重置之后不再有「用户手改过」
+// 这回事。
+func (s *Store) Reset() (Config, error) {
+	cur := s.Get()
+	next := Default()
+	next.Server.Token = cur.Server.Token
+	next.Server.Port = cur.Server.Port
+	next.Server.Bind = cur.Server.Bind
+	next.Origins = model.ParamOrigins{}
+	return s.Set(next)
 }
 
 // backupBroken 把无法解析的文件重命名为 <name>.broken-<ts>。

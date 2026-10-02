@@ -33,10 +33,16 @@ const (
 // 它是**纯数据**，不携带锁与路径；需要并发读写时请使用 Store。
 type Config struct {
 	Scan     ScanConfig     `json:"scan"`
+	Speed    SpeedConfig    `json:"speed"`
+	Source   SourceConfig   `json:"source"`
+	Net      NetConfig      `json:"net"`
+	Geo      GeoConfig      `json:"geo"`
 	History  HistoryConfig  `json:"history"`
 	Data     DataConfig     `json:"data"`
+	Export   ExportConfig   `json:"export"`
 	UI       UIConfig       `json:"ui"`
 	Server   ServerConfig   `json:"server"`
+	Notify   NotifyConfig   `json:"notify"`
 	Advanced AdvancedConfig `json:"advanced"`
 
 	// Origins 记录每个参数的来源（default / preset / user），
@@ -137,6 +143,10 @@ func Default() Config {
 			TimeoutMS:        1000,
 			Retry:            0,
 		},
+		Speed:   defaultSpeed(),
+		Source:  defaultSource(),
+		Net:     defaultNet(),
+		Geo:     defaultGeo(),
 		History: HistoryConfig{
 			KeepCount: DefaultKeepCount,
 			KeepMode:  "count",
@@ -148,6 +158,7 @@ func Default() Config {
 			Dir:      "",
 			Portable: true,
 		},
+		Export: defaultExport(),
 		UI: UIConfig{
 			Theme:               "system",
 			Lang:                "zh",
@@ -170,6 +181,7 @@ func Default() Config {
 			OpenBrowser:   true,
 			Autostart:     false,
 		},
+		Notify: defaultNotify(),
 		Advanced: AdvancedConfig{
 			LogLevel:     "info",
 			LogKeepDays:  7,
@@ -212,12 +224,19 @@ func (c *Config) normalize() {
 		c.Scan.TimeoutMS = d.Scan.TimeoutMS
 	}
 
+	c.Speed.normalize()
+	c.Source.normalize()
+	c.Net.normalize()
+	c.Geo.normalize()
+
 	if c.History.KeepMode == "" {
 		c.History.KeepMode = d.History.KeepMode
 	}
 	if c.History.KeepDays == 0 {
 		c.History.KeepDays = d.History.KeepDays
 	}
+
+	c.Export.normalize()
 
 	if c.UI.Theme == "" {
 		c.UI.Theme = d.UI.Theme
@@ -287,6 +306,12 @@ func (c *ServerConfig) EnsureToken() (bool, error) {
 // Clone 返回深拷贝，避免调用方意外共享切片与 map。
 func (c Config) Clone() Config {
 	out := c
+	out.Speed = c.Speed.clone()
+	out.Source = c.Source.clone()
+	out.Net = c.Net.clone()
+	out.Geo = c.Geo.clone()
+	out.Export = c.Export.clone()
+	out.Notify = c.Notify.clone()
 	out.Scan.PreFilterPorts = append([]int(nil), c.Scan.PreFilterPorts...)
 	out.Scan.AllowedRegions = append([]string(nil), c.Scan.AllowedRegions...)
 	out.Scan.BlockedRegions = append([]string(nil), c.Scan.BlockedRegions...)

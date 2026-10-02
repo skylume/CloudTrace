@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -88,6 +89,12 @@ func (c Config) Validate() error {
 		add("scan.custom_source", "", "source_mode = custom 时必须填写来源")
 	}
 
+	c.validateSpeed(add)
+	c.validateSource(add)
+	c.validateNet(add)
+	c.validateGeo(add)
+	c.validateExport(add)
+
 	// ---- history.* ----
 	if c.History.KeepCount < 1 || c.History.KeepCount > 1000 {
 		add("history.keep_count", c.History.KeepCount, "必须在 1–1000 之间")
@@ -114,6 +121,9 @@ func (c Config) Validate() error {
 	}
 	if !oneOf(c.UI.TableDensity, "compact", "normal", "comfortable") {
 		add("ui.table_density", c.UI.TableDensity, "只能是 compact / normal / comfortable")
+	}
+	if !oneOf(c.UI.TimeFormat, "local", "utc") {
+		add("ui.time_format", c.UI.TimeFormat, "只能是 local 或 utc")
 	}
 	if !oneOf(c.UI.StartPage, "scan", "result", "speed", "history", "settings") {
 		add("ui.start_page", c.UI.StartPage, "不是有效的页面名")
@@ -175,6 +185,121 @@ func (c Config) Warnings() []FieldError {
 	return out
 }
 
+// ---- 新增分组的校验 ----
+//
+// 与既有分组同一口径：越界才报错，危险但允许的值留给 Warnings 与配置体检。
+
+func (c Config) validateSpeed(add func(string, any, string)) {
+	if !oneOf(c.Speed.URLMode, "auto", "official", "mobile_friendly", "mobile_only", "custom") {
+		add("speed.url_mode", c.Speed.URLMode, "只能是 auto / official / mobile_friendly / mobile_only / custom")
+	}
+	if c.Speed.URLMode == "custom" && !validSpeedURL(c.Speed.CustomURL) {
+		add("speed.custom_url", c.Speed.CustomURL, "custom 模式下必须是有效的 http(s) 地址")
+	}
+	if c.Speed.Concurrency < 1 || c.Speed.Concurrency > 16 {
+		add("speed.concurrency", c.Speed.Concurrency, "必须在 1–16 之间")
+	}
+	if c.Speed.TargetQualified < 1 || c.Speed.TargetQualified > 10000 {
+		add("speed.target_qualified", c.Speed.TargetQualified, "必须在 1–10000 之间")
+	}
+	if c.Speed.IntervalMS < 0 || c.Speed.IntervalMS > 60000 {
+		add("speed.interval_ms", c.Speed.IntervalMS, "必须在 0–60000 之间")
+	}
+	if c.Speed.MinSpeed < 0 {
+		add("speed.min_speed", c.Speed.MinSpeed, "不能为负")
+	}
+	for k, v := range map[string]float64{
+		"speed.weight_speed":   c.Speed.WeightSpeed,
+		"speed.weight_latency": c.Speed.WeightLatency,
+		"speed.weight_jitter":  c.Speed.WeightJitter,
+	} {
+		if v < 0 {
+			add(k, v, "权重不能为负")
+		}
+	}
+	if c.Speed.PerRegionTopN < 0 || c.Speed.PerRegionTopN > 1000 {
+		add("speed.per_region_topn", c.Speed.PerRegionTopN, "必须在 0–1000 之间（0 = 不分地区）")
+	}
+	if c.Speed.DownloadDurationS < 1 || c.Speed.DownloadDurationS > 600 {
+		add("speed.download_duration_s", c.Speed.DownloadDurationS, "必须在 1–600 秒之间")
+	}
+	if c.Speed.MaxDownloadMB < 0 {
+		add("speed.max_download_mb", c.Speed.MaxDownloadMB, "不能为负（0 = 不限）")
+	}
+	if c.Speed.Breaker429 < 1 || c.Speed.Breaker429 > 100 {
+		add("speed.breaker_429", c.Speed.Breaker429, "必须在 1–100 之间")
+	}
+	if c.Speed.UsabilityTimeoutMS < 1 || c.Speed.UsabilityTimeoutMS > 60000 {
+		add("speed.usability_timeout_ms", c.Speed.UsabilityTimeoutMS, "必须在 1–60000 之间")
+	}
+}
+
+func (c Config) validateSource(add func(string, any, string)) {
+	for i, s := range c.Source.RemoteURLs {
+		if s.Enabled && strings.TrimSpace(s.URL) == "" {
+			add("source.remote_urls", i, fmt.Sprintf("第 %d 个来源已启用但地址为空", i+1))
+		}
+	}
+	if c.Source.Retry < 0 || c.Source.Retry > 10 {
+		add("source.retry", c.Source.Retry, "必须在 0–10 之间")
+	}
+	if c.Source.RetryIntervalMS < 0 || c.Source.RetryIntervalMS > 60000 {
+		add("source.retry_interval_ms", c.Source.RetryIntervalMS, "必须在 0–60000 之间")
+	}
+	if c.Source.TimeoutMS < 1 || c.Source.TimeoutMS > 120000 {
+		add("source.timeout_ms", c.Source.TimeoutMS, "必须在 1–120000 之间")
+	}
+	if !oneOf(c.Source.MergeStrategy, "union", "intersect") {
+		add("source.merge_strategy", c.Source.MergeStrategy, "只能是 union 或 intersect")
+	}
+}
+
+func (c Config) validateNet(add func(string, any, string)) {
+	if c.Net.ConnectTimeoutMS < 1 || c.Net.ConnectTimeoutMS > 60000 {
+		add("net.connect_timeout_ms", c.Net.ConnectTimeoutMS, "必须在 1–60000 之间")
+	}
+	if !oneOf(c.Net.UseTLS, "auto", "true", "false") {
+		add("net.use_tls", c.Net.UseTLS, "只能是 auto / true / false")
+	}
+	if !oneOf(c.Net.IPVersion, "auto", "v4", "v6") {
+		add("net.ip_version", c.Net.IPVersion, "只能是 auto / v4 / v6")
+	}
+	if c.Net.MaxWorkers < 1 || c.Net.MaxWorkers > MaxWorkersHard {
+		add("net.max_workers", c.Net.MaxWorkers, fmt.Sprintf("必须在 1–%d 之间", MaxWorkersHard))
+	}
+	// 代理地址写错了不会报错，只会让所有请求静默失败——这是最难自查的一类
+	// 配置错误，因此在保存时就拦下。
+	if p := strings.TrimSpace(c.Net.Proxy); p != "" {
+		if !validProxy(p) {
+			add("net.proxy", p, "必须是 http://、https:// 或 socks5:// 开头的地址")
+		}
+	}
+}
+
+func (c Config) validateGeo(add func(string, any, string)) {
+	if !oneOf(c.Geo.ASNSource, "iptoasn", "geolite2_mmdb", "off") {
+		add("geo.asn_source", c.Geo.ASNSource, "只能是 iptoasn / geolite2_mmdb / off")
+	}
+	if c.Geo.ASNUpdateIntervalDays < 0 || c.Geo.ASNUpdateIntervalDays > 365 {
+		add("geo.asn_update_interval_days", c.Geo.ASNUpdateIntervalDays, "必须在 0–365 之间（0 = 仅手动）")
+	}
+}
+
+func (c Config) validateExport(add func(string, any, string)) {
+	if !oneOf(c.Export.DefaultFormat, FormatCSV, FormatJSON, FormatTXT) {
+		add("export.default_format", c.Export.DefaultFormat, "只能是 csv / json / txt")
+	}
+	if !oneOf(c.Export.DefaultFields, FieldsAll, FieldsSlim, FieldsIPPort) {
+		add("export.default_fields", c.Export.DefaultFields, "只能是 all / slim / ip_port")
+	}
+	// 模板为空会被补齐成默认值，但只有占位符没有文件名的模板会导出到一堆
+	// 同名文件里，因此要求至少保留一个非占位符字符。
+	if strings.TrimSpace(strings.NewReplacer("{type}", "", "{ts}", "", "{date}", "", "{time}", "").
+		Replace(c.Export.FilenameTemplate)) == "" {
+		add("export.filename_template", c.Export.FilenameTemplate, "必须包含文件名，不能只有占位符")
+	}
+}
+
 func oneOf(v string, allowed ...string) bool {
 	for _, a := range allowed {
 		if v == a {
@@ -185,3 +310,28 @@ func oneOf(v string, allowed ...string) bool {
 }
 
 func validPort(p int) bool { return p >= 1 && p <= 65535 }
+
+// validSpeedURL 判断测速地址是否可用。
+//
+// 只接受 http(s)：测速走的是 HTTP 下载，其他协议在这里通过只会在真正发起
+// 请求时才失败，而那时用户已经等了十几秒。
+func validSpeedURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+// validProxy 判断代理地址是否可用。
+func validProxy(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5":
+		return true
+	}
+	return false
+}
