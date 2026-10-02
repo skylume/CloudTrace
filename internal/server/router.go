@@ -17,6 +17,16 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("/auth/login", s.handleLogin)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 
+	// 导出字段清单、导出文件下载与本地结果地址。
+	//
+	// 三者都要鉴权：导出的是用户扫出来的 IP 列表，本地结果地址的用途正是
+	// 让别的程序拉取，一旦不设防，同一局域网里谁都能拿到。默认只监听回环
+	// 地址时本机访问仍然免鉴权（见 authorized），脚本照常可用。
+	mux.Handle(exportFieldsRoute, s.requireAuth(http.HandlerFunc(s.handleExportFields)))
+	mux.Handle(downloadRoute, s.requireAuth(http.HandlerFunc(s.handleDownload)))
+	mux.Handle(latestRoute, s.requireAuth(http.HandlerFunc(s.handleLatest)))
+	mux.Handle(latestJSONRoute, s.requireAuth(http.HandlerFunc(s.handleLatestJSON)))
+
 	// WebSocket：鉴权后建立。
 	mux.Handle("/ws", s.requireAuth(http.HandlerFunc(s.handleWS)))
 

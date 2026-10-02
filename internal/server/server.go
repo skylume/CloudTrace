@@ -35,6 +35,9 @@ type server struct {
 	// 缓存，每次测速新建一个解析器等于每次都要重新探测。
 	speedSource *speed.SourceResolver
 
+	// downloads 保存待下载的导出物。
+	downloads *downloadStore
+
 	// listenPort 是本进程实际监听的端口。
 	//
 	// 体检要拿它把「自己占着自己的端口」排除掉，重启提示也要拿它判断端口
@@ -77,6 +80,7 @@ func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, er
 		hub:         newWSHub(svc.Logger),
 		static:      static,
 		speedSource: speed.NewSourceResolver(nil, time.Now, speed.DefaultSourceTTL),
+		downloads:   newDownloadStore(),
 		listenPort:  listenPort,
 		startup:     cfg.Get(),
 	}

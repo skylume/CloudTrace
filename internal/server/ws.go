@@ -336,6 +336,7 @@ func (s *server) commands() map[string]commandHandler {
 		s.historyHandlers(),
 		s.settingsHandlers(),
 		s.healthHandlers(),
+		{cmdExport: s.handleExport},
 	} {
 		for name, handler := range group {
 			handlers[name] = handler

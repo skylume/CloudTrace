@@ -207,6 +207,7 @@ func TestNewCommandsAreRegistered(t *testing.T) {
 		{"settings/get", `{}`},
 		{"settings/update", `{"patch":{"ui":{"theme":"dark"}}}`},
 		{"settings/reset", `{"keys":["ui.theme"]}`},
+		{"export", `{"format":"csv"}`},
 		{"health/check", `{}`},
 	}
 	for _, c := range cases {
