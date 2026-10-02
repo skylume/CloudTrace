@@ -8,5 +8,17 @@
 # 选择，不该成为构建结果的一部分。
 *.go text eol=lf
 
+# 前端源码同样用 LF。
+#
+# 不是为了格式检查（prettier 两种都接受），而是为了让「同一份代码在不同
+# 平台上产生同样的 diff」：混着 CRLF 时，改一行会让整个文件显示成重写。
+*.ts text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
 # 本文件自身也用 LF：它是要被 git 解析的配置，不该带平台相关的行尾。
 .gitattributes text eol=lf

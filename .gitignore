@@ -62,3 +62,6 @@ node_modules/
 /.toolchain/
 /vendor/
 
+
+# 前端依赖与安装缓存（构建时生成，不进仓库）
+.npm-cache/

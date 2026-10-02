@@ -2,17 +2,12 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <title>CloudTrace</title>
-    <!--
-      图标与字体全部走本地：不引任何远程资源，加载更快也更可控。
-      字体直接用系统字体栈，连一个字体文件都不下载。
-    -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
-      // 首屏之前把主题与字号贴到根元素上，否则会先闪一下默认样式。
-      // 读的是本地记忆的那份界面设置；读不出来就按跟随系统。
+      // 与主页面同一段首屏脚本：登录页也要先贴主题，否则会闪一下。
       ;(function () {
         var root = document.documentElement
         var ui = null
@@ -28,14 +23,20 @@
         }
         root.dataset.theme = theme
         root.dataset.fontScale = (ui && ui.fontScale) || 'medium'
-        root.dataset.tableDensity = (ui && ui.tableDensity) || 'normal'
-        root.dataset.animation = ui && ui.animation === false ? 'off' : 'on'
-        root.dataset.contrast = ui && ui.contrast ? 'high' : 'normal'
       })()
     </script>
   </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+  <body class="login-body">
+    <form class="login-card" id="login-form" novalidate>
+      <h1>CloudTrace</h1>
+      <p class="login-hint" id="login-hint">
+        面板已开放局域网访问，请输入启动时控制台打印的访问 Token。
+      </p>
+      <label class="sr-only" for="login-token">访问 Token</label>
+      <input id="login-token" type="password" placeholder="访问 Token" autocomplete="off" autofocus />
+      <button type="submit" id="login-submit">登录</button>
+      <p class="login-error" id="login-error" role="alert"></p>
+    </form>
+    <script type="module" src="/src/login.ts"></script>
   </body>
 </html>
