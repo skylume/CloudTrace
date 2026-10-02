@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"time"
+
+	"cloudtrace/internal/atomicfile"
 )
 
 // filePerm 是配置文件权限：仅当前用户可读写。
@@ -70,56 +71,15 @@ func SaveFile(path string, cfg Config) error {
 }
 
 // writeFileAtomic 是原子写的唯一实现，配置与档位等文件共用。
-func writeFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
-	dir := filepath.Dir(path)
-	if err = os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	// 只在失败时清理临时文件；成功 rename 后 tmp 已不存在。
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmp)
-		}
-	}()
-
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err = os.Chmod(tmp, perm); err != nil {
-		return err
-	}
-
-	if err = os.Rename(tmp, path); err != nil {
-		// Windows：目标已存在时 rename 会失败，先移除再重试。
-		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-			return err
-		}
-		if err = os.Rename(tmp, path); err != nil {
-			return err
-		}
-	}
-	return nil
+func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
+	return atomicfile.Write(path, data, perm)
 }
 
 // backupBroken 把无法解析的文件重命名为 <name>.broken-<ts>。
 func backupBroken(path string) (string, error) {
 	ts := time.Now().Format("20060102_150405")
 	backup := fmt.Sprintf("%s.broken-%s", path, ts)
-	if err := os.Rename(path, backup); err != nil {
+	if err := atomicfile.Rename(path, backup); err != nil {
 		return "", err
 	}
 	return backup, nil
