@@ -36,6 +36,17 @@ func openMMDB(path string) (*mmdbLookup, error) {
 	return &mmdbLookup{reader: reader}, nil
 }
 
+// openMMDBBytes 从内存里的内容打开库。
+//
+// 下载回来的内容要先解析一遍再落盘，避免把一个坏文件写到库文件位置上。
+func openMMDBBytes(data []byte) (*mmdbLookup, error) {
+	reader, err := maxminddb.FromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("解析 mmdb 内容失败：%w", err)
+	}
+	return &mmdbLookup{reader: reader}, nil
+}
+
 // Lookup 查询一个地址。
 //
 // 库里没有这个地址时 maxminddb 返回零值记录而不报错，因此这里按「查不到」

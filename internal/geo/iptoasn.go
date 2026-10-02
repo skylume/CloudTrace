@@ -150,6 +150,21 @@ func readTSV(path string) ([]rawRange, error) {
 	return parseTSV(file)
 }
 
+// parseBytes 从内存里的内容解析区间，同样按魔数识别 gzip。
+//
+// 下载回来的内容要先解析一遍再落盘，避免把一个坏文件写到库文件位置上。
+func parseBytes(data []byte) ([]rawRange, error) {
+	if len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b {
+		zr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = zr.Close() }()
+		return parseTSV(zr)
+	}
+	return parseTSV(bytes.NewReader(data))
+}
+
 // rawRange 是解析出来的原始区间。
 type rawRange struct {
 	start   [16]byte
