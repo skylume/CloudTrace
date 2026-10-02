@@ -172,8 +172,6 @@ type ExportConfig struct {
 	FieldAliases     map[string]string `json:"field_aliases"`     // 字段别名（表头自定义）
 	CSVBOM           bool              `json:"csv_bom"`           // CSV 是否带 BOM（Excel 兼容）
 	FilenameTemplate string            `json:"filename_template"` // 文件名模板
-	DefaultDir       string            `json:"default_dir"`       // 默认导出目录；空 = 数据目录
-	IncludeUnreached bool              `json:"include_unreached"` // 是否导出未通过筛选的节点
 }
 
 func defaultExport() ExportConfig {
