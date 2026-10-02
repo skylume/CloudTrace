@@ -44,12 +44,16 @@ func newTestStack(t *testing.T, mutate func(*config.Config)) *testStack {
 	if err != nil {
 		t.Fatalf("打开配置失败：%v", err)
 	}
+	// 关掉 ASN 库的自动下载与出口探测：两者都会在后台发真实网络请求，
+	// 单测里既慢又不可控。需要它们的用例自己注入替身。
+	cfg := store.Get()
+	cfg.Geo.ASNAutoUpdate = false
+	cfg.Geo.GeoWarnEnabled = false
 	if mutate != nil {
-		cfg := store.Get()
 		mutate(&cfg)
-		if _, err := store.Set(cfg); err != nil {
-			t.Fatalf("写入测试配置失败：%v", err)
-		}
+	}
+	if _, err := store.Set(cfg); err != nil {
+		t.Fatalf("写入测试配置失败：%v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

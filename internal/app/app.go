@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/event"
+	"cloudtrace/internal/geo"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/task"
@@ -34,6 +36,10 @@ type Services struct {
 	Tasks *task.Manager
 	// History 是历史记录的存储核心。
 	History *history.Store
+	// Geo 是 ASN 库与归属地信息的入口。
+	Geo *geo.Manager
+	// Region 是扫描过程中顺手学到的归属地缓存。
+	Region *geo.InfoCache
 	// Version 是构建版本号。
 	Version string
 	// Logger 是结构化日志器。
@@ -72,15 +78,42 @@ func New(cfg *config.Store, version string, logger *slog.Logger) (*Services, err
 		return nil, err
 	}
 
+	region, geoMgr := newGeo(cfg, logger)
+
 	return &Services{
 		Config:  cfg,
 		Bus:     bus,
 		Tasks:   tasks,
 		History: hist,
+		Geo:     geoMgr,
+		Region:  region,
 		Version: version,
 		Logger:  logger,
 		cancel:  cancel,
 	}, nil
+}
+
+// newGeo 装配 ASN 库与归属地缓存。
+//
+// 数据目录解析不出来时两者都退化成不可用：ASN 归属是锦上添花，不能因为它
+// 让整个程序起不来。缓存不落盘，但仍然能在本次运行里省下重复查询。
+func newGeo(cfg *config.Store, logger *slog.Logger) (*geo.InfoCache, *geo.Manager) {
+	dataDir, err := cfg.DataDir()
+	if err != nil {
+		logger.Warn("解析数据目录失败，ASN 查询与归属地缓存本次不可用", "err", err)
+		return geo.NewInfoCache("", 0), geo.NewManager(geo.Options{
+			Config: func() config.GeoConfig { return cfg.Get().Geo },
+			Logger: logger,
+		})
+	}
+
+	cache := geo.NewInfoCache(filepath.Join(config.CacheDir(dataDir), "ipinfo.json"), 0)
+	return cache, geo.NewManager(geo.Options{
+		Config:  func() config.GeoConfig { return cfg.Get().Geo },
+		DataDir: dataDir,
+		Cache:   cache,
+		Logger:  logger,
+	})
 }
 
 // newHistory 装配历史存储。
@@ -120,7 +153,25 @@ func (s *Services) Startup(ctx context.Context) error {
 
 	s.Logger.Info("服务已启动", "version", s.Version)
 	s.Bus.Publish(TopicState, s.Snapshot())
+	s.startGeo(ctx)
 	return nil
+}
+
+// startGeo 在后台加载 ASN 库并探测本机出口地区。
+//
+// 一律不阻塞启动：库文件是几兆到十几兆的下载，出口探测要发网络请求，任何
+// 一项都能让启动慢上十几秒。它们只是让结果里多两列信息，用户不该为这个等。
+func (s *Services) startGeo(ctx context.Context) {
+	if s.Geo == nil {
+		return
+	}
+	s.Region.Load()
+
+	go func() {
+		// 库缺失时先下载再加载；这一整套失败都只记状态与日志，不影响任务。
+		s.Geo.Ensure(ctx)
+		s.Geo.CheckExit(ctx)
+	}()
 }
 
 // Shutdown 优雅退出：先停任务，再关闭事件总线并等待订阅者 goroutine 结束。
@@ -144,6 +195,17 @@ func (s *Services) Shutdown(ctx context.Context) error {
 		// 落定过程会发 history/changed，总线已经关掉的话那条事件就丢了。
 		if err := s.History.Close(); err != nil {
 			s.Logger.Warn("关闭历史存储失败", "err", err)
+		}
+	}
+
+	if s.Geo != nil {
+		// 缓存里是本次运行学到的归属地，攒一次落盘就够了；不落盘只是下次
+		// 要重新探测一遍，没有正确性问题。
+		if err := s.Geo.SaveCache(); err != nil {
+			s.Logger.Warn("保存归属地缓存失败", "err", err)
+		}
+		if err := s.Geo.Close(); err != nil {
+			s.Logger.Warn("关闭 ASN 库失败", "err", err)
 		}
 	}
 

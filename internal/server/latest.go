@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"cloudtrace/internal/exporter"
+	"cloudtrace/internal/geo"
 	"cloudtrace/internal/model"
 )
 
@@ -66,6 +67,9 @@ func (s *server) latestResults() ([]model.IPRecord, error) {
 		return nil, err
 	}
 	out := filterRecords(rec.Results, exportFilter{})
+	// 按运营商过滤在这里生效：配置里的条件筛的是「哪些节点算优选」，
+	// 而这两个地址给出的正是优选结果。
+	out = geo.FilterByASN(out, s.cfg.Get().Geo.FilterASN)
 	model.SortRecords(out, model.DefaultSortKey, false)
 	return out, nil
 }

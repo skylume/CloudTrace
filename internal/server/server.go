@@ -87,6 +87,11 @@ func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, er
 	s.speedSource.SetLogger(func(format string, args ...any) {
 		svc.Logger.Info(fmt.Sprintf(format, args...))
 	})
+	// 本地 ASN 库能补全出口的 AS 信息，让「是不是中国移动」的判定不依赖
+	// 出口探测接口是否还返回那两个字段。库不可用时留空，回退路径照常工作。
+	if svc.Geo != nil {
+		s.speedSource.SetASNLookup(svc.Geo.LookupFunc())
+	}
 	s.sourceReachable = s.probeSpeedSource
 
 	// 配置一旦落盘就广播给所有连接（包括发起方）：前端拿全量配置整体替换

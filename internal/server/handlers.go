@@ -118,6 +118,9 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		// 会让用户每次扫到同一批。
 		Seed:   time.Now().UnixNano(),
 		Logger: s.logger,
+		// 归属地补齐只在本地查表与内存里算，不发请求，因此可以挂在每个
+		// 节点的产出路径上。
+		Enrich: s.geoEnrich(),
 	})
 	if err != nil {
 		return fail(CodeInvalidParam, err.Error())
@@ -134,6 +137,14 @@ func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams) task.
 	return taskRunner(runner.Run, func(duration float64) {
 		s.archiveScan(params, s.currentPreset(), res, duration)
 	})
+}
+
+// geoEnrich 返回注入给扫描流水线的归属地补齐；ASN 不可用时返回 nil。
+func (s *server) geoEnrich() func(*model.IPRecord) {
+	if s.svc.Geo == nil {
+		return nil
+	}
+	return s.svc.Geo.Enrich
 }
 
 // handleSpeedStart 校验参数并启动测速任务。
