@@ -379,7 +379,7 @@ function select(id: string): void {
   flex-basis: var(--sidebar-width);
   transform: translateX(-100%);
   transition: transform var(--duration-normal) var(--ease);
-  box-shadow: var(--shadow-overlay);
+  box-shadow: var(--elevation-overlay);
 }
 
 .sidebar.drawer.open {
