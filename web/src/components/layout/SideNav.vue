@@ -71,9 +71,10 @@ const ICONS: Record<string, string> = {
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 0;
+  position: relative;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-sidebar-text-muted);
+  color: var(--color-text-muted);
   text-align: left;
   cursor: pointer;
   transition:
@@ -87,13 +88,25 @@ const ICONS: Record<string, string> = {
 }
 
 .item:hover {
-  background: var(--color-sidebar-hover);
-  color: var(--color-sidebar-text);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 .item.active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+}
+
+/* 左侧竖条：比整块实心轻，但足够把「当前在哪」说清楚。 */
+.item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  border-radius: var(--radius-pill);
   background: var(--color-primary);
-  color: var(--color-on-primary);
 }
 
 .icon {
@@ -121,6 +134,11 @@ const ICONS: Record<string, string> = {
 .desc {
   margin-top: 1px;
   font-size: var(--font-size-xs);
-  opacity: 0.72;
+  color: var(--color-text-subtle);
+}
+
+.item.active .desc {
+  color: inherit;
+  opacity: 0.8;
 }
 </style>

@@ -17,10 +17,10 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  /* ---- 圆角 ---- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* ---- 圆角：偏小，工具型界面不需要圆润的观感 ---- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-pill: 999px;
 
   /*
@@ -42,13 +42,13 @@
   --line-height: 1.55;
 
   /* ---- 尺寸 ---- */
-  --control-height: 32px;
-  --control-height-lg: 38px;
+  --control-height: 30px;
+  --control-height-lg: 36px;
   /* 行高由字号推出，再叠加密度偏移：这样字号与密度两档互不覆盖。 */
   --density-extra: 0px;
-  --row-height: calc(var(--font-size-md) + 20px + var(--density-extra));
-  --sidebar-width: 208px;
-  --topbar-height: 52px;
+  --row-height: calc(var(--font-size-md) + 14px + var(--density-extra));
+  --sidebar-width: 196px;
+  --topbar-height: 48px;
   --content-max: 1440px;
 
   /* ---- 动效：可关闭，见 base.css 里的 [data-animation='off'] ---- */

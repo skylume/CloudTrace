@@ -170,7 +170,8 @@ function select(id: string): void {
   flex: 0 0 var(--sidebar-width);
   height: 100vh;
   flex-direction: column;
-  background: var(--color-sidebar-bg);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
   transition: width var(--duration-normal) var(--ease);
 }
 
@@ -185,7 +186,7 @@ function select(id: string): void {
   gap: var(--space-2);
   height: var(--topbar-height);
   padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-sidebar-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .sidebar.collapsed .brand {
@@ -202,8 +203,8 @@ function select(id: string): void {
 }
 
 .name {
-  color: var(--color-sidebar-text);
-  font-size: var(--font-size-lg);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
   font-weight: 500;
 }
 
@@ -212,8 +213,8 @@ function select(id: string): void {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--color-sidebar-border);
-  color: var(--color-sidebar-text-muted);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-subtle);
   font-size: var(--font-size-xs);
 }
 
@@ -378,7 +379,7 @@ function select(id: string): void {
   flex-basis: var(--sidebar-width);
   transform: translateX(-100%);
   transition: transform var(--duration-normal) var(--ease);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-overlay);
 }
 
 .sidebar.drawer.open {

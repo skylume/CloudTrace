@@ -1,142 +1,118 @@
 /*
  * 主题：颜色这一半。
  *
- * 结构上分三组：
- *   1. 内容区（背景、面板、文字、边框）—— 浅色为基准，深色成对给出；
- *   2. 侧栏 —— 两种主题下都是深色，它是整个界面的视觉锚点，
- *      跟着主题一起变浅会让「导航」和「内容」分不开；
- *   3. 语义色 —— 一律「淡底 + 描边 + 深字」的徽章式表达，不用实心色块，
- *      因为结果表里这些颜色要成片出现，实心会喧宾夺主。
+ * 三个决定：
+ *   1. **侧栏与内容区同色**，靠一条细边框分隔。深色侧栏对比太强，会把注意力
+ *      一直拽在导航上，而这是个用几分钟的工具，不是要长时间浏览的内容站。
+ *   2. **中性灰阶为主**，强调色只出现在选中态与关键动作上。结果表里会有成片
+ *      的颜色（延迟分档），界面自己再用一个大面积主色就会互相打架。
+ *   3. **颜色只表达状态**：延迟快慢、达标与否、成功失败。不用颜色做装饰。
  *
  * data-theme 上只会有 dark 或 light。「跟随系统」在界面状态层解析成具体值，
  * 因此这里没有 media query，浅色配色也就不必写两遍。
  *
- * 对比度按 4.5:1 起步取值：正文与背景 12:1 以上，次级文字 6:1 以上。
+ * 对比度按 4.5:1 起步：正文与背景 12:1 以上，次级文字 6:1 以上，
+ * 主色上的文字 4.5:1 以上。
  */
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --color-bg: #f5f7fc;
+  --color-bg: #f6f7f9;
   --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-surface-hover: #f1f5f9;
-  --color-surface-sunken: #eef2f9;
+  --color-surface-hover: #f1f3f5;
+  --color-surface-sunken: #eceff2;
 
-  --color-border: rgb(148 163 184 / 28%);
-  --color-border-strong: rgb(100 116 139 / 38%);
+  --color-border: #e3e6ea;
+  --color-border-strong: #c9cfd6;
 
-  --color-text: #0f172a;
-  --color-text-muted: #475569;
-  --color-text-subtle: #64748b;
+  --color-text: #1a1d21;
+  --color-text-muted: #565e66;
+  --color-text-subtle: #7b838c;
 
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-primary-soft: rgb(79 70 229 / 10%);
-  --color-primary-soft-strong: rgb(79 70 229 / 16%);
-  --color-primary-text: #4338ca;
+  --color-primary: #0f766e;
+  --color-primary-hover: #115e59;
+  --color-primary-soft: rgb(15 118 110 / 10%);
+  --color-primary-soft-strong: rgb(15 118 110 / 18%);
+  --color-primary-text: #0f766e;
   --color-on-primary: #ffffff;
 
-  /* 品牌色：只用在标记与强调，不用在按钮上——按钮的主色是 primary。 */
+  /* 品牌色：只用于标记，不用在按钮上。 */
   --color-brand: #f38020;
 
-  --color-ok: #047857;
-  --color-ok-bg: rgb(16 185 129 / 12%);
-  --color-ok-border: rgb(16 185 129 / 24%);
+  --color-ok: #15803d;
+  --color-ok-bg: rgb(21 128 61 / 10%);
+  --color-ok-border: rgb(21 128 61 / 22%);
 
-  --color-warn: #b45309;
-  --color-warn-bg: rgb(245 158 11 / 14%);
-  --color-warn-border: rgb(245 158 11 / 26%);
+  --color-warn: #a16207;
+  --color-warn-bg: rgb(161 98 7 / 10%);
+  --color-warn-border: rgb(161 98 7 / 22%);
 
-  --color-bad: #be123c;
-  --color-bad-bg: rgb(244 63 94 / 12%);
-  --color-bad-border: rgb(244 63 94 / 24%);
+  --color-bad: #b91c1c;
+  --color-bad-bg: rgb(185 28 28 / 10%);
+  --color-bad-border: rgb(185 28 28 / 22%);
 
-  --color-info: #4338ca;
-  --color-info-bg: rgb(79 70 229 / 10%);
-  --color-info-border: rgb(79 70 229 / 22%);
+  --color-info: #0f766e;
+  --color-info-bg: rgb(15 118 110 / 10%);
+  --color-info-border: rgb(15 118 110 / 22%);
 
   /* 延迟分档：快 / 中 / 慢 / 不可达。 */
-  --latency-fast: #047857;
-  --latency-mid: #b45309;
+  --latency-fast: #15803d;
+  --latency-mid: #a16207;
   --latency-slow: #c2410c;
-  --latency-dead: #64748b;
+  --latency-dead: #7b838c;
 
-  /* 前三名：金 / 银 / 铜。 */
-  --rank-1: #d4a72c;
-  --rank-2: #a8b3bd;
-  --rank-3: #b07d4a;
-
-  /* 侧栏在浅色主题下是深色的。 */
-  --color-sidebar-bg: #0f172a;
-  --color-sidebar-text: #e2e8f0;
-  --color-sidebar-text-muted: #94a3b8;
-  --color-sidebar-hover: rgb(51 65 85 / 72%);
-  --color-sidebar-border: rgb(148 163 184 / 20%);
-
-  --shadow-panel: 0 18px 48px rgb(15 23 42 / 8%);
-  --shadow-soft: 0 10px 28px rgb(15 23 42 / 8%);
+  --shadow-overlay: 0 12px 32px rgb(15 23 42 / 12%);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --color-bg: #0b1120;
-  --color-surface: #131c31;
-  --color-surface-raised: #182238;
-  --color-surface-hover: #1d2941;
-  --color-surface-sunken: #0f1729;
+  --color-bg: #14171a;
+  --color-surface: #1b1f23;
+  --color-surface-raised: #22272c;
+  --color-surface-hover: #262c32;
+  --color-surface-sunken: #101315;
 
-  --color-border: rgb(148 163 184 / 22%);
-  --color-border-strong: rgb(148 163 184 / 38%);
+  --color-border: #2e343a;
+  --color-border-strong: #454d55;
 
-  --color-text: #e2e8f0;
-  --color-text-muted: #a8b6c8;
-  --color-text-subtle: #8b9bb0;
+  --color-text: #e8eaed;
+  --color-text-muted: #a3abb3;
+  --color-text-subtle: #828b94;
 
-  --color-primary: #6366f1;
-  --color-primary-hover: #818cf8;
-  --color-primary-soft: rgb(99 102 241 / 18%);
-  --color-primary-soft-strong: rgb(99 102 241 / 28%);
-  --color-primary-text: #c7d2fe;
-  --color-on-primary: #ffffff;
+  --color-primary: #14b8a6;
+  --color-primary-hover: #2dd4bf;
+  --color-primary-soft: rgb(20 184 166 / 16%);
+  --color-primary-soft-strong: rgb(20 184 166 / 26%);
+  --color-primary-text: #5eead4;
+  --color-on-primary: #062a26;
 
   --color-brand: #f38020;
 
-  --color-ok: #34d399;
-  --color-ok-bg: rgb(16 185 129 / 16%);
-  --color-ok-border: rgb(16 185 129 / 32%);
+  --color-ok: #4ade80;
+  --color-ok-bg: rgb(74 222 128 / 14%);
+  --color-ok-border: rgb(74 222 128 / 28%);
 
   --color-warn: #fbbf24;
-  --color-warn-bg: rgb(245 158 11 / 16%);
-  --color-warn-border: rgb(245 158 11 / 32%);
+  --color-warn-bg: rgb(251 191 36 / 14%);
+  --color-warn-border: rgb(251 191 36 / 28%);
 
-  --color-bad: #fb7185;
-  --color-bad-bg: rgb(244 63 94 / 16%);
-  --color-bad-border: rgb(244 63 94 / 32%);
+  --color-bad: #f87171;
+  --color-bad-bg: rgb(248 113 113 / 14%);
+  --color-bad-border: rgb(248 113 113 / 28%);
 
-  --color-info: #c7d2fe;
-  --color-info-bg: rgb(99 102 241 / 18%);
-  --color-info-border: rgb(99 102 241 / 34%);
+  --color-info: #5eead4;
+  --color-info-bg: rgb(20 184 166 / 16%);
+  --color-info-border: rgb(20 184 166 / 30%);
 
-  --latency-fast: #34d399;
+  --latency-fast: #4ade80;
   --latency-mid: #fbbf24;
   --latency-slow: #fb923c;
-  --latency-dead: #7b8aa0;
+  --latency-dead: #828b94;
 
-  --rank-1: #e3b341;
-  --rank-2: #c3ccd6;
-  --rank-3: #c98f5c;
-
-  /* 深色主题下侧栏比内容区更深一档，靠明度差而不是边框来分隔。 */
-  --color-sidebar-bg: #080d19;
-  --color-sidebar-text: #e2e8f0;
-  --color-sidebar-text-muted: #8b9bb0;
-  --color-sidebar-hover: rgb(99 102 241 / 22%);
-  --color-sidebar-border: rgb(148 163 184 / 16%);
-
-  --shadow-panel: 0 18px 48px rgb(0 0 0 / 32%);
-  --shadow-soft: 0 10px 28px rgb(0 0 0 / 26%);
+  --shadow-overlay: 0 12px 32px rgb(0 0 0 / 40%);
 }
 
 /*
@@ -146,20 +122,19 @@
 :root[data-contrast='high'][data-theme='light'] {
   --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-hover: #eef2f9;
-  --color-border: #000000;
-  --color-border-strong: #000000;
+  --color-surface-hover: #eceff2;
+  --color-border: #1a1d21;
+  --color-border-strong: #1a1d21;
   --color-text: #000000;
-  --color-text-muted: #1f2937;
+  --color-text-muted: #1f2328;
   --color-text-subtle: #374151;
-  --color-primary: #3730a3;
-  --color-primary-text: #312e81;
-  --color-ok: #065f46;
-  --color-warn: #78350f;
-  --color-bad: #881337;
-  --color-sidebar-bg: #000000;
-  --latency-fast: #065f46;
-  --latency-mid: #78350f;
+  --color-primary: #0b4f4a;
+  --color-primary-text: #0b4f4a;
+  --color-ok: #14532d;
+  --color-warn: #713f12;
+  --color-bad: #7f1d1d;
+  --latency-fast: #14532d;
+  --latency-mid: #713f12;
   --latency-slow: #7c2d12;
   --latency-dead: #374151;
 }
@@ -173,14 +148,13 @@
   --color-text: #ffffff;
   --color-text-muted: #e5e7eb;
   --color-text-subtle: #d1d5db;
-  --color-primary: #a5b4fc;
-  --color-primary-text: #c7d2fe;
-  --color-ok: #6ee7b7;
-  --color-warn: #fcd34d;
-  --color-bad: #fda4af;
-  --color-sidebar-bg: #000000;
-  --latency-fast: #6ee7b7;
-  --latency-mid: #fcd34d;
+  --color-primary: #5eead4;
+  --color-primary-text: #99f6e4;
+  --color-ok: #86efac;
+  --color-warn: #fde047;
+  --color-bad: #fca5a5;
+  --latency-fast: #86efac;
+  --latency-mid: #fde047;
   --latency-slow: #fdba74;
   --latency-dead: #d1d5db;
 }
