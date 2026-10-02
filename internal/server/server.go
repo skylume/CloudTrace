@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,13 +34,29 @@ type server struct {
 	// speedSource 解析测速源。它必须跨任务复用：出口 ISP 探测结果按十分钟
 	// 缓存，每次测速新建一个解析器等于每次都要重新探测。
 	speedSource *speed.SourceResolver
+
+	// listenPort 是本进程实际监听的端口。
+	//
+	// 体检要拿它把「自己占着自己的端口」排除掉，重启提示也要拿它判断端口
+	// 是否被改过。为 0 表示未知。
+	listenPort int
+	// startup 是启动时的配置快照，用于判断哪些改动要重启才生效。
+	startup config.Config
+
+	// 体检用的可注入探测函数，为 nil 时由 health 包做真实探测。
+	portInUse       func(int) bool
+	dirWritable     func(string) error
+	sourceReachable func(context.Context) error
 }
 
 // New 构造唯一的前后端入口 handler（静态资源 + REST + WebSocket）。
 //
+// listenPort 是本进程即将监听的端口，只用于体检与重启提示：面板跑着的
+// 时候那个端口当然是被占用的，占用者就是自己，不排除掉就必然误报冲突。
+//
 // 面板版把它交给 http.ListenAndServe；桌面版把它同时交给 Wails 的
 // AssetServer 与一个本地监听，从而保证两个发行版行为完全一致。
-func New(cfg *config.Store, svc *app.Services) (http.Handler, error) {
+func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, error) {
 	if cfg == nil {
 		return nil, errors.New("server: 配置不能为空")
 	}
@@ -60,9 +77,18 @@ func New(cfg *config.Store, svc *app.Services) (http.Handler, error) {
 		hub:         newWSHub(svc.Logger),
 		static:      static,
 		speedSource: speed.NewSourceResolver(nil, time.Now, speed.DefaultSourceTTL),
+		listenPort:  listenPort,
+		startup:     cfg.Get(),
 	}
 	s.speedSource.SetLogger(func(format string, args ...any) {
 		svc.Logger.Info(fmt.Sprintf(format, args...))
+	})
+	s.sourceReachable = s.probeSpeedSource
+
+	// 配置一旦落盘就广播给所有连接（包括发起方）：前端拿全量配置整体替换
+	// 本地状态，两端因此永远一致，不存在谁覆盖谁的问题。
+	cfg.OnSaved(func(config.Config) {
+		s.hub.broadcast(eventSettings, s.settingsPayload())
 	})
 
 	// 任务状态与任务事件 → 广播给所有 WS 连接。

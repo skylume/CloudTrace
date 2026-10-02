@@ -329,11 +329,17 @@ func (s *server) commands() map[string]commandHandler {
 			return nil
 		},
 	}
-	for name, handler := range s.taskHandlers() {
-		handlers[name] = handler
-	}
-	for name, handler := range s.historyHandlers() {
-		handlers[name] = handler
+	// 各功能域各交一份命令表再合并：新增命令只需要在自己那个文件里登记，
+	// 不必回到这里改一处长长的清单。
+	for _, group := range []map[string]commandHandler{
+		s.taskHandlers(),
+		s.historyHandlers(),
+		s.settingsHandlers(),
+		s.healthHandlers(),
+	} {
+		for name, handler := range group {
+			handlers[name] = handler
+		}
 	}
 	return handlers
 }

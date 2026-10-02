@@ -121,7 +121,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	handler, err := server.New(store, svc)
+	handler, err := server.New(store, svc, cfg.Server.Port)
 	if err != nil {
 		return err
 	}

@@ -61,7 +61,9 @@ func newTestStack(t *testing.T, mutate func(*config.Config)) *testStack {
 		t.Fatalf("启动服务失败：%v", err)
 	}
 
-	handler, err := New(store, svc)
+	// 传入配置里的端口：体检要拿它把「自己占着自己的端口」排除掉，
+	// 重启提示也要拿它判断端口是否被改过。
+	handler, err := New(store, svc, store.Get().Server.Port)
 	if err != nil {
 		t.Fatalf("构造 handler 失败：%v", err)
 	}
@@ -343,7 +345,7 @@ func TestHealthSurfacesStartupWarnings(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Shutdown(context.Background()) })
 
-	handler, err := New(store, svc)
+	handler, err := New(store, svc, store.Get().Server.Port)
 	if err != nil {
 		t.Fatalf("构造 handler 失败：%v", err)
 	}
