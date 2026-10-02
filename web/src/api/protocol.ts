@@ -1,0 +1,114 @@
+/**
+ * WebSocket 协议：命令名、事件名与各自的载荷。
+ *
+ * 命令名与事件名刻意用字符串字面量而不是枚举：它们就是后端 handlers 表里的
+ * 键，改错一个字母时希望是运行时报「未注册的命令」，而不是编译期悄悄改名。
+ */
+
+/** 客户端 → 服务端：命令。 */
+export const CMD = {
+  ping: 'ping',
+
+  scanStart: 'scan/start',
+  scanStop: 'scan/stop',
+  speedStart: 'speed/start',
+  speedStop: 'speed/stop',
+
+  historyList: 'history/list',
+  historyGet: 'history/get',
+  historyLoad: 'history/load',
+  historyDelete: 'history/delete',
+  historyTag: 'history/tag',
+  historyCompare: 'history/compare',
+
+  settingsGet: 'settings/get',
+  settingsUpdate: 'settings/update',
+  settingsReset: 'settings/reset',
+
+  export: 'export',
+  healthCheck: 'health/check',
+  geoStatus: 'geo/status',
+  geoUpdate: 'geo/update',
+} as const
+
+/** 服务端 → 客户端：事件。 */
+export const EVT = {
+  state: 'state',
+  pong: 'pong',
+  error: 'error',
+
+  progress: 'progress',
+  scanResult: 'scan/result',
+  scanDone: 'scan/done',
+  scanAbort: 'scan/abort',
+  speedPartial: 'speed/partial',
+  speedDone: 'speed/done',
+  speedAbort: 'speed/abort',
+
+  historyList: 'history/list',
+  historyGet: 'history/get',
+  historyLoad: 'history/load',
+  historyDelete: 'history/delete',
+  historyTag: 'history/tag',
+  historyCompare: 'history/compare',
+  historyChanged: 'history/changed',
+
+  settings: 'settings',
+  export: 'export',
+  health: 'health',
+  geo: 'geo',
+} as const
+
+export type CommandName = (typeof CMD)[keyof typeof CMD]
+export type EventName = (typeof EVT)[keyof typeof EVT]
+
+/** 错误事件的数据体。 */
+export interface ErrorPayload {
+  code: string
+  msg: string
+}
+
+/** 错误事件的数据体。 */
+export interface ErrorPayload {
+  code: string
+  msg: string
+}
+
+/** 错误码。前端据它决定表现：Toast / 跳登录 / 字段高亮。 */
+export const ERROR_CODE = {
+  busy: 'E_BUSY',
+  invalidParam: 'E_INVALID_PARAM',
+  notFound: 'E_NOT_FOUND',
+  unauthorized: 'E_UNAUTHORIZED',
+  io: 'E_IO',
+  network: 'E_NETWORK',
+  asnUnavailable: 'E_ASN_UNAVAILABLE',
+  unknown: 'E_UNKNOWN',
+} as const
+
+/** 报文格式：客户端发命令、服务端发事件，用的是同一个外壳。 */
+export interface Envelope<T = unknown> {
+  type: string
+  data?: T
+}
+
+/** 进度事件的载荷。 */
+export interface ProgressPayload {
+  phase: string
+  done: number
+  total: number
+  funnel: unknown
+  eta: number
+}
+
+/** 任务终止事件的载荷。 */
+export interface TaskDonePayload {
+  id?: string
+  count: number
+}
+
+/** 历史变更事件的载荷。 */
+export interface HistoryChangePayload {
+  id?: string
+  action: string
+}

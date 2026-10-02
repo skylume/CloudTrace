@@ -1,0 +1,94 @@
+/*
+ * 设计变量：与颜色无关的那一半。
+ *
+ * 颜色单独放在 themes.css —— 它是唯一需要按主题整套替换的部分，混在一起会
+ * 让人分不清哪些变量在换主题时会变。
+ *
+ * 全部用 CSS 变量而不是预处理器常量：主题切换要能即时生效且不刷新，运行时
+ * 可变的只有 CSS 变量。
+ */
+:root {
+  /* ---- 间距：4 的倍数 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- 圆角 ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* ---- 阴影：浅色主题下才明显，深色主题靠边框区分层次 ---- */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 18%);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 22%);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 28%);
+
+  /* ---- 字体：只用系统字体，不下载任何字体文件 ---- */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC',
+    sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace;
+
+  /* ---- 字号：三档由 data-font-scale 整体缩放 ---- */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 26px;
+  --line-height: 1.55;
+
+  /* ---- 尺寸 ---- */
+  --control-height: 32px;
+  --control-height-lg: 38px;
+  /* 行高由字号推出，再叠加密度偏移：这样字号与密度两档互不覆盖。 */
+  --density-extra: 0px;
+  --row-height: calc(var(--font-size-md) + 20px + var(--density-extra));
+  --sidebar-width: 208px;
+  --topbar-height: 52px;
+  --content-max: 1440px;
+
+  /* ---- 动效：可关闭，见 base.css 里的 [data-animation='off'] ---- */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ---- 层级 ---- */
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-dialog: 200;
+  --z-toast: 300;
+}
+
+/* 字号三档：整体缩放字号变量，各处不必各写一遍。 */
+:root[data-font-scale='small'] {
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 23px;
+}
+
+:root[data-font-scale='large'] {
+  --font-size-xs: 13px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 23px;
+  --font-size-2xl: 30px;
+}
+
+/* 表格密度：只改偏移量，字号仍然照常生效。 */
+:root[data-table-density='compact'] {
+  --density-extra: -6px;
+}
+
+:root[data-table-density='comfortable'] {
+  --density-extra: 10px;
+}

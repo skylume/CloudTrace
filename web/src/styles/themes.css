@@ -1,0 +1,142 @@
+/*
+ * 主题：只有颜色这一半。
+ *
+ * data-theme 上只会有 dark 或 light 两个值。「跟随系统」由界面状态层解析成
+ * 具体值再贴上去，CSS 里因此不需要 media query，也就不必把浅色配色写两遍。
+ *
+ * 对比度按 4.5:1 起步取值（旧项目踩过 2.9:1 的坑）。次级文字与背景的对比度
+ * 都在 6:1 以上，正文在 12:1 以上。
+ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: #0f1419;
+  --color-surface: #161c23;
+  --color-surface-raised: #1c232b;
+  --color-surface-hover: #222a33;
+
+  --color-border: #2a333d;
+  --color-border-strong: #3d4854;
+
+  --color-text: #e6edf3;
+  --color-text-muted: #a9b6c3;
+  --color-text-subtle: #8b98a5;
+
+  --color-accent: #4c9aff;
+  --color-accent-hover: #6aabff;
+  --color-accent-text: #0f1419;
+
+  --color-ok: #3fb950;
+  --color-warn: #d29922;
+  --color-bad: #f85149;
+  --color-info: #4c9aff;
+
+  /* 语义底色：横幅与提示条用，透明度压得很低以免喧宾夺主 */
+  --color-ok-bg: #10261a;
+  --color-warn-bg: #2a2113;
+  --color-bad-bg: #2b1516;
+  --color-info-bg: #132030;
+
+  /* 延迟分档：快 / 中 / 慢，另加不可达 */
+  --latency-fast: #3fb950;
+  --latency-mid: #d29922;
+  --latency-slow: #f0883e;
+  --latency-dead: #6e7681;
+
+  /* 前三名的金银铜 */
+  --rank-1: #d4a72c;
+  --rank-2: #a8b3bd;
+  --rank-3: #b07d4a;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --color-bg: #f4f6f8;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #eef1f4;
+
+  --color-border: #d6dce3;
+  --color-border-strong: #b3bcc6;
+
+  --color-text: #1f2328;
+  --color-text-muted: #57606a;
+  --color-text-subtle: #6b7480;
+
+  --color-accent: #0969da;
+  --color-accent-hover: #0a5cc2;
+  --color-accent-text: #ffffff;
+
+  --color-ok: #1a7f37;
+  --color-warn: #9a6700;
+  --color-bad: #cf222e;
+  --color-info: #0969da;
+
+  --color-ok-bg: #e6f4ea;
+  --color-warn-bg: #fdf3d8;
+  --color-bad-bg: #fdeced;
+  --color-info-bg: #e8f1fd;
+
+  --latency-fast: #1a7f37;
+  --latency-mid: #9a6700;
+  --latency-slow: #bc4c00;
+  --latency-dead: #6e7781;
+
+  --rank-1: #9a6700;
+  --rank-2: #57606a;
+  --rank-3: #953800;
+}
+
+/*
+ * 高对比度：不换配色体系，只把文字推到极值、边框加实。
+ * 单独一套配色会让维护者忘记同步，改起来必漏。
+ */
+:root[data-contrast='high'][data-theme='dark'] {
+  --color-bg: #000000;
+  --color-surface: #000000;
+  --color-surface-raised: #0a0a0a;
+  --color-surface-hover: #1a1a1a;
+
+  --color-border: #ffffff;
+  --color-border-strong: #ffffff;
+
+  --color-text: #ffffff;
+  --color-text-muted: #e8e8e8;
+  --color-text-subtle: #d0d0d0;
+
+  --color-accent: #7cc0ff;
+  --color-ok: #5ee07a;
+  --color-warn: #ffcc55;
+  --color-bad: #ff7b72;
+
+  --latency-fast: #5ee07a;
+  --latency-mid: #ffcc55;
+  --latency-slow: #ff9f6b;
+  --latency-dead: #c0c0c0;
+}
+
+:root[data-contrast='high'][data-theme='light'] {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #f0f0f0;
+
+  --color-border: #000000;
+  --color-border-strong: #000000;
+
+  --color-text: #000000;
+  --color-text-muted: #1a1a1a;
+  --color-text-subtle: #303030;
+
+  --color-accent: #0043a8;
+  --color-ok: #0b5c22;
+  --color-warn: #6b4700;
+  --color-bad: #a3000f;
+
+  --latency-fast: #0b5c22;
+  --latency-mid: #6b4700;
+  --latency-slow: #8a3200;
+  --latency-dead: #303030;
+}

@@ -1,0 +1,121 @@
+/**
+ * 接线层：把后端事件分发到各个 store。
+ *
+ * 全应用只有这一处调用 `onEvent`。组件各自订阅会让「谁该在断线后重新拉
+ * 数据」这类问题散落到各处，也会让同一份事件被重复处理。
+ */
+import { api } from '@/api/rest'
+import { EVT, onEvent, sendCommand, setSendFailureHandler, wsClient } from '@/api/client'
+import { t } from '@/i18n'
+
+import { useGeoStore } from './geo'
+import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
+import { useResultsStore } from './results'
+import { useSettingsStore } from './settings'
+import { useTaskStore } from './task'
+import { useUIStore } from './ui'
+
+import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
+import type { GeoStatus, IPRecord, SettingsPayload, TaskState } from '@/api/types'
+
+/** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
+export function refreshSettings(): void {
+  sendCommand('settings/get')
+}
+
+/** refreshHistory 拉一次历史索引。 */
+export function refreshHistory(filter?: HistoryFilter): void {
+  const store = useHistoryStore()
+  if (filter) store.filter = filter
+  sendCommand('history/list', { filter: store.filter })
+}
+
+export function refreshGeo(): void {
+  sendCommand('geo/status')
+}
+
+/**
+ * wireEvents 建立事件 → store 的映射，并处理重连后的状态恢复。
+ *
+ * 重连成功时重新拉一遍全量状态：设置、历史、ASN 状态都是后端说了算，
+ * 断线期间它们可能已经变了。
+ */
+export function wireEvents(): void {
+  const task = useTaskStore()
+  const settings = useSettingsStore()
+  const results = useResultsStore()
+  const history = useHistoryStore()
+  const geo = useGeoStore()
+  const ui = useUIStore()
+
+  setSendFailureHandler((type) => {
+    ui.pushToast({ kind: 'warn', message: t('conn.lost') })
+    console.warn(`[bridge] 命令 ${type} 未能发出：连接不可用`)
+  })
+
+  wsClient().onStateChange = (state, retrySeconds) => {
+    task.setConnection(state, retrySeconds)
+  }
+
+  wsClient().onOpen(() => {
+    // 首连与每次重连都会走到这里。
+    refreshSettings()
+    refreshHistory()
+    refreshGeo()
+  })
+
+  onEvent(EVT.state, (data) => task.applyState(data as TaskState))
+  onEvent(EVT.progress, (data) => task.applyProgress(data as ProgressPayload))
+
+  onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
+  onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
+
+  onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
+  onEvent(EVT.geo, (data) => geo.apply(data as GeoStatus))
+
+  onEvent(EVT.historyList, (data) => {
+    const payload = data as { entries?: unknown[]; total?: number }
+    history.applyList((payload.entries ?? []) as never[], payload.total ?? 0)
+    history.stale = false
+  })
+  onEvent(EVT.historyLoad, (data) => history.applyLoaded(data as LoadedHistory))
+  onEvent(EVT.historyChanged, (data) => {
+    const change = data as HistoryChangePayload
+    history.markStale()
+    // 变更事件只带 id 与动作，列表要重新拉一次：本地拼不出准确的顺序。
+    console.debug('[bridge] 历史变更', change.id, change.action)
+    refreshHistory()
+  })
+
+  onEvent(EVT.error, (data) => {
+    const payload = data as ErrorPayload
+    ui.pushToast({ kind: 'bad', message: errorText(payload) })
+  })
+
+  onEvent(EVT.health, () => {
+    /* 体检结果由设置页自己订阅，这里不重复处理 */
+  })
+}
+
+/**
+ * errorText 把错误码翻成人话。
+ *
+ * 后端给的 msg 已经是中文人话，直接用它；错误码只用来决定提示的语气与
+ * 是否需要额外动作。
+ */
+export function errorText(payload: ErrorPayload): string {
+  const known = `error.${payload.code}`
+  const translated = t(known as never)
+  if (translated !== known) return translated
+  return payload.msg || t('error.E_UNKNOWN')
+}
+
+/** bootstrap 一次性把应用跑起来。 */
+export function bootstrap(): void {
+  wireEvents()
+  wsClient().connect()
+  // 探活接口不鉴权，可以早于 WS 拿到版本与数据目录，用于首屏与错误页。
+  void api.health().catch(() => {
+    /* 探活失败不影响主流程，连接状态由 WS 反映 */
+  })
+}
