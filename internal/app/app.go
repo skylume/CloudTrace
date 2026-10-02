@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/event"
+	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/task"
 )
@@ -30,6 +32,8 @@ type Services struct {
 	Bus *event.Bus
 	// Tasks 是任务编排器，也是任务状态的唯一来源。
 	Tasks *task.Manager
+	// History 是历史记录的存储核心。
+	History *history.Store
 	// Version 是构建版本号。
 	Version string
 	// Logger 是结构化日志器。
@@ -62,14 +66,42 @@ func New(cfg *config.Store, version string, logger *slog.Logger) (*Services, err
 		return nil, err
 	}
 
+	hist, err := newHistory(cfg, bus, logger)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
 	return &Services{
 		Config:  cfg,
 		Bus:     bus,
 		Tasks:   tasks,
+		History: hist,
 		Version: version,
 		Logger:  logger,
 		cancel:  cancel,
 	}, nil
+}
+
+// newHistory 装配历史存储。
+//
+// 数据目录解析失败时不阻断启动：历史用不了总比整个程序起不来强，缺目录
+// 这件事会在日志里点名。
+func newHistory(cfg *config.Store, bus *event.Bus, logger *slog.Logger) (*history.Store, error) {
+	dataDir, err := cfg.DataDir()
+	if err != nil {
+		return nil, fmt.Errorf("app: 解析数据目录失败：%w", err)
+	}
+	return history.New(history.Options{
+		Dir: config.HistoryDir(dataDir),
+		// 现取配置而不是拷一份：用户把保留份数从 20 改成 3，下一次存档
+		// 就该按 3 清理。
+		Config: func() config.HistoryConfig { return cfg.Get().History },
+		Logger: logger,
+		OnChanged: func(id, action string) {
+			bus.Publish(history.TopicChanged, history.Change{ID: id, Action: action})
+		},
+	})
 }
 
 // Startup 启动服务：记录启动时间并把空闲态广播出去。
@@ -105,6 +137,14 @@ func (s *Services) Shutdown(ctx context.Context) error {
 	}
 	if s.Tasks != nil {
 		s.waitIdle(ctx)
+	}
+
+	if s.History != nil {
+		// 关闭历史存储会把还挂在撤销窗口里的删除落定。放在关总线之前：
+		// 落定过程会发 history/changed，总线已经关掉的话那条事件就丢了。
+		if err := s.History.Close(); err != nil {
+			s.Logger.Warn("关闭历史存储失败", "err", err)
+		}
 	}
 
 	if s.Bus != nil {

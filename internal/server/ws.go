@@ -332,5 +332,8 @@ func (s *server) commands() map[string]commandHandler {
 	for name, handler := range s.taskHandlers() {
 		handlers[name] = handler
 	}
+	for name, handler := range s.historyHandlers() {
+		handlers[name] = handler
+	}
 	return handlers
 }

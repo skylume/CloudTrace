@@ -7,6 +7,7 @@ import (
 
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/event"
+	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/scan"
 	"cloudtrace/internal/speed"
@@ -59,6 +60,7 @@ func (s *server) taskSubscriptions() []subscription {
 		{topic: task.TopicProgress, fn: s.forward(task.TopicProgress)},
 		{topic: scan.TopicResult, fn: s.forward(scan.TopicResult)},
 		{topic: speed.TopicPartial, fn: s.forward(speed.TopicPartial)},
+		{topic: history.TopicChanged, fn: s.forward(history.TopicChanged)},
 		{topic: task.TopicError, fn: s.onTaskError},
 	}
 	for _, phase := range phases {
@@ -121,9 +123,16 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
-		count, runErr := runner.Run(rep)
-		return task.Outcome{Count: count}, runErr
+	return s.startTask(model.PhaseScan, s.runScanTask(runner, params))
+}
+
+// runScanTask 把扫描执行器包成任务体，并在跑完后存档。
+func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams) task.RunFunc {
+	var res model.TaskResult
+	runner.SetOnDone(func(r model.TaskResult) { res = r })
+
+	return taskRunner(runner.Run, func(duration float64) {
+		s.archiveScan(params, s.currentPreset(), res, duration)
 	})
 }
 
@@ -150,10 +159,25 @@ func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseSpeed, func(rep task.Reporter) (task.Outcome, error) {
-		count, runErr := runner.Run(rep)
-		return task.Outcome{Count: count}, runErr
+	return s.startTask(model.PhaseSpeed, s.runSpeedTask(runner, params))
+}
+
+// runSpeedTask 把测速执行器包成任务体，并在跑完后存档。
+func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams) task.RunFunc {
+	var res model.TaskResult
+	runner.SetOnDone(func(r model.TaskResult) { res = r })
+
+	return taskRunner(runner.Run, func(duration float64) {
+		s.archiveSpeed(params, s.currentPreset(), res, duration)
 	})
+}
+
+// currentPreset 取本次任务使用的档位名。
+//
+// 从编排层取而不是让任务体自己记：档位是任务体通过 Reporter 上报的，
+// 编排层才是它唯一的存放处。
+func (s *server) currentPreset() string {
+	return s.svc.Tasks.Snapshot().Preset
 }
 
 // startTask 启动任务并把编排层的失败翻译成错误码。
