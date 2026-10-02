@@ -51,7 +51,7 @@ p {
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -84,7 +84,7 @@ kbd {
   border: 1px solid var(--color-border);
   border-bottom-width: 2px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
+  background: var(--color-surface-sunken);
   font-size: var(--font-size-xs);
 }
 
@@ -93,14 +93,14 @@ kbd {
  * 但键盘导航必须看得见——这正是一条可访问性要求。
  */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
 ::selection {
-  background: var(--color-accent);
-  color: var(--color-accent-text);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 /* 滚动条跟随主题，否则深色界面里会突兀地出现一条浅色滚动条。 */

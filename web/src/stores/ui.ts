@@ -26,6 +26,10 @@ interface PersistedUI {
   animation: boolean
   contrast: boolean
   lang: Locale
+  /** 侧栏是否收起。窄屏下不用它，侧栏本来就走抽屉。 */
+  navCollapsed: boolean
+  /** 上次停留的页面，下次打开直接回去。 */
+  activeView: string
 }
 
 const DEFAULTS: PersistedUI = {
@@ -36,6 +40,8 @@ const DEFAULTS: PersistedUI = {
   animation: true,
   contrast: false,
   lang: 'zh',
+  navCollapsed: false,
+  activeView: 'scan',
 }
 
 function load(): PersistedUI {
@@ -71,6 +77,8 @@ export const useUIStore = defineStore('ui', () => {
   const animation = ref(saved.animation)
   const contrast = ref(saved.contrast)
   const lang = ref<Locale>(saved.lang)
+  const navCollapsed = ref(saved.navCollapsed)
+  const activeView = ref(saved.activeView)
 
   /** 系统当前是不是深色。跟随系统时用它决定实际主题。 */
   const systemDark = ref(true)
@@ -144,6 +152,8 @@ export const useUIStore = defineStore('ui', () => {
       animation: animation.value,
       contrast: contrast.value,
       lang: lang.value,
+      navCollapsed: navCollapsed.value,
+      activeView: activeView.value,
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -163,6 +173,8 @@ export const useUIStore = defineStore('ui', () => {
     animation,
     contrast,
     lang,
+    navCollapsed,
+    activeView,
     resolvedTheme,
     showAdvanced,
     toasts,

@@ -45,21 +45,21 @@
 }
 
 .login-card input:focus-visible {
-  border-color: var(--color-accent);
+  border-color: var(--color-primary);
 }
 
 .login-card button {
   height: var(--control-height-lg);
   border: 0;
   border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-accent-text);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   font-weight: 500;
   cursor: pointer;
 }
 
 .login-card button:hover:not(:disabled) {
-  background: var(--color-accent-hover);
+  background: var(--color-primary-hover);
 }
 
 .login-card button:disabled {

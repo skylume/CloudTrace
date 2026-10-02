@@ -22,6 +22,10 @@ export const en: Record<keyof typeof zh, string> = {
   'nav.history': 'History',
   'nav.settings': 'Settings',
   'nav.command': 'Command palette',
+  'nav.scan.desc': 'Find endpoints',
+  'nav.result.desc': 'Rank and test',
+  'nav.history.desc': 'Reuse and compare',
+  'nav.settings.desc': 'Options and checks',
 
   'common.start': 'Start',
   'common.stop': 'Stop',

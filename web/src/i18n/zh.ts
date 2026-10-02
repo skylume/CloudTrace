@@ -15,6 +15,10 @@ export const zh = {
   'nav.history': '历史',
   'nav.settings': '设置',
   'nav.command': '命令面板',
+  'nav.scan.desc': '找可用节点',
+  'nav.result.desc': '优选与测速',
+  'nav.history.desc': '复用与对比',
+  'nav.settings.desc': '参数与体检',
 
   'common.start': '开始',
   'common.stop': '停止',
