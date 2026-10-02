@@ -1,0 +1,12 @@
+# 仓库统一的行尾约定。
+#
+# Go 源码一律用 LF 检出。gofmt 把 CRLF 视为格式错误，而 CI 在 Windows 上跑
+# `gofmt -l`：一旦检出时做了换行转换，整个仓库会被判成格式不合规，而本地用
+# Linux / macOS 的人看到的却是一切正常。
+#
+# 这里显式声明，不依赖各人本地的 core.autocrlf 设置——那是每台机器自己的
+# 选择，不该成为构建结果的一部分。
+*.go text eol=lf
+
+# 本文件自身也用 LF：它是要被 git 解析的配置，不该带平台相关的行尾。
+.gitattributes text eol=lf
