@@ -74,6 +74,12 @@ type Options struct {
 	// Seed 是采样的随机种子。
 	Seed int64
 
+	// Enrich 在每条结果产出后补齐归属地（地区中文名、ASN、组织名）。
+	//
+	// 为 nil 时不做任何补齐。它会被每个节点调用一次，因此实现里**不允许
+	// 发网络请求**：一次往返就会让整轮扫描慢一个数量级。
+	Enrich func(rec *model.IPRecord)
+
 	// 以下依赖为 nil 时使用真实网络实现。
 	Probe    ProbeFunc
 	Trace    TraceFunc
@@ -105,6 +111,7 @@ type Runner struct {
 	remoteFn RemoteFunc
 	resolver source.Resolver
 	logger   *slog.Logger
+	enrich   func(rec *model.IPRecord)
 	onDone   func(model.TaskResult)
 }
 
@@ -192,6 +199,7 @@ func NewRunner(opts Options) (*Runner, error) {
 		remoteFn:   opts.Remote,
 		resolver:   opts.Resolver,
 		logger:     opts.Logger,
+		enrich:     opts.Enrich,
 		onDone:     opts.OnDone,
 	}
 	if r.host == "" {

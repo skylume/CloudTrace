@@ -262,6 +262,7 @@ type deps struct {
 	remote     RemoteFunc
 	remoteURLs []string
 	resolver   source.Resolver
+	enrich     func(rec *model.IPRecord)
 }
 
 func newRunnerForTest(t *testing.T, params model.ScanParams, d *deps) *Runner {
@@ -292,6 +293,7 @@ func newRunnerForTest(t *testing.T, params model.ScanParams, d *deps) *Runner {
 		Verify:     d.verifier.verify,
 		Remote:     d.remote,
 		Resolver:   d.resolver,
+		Enrich:     d.enrich,
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {

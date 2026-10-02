@@ -8,10 +8,13 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"cloudtrace/internal/geo"
 )
 
 // 测速源模式（对应配置里的 speed.url_mode）。
@@ -57,6 +60,8 @@ var chinaMobileKeywords = []string{
 
 // ISPInfo 是出口 ISP 探测的结果。
 type ISPInfo struct {
+	// IP 是本机出口地址；接口没给时为空，此时无法用本地库反查。
+	IP  string `json:"ip"`
 	ASN int    `json:"asn"`
 	Org string `json:"asOrganization"`
 }
@@ -76,6 +81,12 @@ type SourceResolver struct {
 	pick func([]string) string
 	// logf 记录回退原因；为 nil 时不记录。
 	logf func(format string, args ...any)
+	// asn 用本地 ASN 库反查出口地址的 AS 信息；为 nil 时只用探测接口给的。
+	//
+	// 本地库每小时更新，且不依赖那个探测接口是否还返回这两个字段，因此
+	// 有它就优先用它。库不可用时留空，关键词与硬编码 AS 表那条回退路径
+	// 照常工作。
+	asn geo.LookupFunc
 
 	mu     sync.Mutex
 	cached string
@@ -98,6 +109,9 @@ func NewSourceResolver(probe ISPProbe, now func() time.Time, ttl time.Duration) 
 
 // SetLogger 注入日志函数，便于观察回退与选源决策。
 func (r *SourceResolver) SetLogger(logf func(format string, args ...any)) { r.logf = logf }
+
+// SetASNLookup 注入本地 ASN 查询，用于补全出口的 AS 信息。
+func (r *SourceResolver) SetASNLookup(fn geo.LookupFunc) { r.asn = fn }
 
 // Resolve 返回本次测速要用的下载地址。
 //
@@ -134,6 +148,7 @@ func (r *SourceResolver) resolveAuto(ctx context.Context) string {
 		r.note("出口 ISP 探测失败，回退官方测速源：%v", err)
 		return officialSpeedURL
 	}
+	info = r.fillASN(info)
 
 	url := officialSpeedURL
 	if isChinaMobile(info) {
@@ -143,6 +158,26 @@ func (r *SourceResolver) resolveAuto(ctx context.Context) string {
 
 	r.store(url)
 	return url
+}
+
+// fillASN 用本地 ASN 库补全出口的 AS 信息。
+//
+// 判定中国移动靠的就是 AS 号与组织名这两项，探测接口哪天不再返回它们，
+// 判定就会退化成纯关键词匹配。本地库能补上就补上；查不到时保留接口给的
+// 值，什么都不改。
+func (r *SourceResolver) fillASN(info ISPInfo) ISPInfo {
+	if r.asn == nil {
+		return info
+	}
+	addr, err := netip.ParseAddr(strings.TrimSpace(info.IP))
+	if err != nil {
+		return info
+	}
+	got, ok := r.asn(addr)
+	if !ok {
+		return info
+	}
+	return ISPInfo{IP: info.IP, ASN: int(got.ASN), Org: got.Org}
 }
 
 func (r *SourceResolver) cachedValue() (string, bool) {

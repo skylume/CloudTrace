@@ -68,7 +68,7 @@ func (r *Runner) collect(ctx context.Context, rep task.Reporter, st *task.Stages
 		return nil, nil
 	}
 	if !r.params.VerifyNodes {
-		return collectWithoutTrace(items, sink), nil
+		return collectWithoutTrace(items, sink, r.enrich), nil
 	}
 
 	st.Begin(len(items))
@@ -124,6 +124,7 @@ func (r *Runner) verifyItem(ctx context.Context, item probed) (out verified) {
 	}
 	rec.Trace = trace
 	fillRegion(&rec, item.cand, item.res, trace)
+	r.enrichRecord(&rec)
 	return verified{rec: rec, keep: true}
 }
 
@@ -132,15 +133,29 @@ func (r *Runner) verifyItem(ctx context.Context, item probed) (out verified) {
 // 这里一次网络请求都不发。HTTPing 顺带拿到的 colo 是唯一的地区信息，
 // TCPing 模式下地区就是空的——这是关掉明细采集的必然代价，界面按
 // 「地区未解析」显示即可，不能因此把结果丢掉。
-func collectWithoutTrace(items []probed, sink *resultSink) []model.IPRecord {
+func collectWithoutTrace(items []probed, sink *resultSink, enrich func(*model.IPRecord)) []model.IPRecord {
 	out := make([]model.IPRecord, 0, len(items))
 	for _, item := range items {
 		rec := recordOf(item)
 		fillRegion(&rec, item.cand, item.res, nil)
+		if enrich != nil {
+			enrich(&rec)
+		}
 		sink.add(rec)
 		out = append(out, rec)
 	}
 	return out
+}
+
+// enrichRecord 调用外部注入的归属地补齐；没有注入时什么都不做。
+//
+// 单独包一层是为了让「没注入」这件事只在一处判断：补齐是可选的，注入为空
+// 不是异常状态，而是「用户关掉了 ASN 查询」。
+func (r *Runner) enrichRecord(rec *model.IPRecord) {
+	if r.enrich == nil {
+		return
+	}
+	r.enrich(rec)
 }
 
 // recordOf 把一次探测结果转成记录。

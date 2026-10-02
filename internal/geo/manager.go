@@ -47,6 +47,11 @@ type Options struct {
 	Now func() time.Time
 	// Fetch 拉取远程文件，为 nil 时用默认的 HTTP 实现。
 	Fetch Fetcher
+	// Cache 是归属地缓存，为 nil 时不缓存。
+	//
+	// 由调用方持有：它记录的是扫描过程中顺手学到的地区，与 ASN 库的加载
+	// 生命周期无关，关掉 ASN 查询也照样有用。
+	Cache *InfoCache
 	// Logger 为 nil 时用 slog.Default()。
 	Logger *slog.Logger
 }
@@ -57,11 +62,16 @@ type Manager struct {
 	dataDir string
 	now     func() time.Time
 	fetch   Fetcher
+	cache   *InfoCache
 	logger  *slog.Logger
 
 	mu     sync.RWMutex
 	lookup ASNLookup
 	status Status
+
+	// 本机出口地区的探测结论，只探一次。
+	exitLoc     string
+	exitChecked bool
 }
 
 // NewManager 构造管理器，并按当前配置尝试加载一次库。
@@ -74,6 +84,7 @@ func NewManager(opts Options) *Manager {
 		dataDir: opts.DataDir,
 		now:     opts.Now,
 		fetch:   opts.Fetch,
+		cache:   opts.Cache,
 		logger:  opts.Logger,
 	}
 	if m.cfg == nil {
