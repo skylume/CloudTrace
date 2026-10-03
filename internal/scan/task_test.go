@@ -326,9 +326,26 @@ func TestNormalizeParams(t *testing.T) {
 	}
 
 	// 已经填好的值不能被覆盖。
-	given := model.ScanParams{Mode: "httping", SourceMode: "custom", IPVersion: 6}
+	given := model.ScanParams{Mode: "httping", SourceMode: "custom", IPVersion: 6, PingTimes: 2}
 	if got := NormalizeParams(given); !reflect.DeepEqual(got, given) {
 		t.Errorf("已有值被改动：%+v → %+v", given, got)
+	}
+}
+
+// 探测次数留空表示「不指定」，要补成一个真实次数。
+//
+// 界面上 0 显示成「自动」，而校验只接受 ≥1；不补的话「标准」档位一启动
+// 就会收到「探测次数 0 必须至少为 1」，用户什么都没填错。
+func TestNormalizeParamsFillsPingTimes(t *testing.T) {
+	params := scanParams("1.1.1.1")
+	params.PingTimes = 0
+
+	got := NormalizeParams(params)
+	if got.PingTimes != defaultPingTimes {
+		t.Errorf("探测次数 = %d，期望补成 %d", got.PingTimes, defaultPingTimes)
+	}
+	if err := ValidateParams(got); err != nil {
+		t.Errorf("补完默认值后仍不合法：%v", err)
 	}
 }
 

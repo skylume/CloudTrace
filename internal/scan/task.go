@@ -43,6 +43,13 @@ const (
 	// 把几千条记录塞进一个 WebSocket 帧会顶到帧大小上限，前端也要在一帧
 	// 里做完全部渲染；分批推送让结果逐段出现。
 	resultChunk = 50
+
+	// defaultPingTimes 是探测次数留空（0）时使用的值。
+	//
+	// 0 的含义是「不指定，由默认值决定」，界面上也把它显示成「自动」。
+	// 必须在补默认值这一步就换成一个真实次数：校验只接受 ≥1，原样带过去
+	// 会被当成非法参数拒掉，而用户只是没填而已。
+	defaultPingTimes = 4
 )
 
 // TopicResult 是扫描结果的增量推送，载荷为 []model.IPRecord。
@@ -128,6 +135,9 @@ func NormalizeParams(p model.ScanParams) model.ScanParams {
 	}
 	if p.IPVersion == 0 {
 		p.IPVersion = 4
+	}
+	if p.PingTimes == 0 {
+		p.PingTimes = defaultPingTimes
 	}
 	return p
 }
