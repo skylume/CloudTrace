@@ -1,0 +1,303 @@
+/**
+ * 设置项的结构表。
+ *
+ * 只描述**结构**（分组、键路径、控件类型、取值范围），文案另走 `settingsText`
+ * 的中英两套映射——混在一起会让「改一句提示」变成改一个数据结构。
+ *
+ * 键路径用点号：`scan.workers`。与配置文件的嵌套结构、以及后端
+ * `settings/reset` 接受的键一致，中间不做任何转换。
+ */
+
+export type FieldKind = 'bool' | 'int' | 'text' | 'enum' | 'list' | 'path'
+
+export interface SettingField {
+  /** 点号路径，如 `scan.workers`。 */
+  path: string
+  kind: FieldKind
+  /** 数值范围（kind 为 int 时有效）。 */
+  min?: number
+  max?: number
+  /** 枚举取值（kind 为 enum 时有效）。 */
+  options?: string[]
+  /** 该组里排在前面、值得优先展示的项。 */
+  primary?: boolean
+}
+
+export interface SettingGroup {
+  id: string
+  fields: SettingField[]
+}
+
+/**
+ * 分组与字段。
+ *
+ * 分组顺序按「改动的频率 × 影响面」排：界面与扫描在最前（人人都会碰），
+ * 服务面板与高级在最后（配一次就不再进）。设置页可以密，但常用的必须在
+ * 触手可及的地方。
+ */
+export const SETTING_GROUPS: SettingGroup[] = [
+  {
+    id: 'ui',
+    fields: [
+      { path: 'ui.theme', kind: 'enum', options: ['system', 'dark', 'light'], primary: true },
+      { path: 'ui.lang', kind: 'enum', options: ['zh', 'en'] },
+      { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
+      { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
+      { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
+      { path: 'ui.animation', kind: 'bool', primary: true },
+      { path: 'ui.remember_state', kind: 'bool' },
+      { path: 'ui.adaptive_enabled', kind: 'bool' },
+      { path: 'ui.adaptive_allow_preset', kind: 'bool' },
+    ],
+  },
+  {
+    id: 'scan',
+    fields: [
+      { path: 'scan.workers', kind: 'int', min: 1, max: 200, primary: true },
+      { path: 'scan.sample_max', kind: 'int', min: 0, max: 5000, primary: true },
+      { path: 'scan.latency_threshold', kind: 'int', min: 1, max: 5000, primary: true },
+      { path: 'scan.ping_times', kind: 'int', min: 0, max: 20 },
+      { path: 'scan.port', kind: 'int', min: 1, max: 65535 },
+      { path: 'scan.timeout_ms', kind: 'int', min: 100, max: 30000 },
+      { path: 'scan.retry', kind: 'int', min: 0, max: 10 },
+      { path: 'scan.mode', kind: 'enum', options: ['tcping', 'httping'] },
+      { path: 'scan.two_phase', kind: 'bool' },
+      { path: 'scan.verify_nodes', kind: 'bool' },
+      { path: 'scan.usability_check', kind: 'bool' },
+    ],
+  },
+  {
+    id: 'speed',
+    fields: [
+      { path: 'speed.concurrency', kind: 'int', min: 1, max: 32, primary: true },
+      { path: 'speed.target_qualified', kind: 'int', min: 1, max: 100, primary: true },
+      { path: 'speed.min_speed', kind: 'int', min: 0, max: 1000 },
+      { path: 'speed.url_mode', kind: 'enum', options: ['auto', 'official', 'mobile_friendly', 'mobile_only', 'custom'] },
+      { path: 'speed.custom_url', kind: 'text' },
+      { path: 'speed.download_duration_s', kind: 'int', min: 1, max: 60 },
+      { path: 'speed.breaker_429', kind: 'int', min: 0, max: 100 },
+    ],
+  },
+  {
+    id: 'source',
+    fields: [
+      { path: 'source.official_url_v4', kind: 'text' },
+      { path: 'source.official_url_v6', kind: 'text' },
+      { path: 'source.refresh_hours', kind: 'int', min: 0, max: 720 },
+      { path: 'source.allow_custom', kind: 'bool' },
+    ],
+  },
+  {
+    id: 'geo',
+    fields: [
+      { path: 'geo.asn_source', kind: 'enum', options: ['iptoasn', 'geolite2_mmdb', 'off'], primary: true },
+      { path: 'geo.asn_db_path', kind: 'path' },
+      { path: 'geo.asn_auto_update', kind: 'bool', primary: true },
+      { path: 'geo.asn_update_interval_days', kind: 'int', min: 0, max: 365, primary: true },
+      { path: 'geo.geo_warn_enabled', kind: 'bool' },
+      { path: 'geo.filter_asn', kind: 'list' },
+    ],
+  },
+  {
+    id: 'history',
+    fields: [
+      { path: 'history.keep_count', kind: 'int', min: 1, max: 500, primary: true },
+      { path: 'history.keep_mode', kind: 'enum', options: ['count', 'days'] },
+      { path: 'history.keep_days', kind: 'int', min: 1, max: 3650 },
+      { path: 'history.auto_save', kind: 'bool' },
+      { path: 'history.undo_seconds', kind: 'int', min: 0, max: 120 },
+    ],
+  },
+  {
+    id: 'export',
+    fields: [
+      { path: 'export.default_format', kind: 'enum', options: ['csv', 'json', 'txt'], primary: true },
+      { path: 'export.preset', kind: 'text' },
+      { path: 'export.include_unreached', kind: 'bool' },
+    ],
+  },
+  {
+    id: 'advanced',
+    fields: [
+      { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
+      { path: 'advanced.diagnostic_bundle', kind: 'bool' },
+    ],
+  },
+]
+
+/** 文案：路径 → 标签与说明。 */
+interface FieldText {
+  label: string
+  hint: string
+}
+
+export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
+  zh: {
+    'ui.theme': { label: '主题', hint: '深色、浅色或跟随系统。切换即时生效，不需要刷新' },
+    'ui.lang': { label: '界面语言', hint: '中英文切换' },
+    'ui.font_scale': { label: '字号', hint: '小 / 中 / 大三档，整体缩放而不破坏布局' },
+    'ui.table_density': { label: '表格密度', hint: '只改行高，不动字号——两者互不干扰' },
+    'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行' },
+    'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
+    'ui.remember_state': { label: '记住界面状态', hint: '下次打开回到上次停留的页面与设置' },
+    'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
+    'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
+
+    'scan.workers': { label: '并发', hint: '同时测多少个地址。弱网或老路由建议 50–100，最高 200' },
+    'scan.sample_max': { label: '采样上限', hint: '最多挑多少个地址来测。500 够用，5000 更全面但更慢' },
+    'scan.latency_threshold': { label: '延迟阈值', hint: '超过这个延迟的节点直接淘汰' },
+    'scan.ping_times': { label: '探测次数', hint: '每个地址测几次。0 表示按档位自动决定' },
+    'scan.port': { label: '默认端口', hint: '默认 443。部分网络下 2053 / 2083 更稳' },
+    'scan.timeout_ms': { label: '探测超时', hint: '单次探测等多久算失败' },
+    'scan.retry': { label: '失败重试', hint: '探测失败后重试几次' },
+    'scan.mode': { label: '探测模式', hint: 'TCPing 更快，HTTPing 更接近真实访问但阈值会放宽' },
+    'scan.two_phase': { label: '两阶段扫描', hint: '先低采样粗筛，再对达标节点精测。开着更快' },
+    'scan.verify_nodes': { label: '采集节点明细', hint: '关掉会少发大量请求、明显更快，代价是结果里没有地区与运营商' },
+    'scan.usability_check': { label: '测速前可用性校验', hint: '测速之前再确认一次节点还活着' },
+
+    'speed.concurrency': { label: '测速并发', hint: '同时下载多少个。太高容易触发限速' },
+    'speed.target_qualified': { label: '合格节点数', hint: '测到多少个达标节点就停' },
+    'speed.min_speed': { label: '最低速度', hint: '低于这个速度算不合格' },
+    'speed.url_mode': { label: '测速源', hint: '自动会根据你的出口运营商选；也可固定用官方源或指定地址' },
+    'speed.custom_url': { label: '自定义测速地址', hint: '仅在测速源选「自定义」时使用' },
+    'speed.download_duration_s': { label: '单次测速时长', hint: '每个节点下载多久' },
+    'speed.breaker_429': { label: '限速熔断阈值', hint: '连续多少次被限速就停止。0 表示不熔断' },
+
+    'source.official_url_v4': { label: '官方 IPv4 段地址', hint: '官方网段的来源地址' },
+    'source.official_url_v6': { label: '官方 IPv6 段地址', hint: '官方网段的来源地址' },
+    'source.refresh_hours': { label: '网段刷新周期', hint: '多少小时重新拉一次官方网段。0 表示只手动' },
+    'source.allow_custom': { label: '允许自定义来源', hint: '关掉后只使用官方网段与远端地址' },
+
+    'geo.asn_source': { label: 'ASN 数据源', hint: 'iptoasn 免账号体积小；GeoLite2 查询更快但文件大。关掉则不显示运营商' },
+    'geo.asn_db_path': { label: '库文件位置', hint: '可指向目录或文件。手动放置的文件会被优先使用' },
+    'geo.asn_auto_update': { label: '自动更新 ASN 库', hint: '关掉后不发任何请求，只用本地已有的' },
+    'geo.asn_update_interval_days': { label: '更新周期（天）', hint: '超过这个天数就后台更新。0 表示仅手动' },
+    'geo.geo_warn_enabled': { label: '代理出口提示', hint: '检测到本机出口不是国内时给一条横幅提示。仅提示，不阻断任务' },
+    'geo.filter_asn': { label: '运营商过滤', hint: '只看某些运营商的节点。留空表示不过滤' },
+
+    'history.keep_count': { label: '保留份数', hint: '最多保留多少份历史。收藏的记录不占名额' },
+    'history.keep_mode': { label: '保留方式', hint: '按份数或按天数清理' },
+    'history.keep_days': { label: '保留天数', hint: '保留方式选「按天数」时生效' },
+    'history.auto_save': { label: '自动存档', hint: '任务跑完自动存一份历史' },
+    'history.undo_seconds': { label: '撤销窗口（秒）', hint: '删除后多久内可以撤销' },
+
+    'export.default_format': { label: '默认导出格式', hint: 'CSV 带 BOM，Excel 打开不乱码' },
+    'export.preset': { label: '默认导出字段', hint: '导出时预选的字段组合' },
+    'export.include_unreached': { label: '导出包含不可达节点', hint: '默认不导出——不可达的节点交给下游没有意义' },
+
+    'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
+    'advanced.diagnostic_bundle': { label: '允许导出诊断包', hint: '打包日志与脱敏后的配置，便于反馈问题' },
+  },
+  en: {
+    'ui.theme': { label: 'Theme', hint: 'Dark, light, or follow the system. Applies instantly' },
+    'ui.lang': { label: 'Language', hint: 'Switch between Chinese and English' },
+    'ui.font_scale': { label: 'Font size', hint: 'Small / medium / large, scaled globally without breaking layout' },
+    'ui.table_density': { label: 'Table density', hint: 'Changes row height only, never the font size' },
+    'ui.page_size': { label: 'Rows per page', hint: 'How many rows the result table shows per page' },
+    'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
+    'ui.remember_state': { label: 'Remember UI state', hint: 'Reopen on the last page with the last settings' },
+    'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
+    'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
+
+    'scan.workers': { label: 'Concurrency', hint: 'How many addresses at once. 50-100 on weak networks; 200 max' },
+    'scan.sample_max': { label: 'Sample limit', hint: 'How many addresses to test. 500 is enough; 5000 is thorough but slower' },
+    'scan.latency_threshold': { label: 'Latency limit', hint: 'Nodes above this latency are dropped' },
+    'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 lets the preset decide' },
+    'scan.port': { label: 'Default port', hint: '443 by default. 2053 / 2083 are steadier on some networks' },
+    'scan.timeout_ms': { label: 'Probe timeout', hint: 'How long one probe waits before failing' },
+    'scan.retry': { label: 'Retries', hint: 'Retries after a failed probe' },
+    'scan.mode': { label: 'Probe mode', hint: 'TCPing is faster; HTTPing is closer to real traffic but relaxes thresholds' },
+    'scan.two_phase': { label: 'Two-phase scan', hint: 'Coarse pass first, then a fine pass on survivors. Faster' },
+    'scan.verify_nodes': { label: 'Collect node details', hint: 'Off sends far fewer requests but drops region and operator info' },
+    'scan.usability_check': { label: 'Usability check before speed test', hint: 'Confirms nodes are still alive right before testing' },
+
+    'speed.concurrency': { label: 'Test concurrency', hint: 'How many downloads at once. Too many triggers rate limits' },
+    'speed.target_qualified': { label: 'Qualified targets', hint: 'Stop after this many nodes pass' },
+    'speed.min_speed': { label: 'Minimum speed', hint: 'Below this a node does not qualify' },
+    'speed.url_mode': { label: 'Test source', hint: 'Auto picks by your ISP; you can also pin the official source or a custom URL' },
+    'speed.custom_url': { label: 'Custom test URL', hint: 'Only used when the source is set to custom' },
+    'speed.download_duration_s': { label: 'Test duration', hint: 'How long each node downloads' },
+    'speed.breaker_429': { label: 'Rate-limit breaker', hint: 'Stop after this many consecutive rate limits. 0 disables it' },
+
+    'source.official_url_v4': { label: 'Official IPv4 URL', hint: 'Where the official ranges come from' },
+    'source.official_url_v6': { label: 'Official IPv6 URL', hint: 'Where the official ranges come from' },
+    'source.refresh_hours': { label: 'Refresh interval', hint: 'Hours between official range refreshes. 0 means manual only' },
+    'source.allow_custom': { label: 'Allow custom sources', hint: 'When off, only official ranges and remote addresses are used' },
+
+    'geo.asn_source': { label: 'ASN source', hint: 'iptoasn needs no account and is small; GeoLite2 is faster but larger. Off hides operator info' },
+    'geo.asn_db_path': { label: 'Database location', hint: 'A directory or a file. A manually placed file takes precedence' },
+    'geo.asn_auto_update': { label: 'Auto-update ASN database', hint: 'When off, no requests are made and the local copy is used as-is' },
+    'geo.asn_update_interval_days': { label: 'Update interval (days)', hint: 'Update in the background after this many days. 0 means manual only' },
+    'geo.geo_warn_enabled': { label: 'Proxy exit warning', hint: 'Shows a banner when your exit does not look domestic. Never blocks a task' },
+    'geo.filter_asn': { label: 'Operator filter', hint: 'Only show nodes from certain operators. Empty means no filter' },
+
+    'history.keep_count': { label: 'Keep count', hint: 'How many records to keep. Starred ones do not count' },
+    'history.keep_mode': { label: 'Retention mode', hint: 'Clean up by count or by age' },
+    'history.keep_days': { label: 'Keep days', hint: 'Used when retention mode is by age' },
+    'history.auto_save': { label: 'Auto-save', hint: 'Save a record automatically when a task finishes' },
+    'history.undo_seconds': { label: 'Undo window (seconds)', hint: 'How long a deletion can be undone' },
+
+    'export.default_format': { label: 'Default format', hint: 'CSV includes a BOM so Excel opens it correctly' },
+    'export.preset': { label: 'Default fields', hint: 'The field set pre-selected when exporting' },
+    'export.include_unreachable': { label: 'Include unreachable nodes', hint: 'Off by default — unreachable nodes are useless downstream' },
+
+    'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
+    'advanced.diagnostic_bundle': { label: 'Allow diagnostic bundle', hint: 'Packages logs and a redacted config for reporting issues' },
+  },
+}
+
+/** 取一个字段的文案；缺文案时退回键本身，至少能看出是哪一项。 */
+export function fieldText(path: string, locale: 'zh' | 'en'): FieldText {
+  return settingsText[locale][path] ?? { label: path, hint: '' }
+}
+
+/** 组名。 */
+export const groupText: Record<'zh' | 'en', Record<string, string>> = {
+  zh: {
+    ui: '界面',
+    scan: '扫描',
+    speed: '测速',
+    source: '数据源',
+    geo: 'ASN 与地理',
+    history: '历史与数据',
+    export: '导出',
+    advanced: '高级与调试',
+  },
+  en: {
+    ui: 'Interface',
+    scan: 'Scan',
+    speed: 'Speed test',
+    source: 'Sources',
+    geo: 'ASN & geo',
+    history: 'History & data',
+    export: 'Export',
+    advanced: 'Advanced',
+  },
+}
+
+/** 读取嵌套配置里的一个值。 */
+export function readPath(values: Record<string, unknown>, path: string): unknown {
+  let current: unknown = values
+  for (const part of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[part]
+  }
+  return current
+}
+
+/** 按点号路径构造一份嵌套的 patch，供 settings/update 使用。 */
+export function buildPatch(path: string, value: unknown): Record<string, unknown> {
+  const parts = path.split('.')
+  const root: Record<string, unknown> = {}
+  let cursor = root
+  parts.forEach((part, index) => {
+    if (index === parts.length - 1) {
+      cursor[part] = value
+      return
+    }
+    const next: Record<string, unknown> = {}
+    cursor[part] = next
+    cursor = next
+  })
+  return root
+}

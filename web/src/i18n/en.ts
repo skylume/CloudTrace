@@ -241,4 +241,7 @@ export const en: Record<keyof typeof zh, string> = {
   'result.copyTop': 'Copy top 3',
   'result.speedAll': 'Test all',
   'result.speedRegion': 'Test selected regions',
+  'settings.dangerZone': 'Danger zone',
+  'settings.dangerHint': 'These actions have a wide impact; confirm before running them',
+  'settings.clearHistory': 'Clear history',
 }

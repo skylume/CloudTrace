@@ -233,4 +233,7 @@ export const zh = {
   'result.copyTop': '复制前三名',
   'result.speedAll': '完全测速',
   'result.speedRegion': '测速所选地区',
+  'settings.dangerZone': '危险操作',
+  'settings.dangerHint': '这些操作影响面较大，请确认后再执行',
+  'settings.clearHistory': '清空历史',
 } as const

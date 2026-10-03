@@ -17,7 +17,7 @@ import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
 import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
-import type { GeoStatus, IPRecord, SettingsPayload, TaskState } from '@/api/types'
+import type { GeoStatus, HealthReport, IPRecord, SettingsPayload, TaskState } from '@/api/types'
 
 /** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
 export function refreshSettings(): void {
@@ -113,9 +113,7 @@ export function wireEvents(): void {
     log.push(message, 'bad')
   })
 
-  onEvent(EVT.health, () => {
-    /* 体检结果由设置页自己订阅，这里不重复处理 */
-  })
+  onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))
 }
 
 /**

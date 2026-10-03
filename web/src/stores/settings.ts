@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { ParamOrigins, Settings, SettingsPayload, UIConfig } from '@/api/types'
+import type { HealthReport, ParamOrigins, Settings, SettingsPayload, UIConfig } from '@/api/types'
 import { useUIStore } from './ui'
 
 /** 改设置时带上的参数来源标记。用户手改的一律是 user。 */
@@ -18,6 +18,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const values = ref<Settings | null>(null)
   const restartRequired = ref<string[]>([])
   const loaded = ref(false)
+  /** 最近一次体检结果。 */
+  const health = ref<HealthReport | null>(null)
 
   const ui = computed<UIConfig | null>(() => values.value?.ui ?? null)
   const origins = computed<ParamOrigins>(() => values.value?.origins ?? {})
@@ -49,9 +51,13 @@ export const useSettingsStore = defineStore('settings', () => {
     return { patch, origins: marks }
   }
 
+  function applyHealth(report: HealthReport): void {
+    health.value = report
+  }
+
   function resetEnvelope(keys?: string[]): { keys: string[] } {
     return { keys: keys ?? [] }
   }
 
-  return { values, ui, origins, restartRequired, loaded, apply, patchEnvelope, resetEnvelope }
+  return { values, ui, origins, restartRequired, loaded, health, apply, applyHealth, patchEnvelope, resetEnvelope }
 })
