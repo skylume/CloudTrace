@@ -36,6 +36,8 @@ type Services struct {
 	Tasks *task.Manager
 	// History 是历史记录的存储核心。
 	History *history.Store
+	// Presets 是自定义档位的存储核心。内置档位由代码定义，不在这里。
+	Presets *config.PresetStore
 	// Geo 是 ASN 库与归属地信息的入口。
 	Geo *geo.Manager
 	// Region 是扫描过程中顺手学到的归属地缓存。
@@ -79,18 +81,43 @@ func New(cfg *config.Store, version string, logger *slog.Logger) (*Services, err
 	}
 
 	region, geoMgr := newGeo(cfg, logger)
+	presets := newPresets(cfg, logger)
 
 	return &Services{
 		Config:  cfg,
 		Bus:     bus,
 		Tasks:   tasks,
 		History: hist,
+		Presets: presets,
 		Geo:     geoMgr,
 		Region:  region,
 		Version: version,
 		Logger:  logger,
 		cancel:  cancel,
 	}, nil
+}
+
+/**
+ * newPresets 装配自定义档位库。
+ *
+ * 与历史同样的取舍：数据目录解析不出来时退化成「只有内置档位」，不阻断启动。
+ * 档位是辅助功能，缺了它用户只是不能另存档位，三个内置档位照样能用。
+ */
+func newPresets(cfg *config.Store, logger *slog.Logger) *config.PresetStore {
+	dataDir, err := cfg.DataDir()
+	if err != nil {
+		logger.Warn("解析数据目录失败，自定义档位本次不可用", "err", err)
+		return nil
+	}
+	store, err := config.OpenPresets(config.PresetsPath(dataDir), logger)
+	if err != nil {
+		logger.Warn("自定义档位库打不开，本次只有内置档位可用", "err", err)
+		return nil
+	}
+	for _, w := range store.Warnings() {
+		logger.Warn("档位库：" + w)
+	}
+	return store
 }
 
 // newGeo 装配 ASN 库与归属地缓存。
