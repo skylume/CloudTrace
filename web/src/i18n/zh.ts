@@ -298,4 +298,13 @@ export const zh = {
   'opt.utc': 'UTC',
   'opt.both': '两者合并',
   'preset.appliesNextRun': '改动会在下次扫描时生效',
+  'adaptive.mobile_isp': '检测到移动宽带：上行通常更窄，并发拉满会把自己的连接压垮',
+  'adaptive.high_timeout': '超时率偏高：并发过高时大部分请求会一起超时',
+  'adaptive.badge': '已按网络环境自动调整',
+  'adaptive.revert': '还原',
+  'adaptive.suggestionTitle': '建议调整',
+  'adaptive.accept': '一键应用',
+  'adaptive.ignore': '忽略',
+  'adaptive.mute': '不再提示',
+  'adaptive.appliedLog': '{key} 已自动调整：{from} → {to}',
 } as const

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"cloudtrace/internal/adaptive"
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/event"
 	"cloudtrace/internal/history"
@@ -269,7 +270,78 @@ func (s *server) resolveSpeedSource(ctx context.Context, mode, customURL string)
 		Detail: decision.Detail,
 		Mode:   mode,
 	})
+	// 选源顺带知道了出口运营商，这是「移动宽带」这个自适应信号唯一的来源。
+	if decision.Code == speed.ReasonMobile {
+		s.applyAdaptive(adaptive.SignalMobileISP)
+	}
 	return decision.URL, nil
+}
+
+// applyAdaptive 按网络信号调整参数，或只给出建议。
+//
+// 判定与写入分开：`adaptive.Evaluate` 只回答「该怎么办」，而能不能拿到要写入的
+// 内容由 `Decision.Patch` 决定——它只对「静默调整」返回改动。用户显式设过的值
+// 因此改不动，这是结构性保证，不靠这里记得判断。
+//
+// 被调整的值一律留痕：发事件、写日志。规格里明确写了「不允许静默改动」，
+// 而「静默」指的是用户看不见——事件驱动界面上的徽标与还原按钮，日志留给事后查。
+func (s *server) applyAdaptive(signal adaptive.Signal) {
+	cfg := s.cfg.Get()
+	options := adaptive.Options{
+		Enabled:     cfg.UI.AdaptiveEnabled,
+		AllowPreset: cfg.UI.AdaptiveAllowPreset,
+	}
+
+	targets := []struct {
+		key     string
+		current int
+	}{
+		{"scan.workers", cfg.Scan.Workers},
+		{"speed.concurrency", cfg.Speed.Concurrency},
+	}
+
+	for _, target := range targets {
+		decision := adaptive.Evaluate(adaptive.Request{
+			Key:     target.key,
+			Current: target.current,
+			Origin:  cfg.Origins[target.key],
+			Signal:  signal,
+			Options: options,
+		})
+		if decision.Action == adaptive.ActionNone {
+			continue
+		}
+
+		payload := adaptivePayload{
+			Key:    decision.Key,
+			From:   decision.From,
+			To:     decision.To,
+			Reason: decision.Reason,
+		}
+
+		if patch := decision.Patch(); patch != nil {
+			// 来源标记跟着值一起改：这次改动是自动做的，不是用户做的。
+			if _, err := s.cfg.Patch(patch, model.ParamOrigins{decision.Key: model.OriginDefault}); err != nil {
+				s.logger.Warn("自适应调整参数失败", "key", decision.Key, "err", err)
+				continue
+			}
+			s.logger.Info("已按网络环境自动调整参数", "key", decision.Key, "from", decision.From, "to", decision.To, "reason", decision.Reason)
+			s.hub.broadcast(eventAdaptiveApplied, payload)
+			continue
+		}
+
+		s.logger.Info("自适应只给出建议，未改动参数", "key", decision.Key, "from", decision.From, "to", decision.To, "reason", decision.Reason)
+		s.hub.broadcast(eventAdaptiveSuggestion, payload)
+	}
+}
+
+// adaptivePayload 是自适应事件的载荷。
+type adaptivePayload struct {
+	Key  string `json:"key"`
+	From int    `json:"from"`
+	To   int    `json:"to"`
+	// Reason 是机器可读的原因标识，文案由界面层决定。
+	Reason string `json:"reason"`
 }
 
 // speedSourcePayload 是选源说明的载荷。

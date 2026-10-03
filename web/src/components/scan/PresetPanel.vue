@@ -10,9 +10,11 @@
  */
 import { computed } from 'vue'
 
+import Banner from '@/components/ui/Banner.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { CUSTOM_PRESET, SCAN_PARAMS, SCAN_PRESETS, matchPreset } from '@/i18n/params'
+import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
 import { useUIStore } from '@/stores/ui'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
@@ -21,6 +23,17 @@ const presetId = defineModel<string>('presetId', { required: true })
 defineProps<{ disabled?: boolean }>()
 
 const ui = useUIStore()
+const adaptive = useAdaptiveStore()
+
+/**
+ * 建议的整句话。
+ *
+ * 在脚本里拼好而不是写进模板：模板里的模板字面量容易被工具链吞掉（这个仓库
+ * 已经被坑过三次），而且拼装逻辑放在这里也更好读。
+ */
+function suggestionText(item: AdaptiveNotice): string {
+  return adaptive.reasonText(item.reason) + '　' + item.key + ' ' + item.from + ' → ' + item.to
+}
 
 /**
  * 是否展开全部参数。
@@ -118,11 +131,34 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
       @update:model-value="applyPreset"
     />
 
+    <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
+    <Banner
+      v-for="item in adaptive.visibleSuggestions"
+      :key="item.key"
+      tone="info"
+      :message="suggestionText(item)"
+      :action-label="t('adaptive.accept')"
+      @action="adaptive.accept(item)"
+      @close="adaptive.dismiss(item.key)"
+    />
+
     <p v-if="deviatedFrom" class="notice ct-subtle">{{ t('preset.appliesNextRun') }}</p>
 
     <div class="grid">
       <label v-for="spec in visibleParams" :key="spec.key" class="field">
-        <span class="label" :title="t(spec.hintKey as never)">{{ t(spec.labelKey as never) }}</span>
+        <span class="label" :title="t(spec.hintKey as never)">
+          {{ t(spec.labelKey as never) }}
+          <!-- 被自动调整过的值必须留痕：徽标 + 悬停说明 + 一键还原。 -->
+          <button
+            v-if="adaptive.applied[spec.key]"
+            type="button"
+            class="badge"
+            :title="adaptive.reasonText(adaptive.applied[spec.key]!.reason)"
+            @click="adaptive.revert(spec.key)"
+          >
+            {{ t('adaptive.badge') }}
+          </button>
+        </span>
         <input
           v-if="spec.kind === 'int'"
           class="ct-input tnum"
@@ -155,6 +191,19 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
 
 .notice {
   margin: var(--space-2) 0 0;
+}
+
+/* 自适应徽标：小、克制，但一眼能看出这个值不是自己设的。点一下还原。 */
+.badge {
+  margin-left: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 /* 超出建议区间只标色不拦截：用户有权这么设，但该知道代价。 */

@@ -8,6 +8,7 @@ import { api } from '@/api/rest'
 import { EVT, onEvent, sendCommand, setSendFailureHandler, wsClient } from '@/api/client'
 import { t } from '@/i18n'
 
+import { useAdaptiveStore, type AdaptiveNotice } from './adaptive'
 import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
@@ -53,6 +54,7 @@ export function wireEvents(): void {
   const log = useLogStore()
   const speed = useSpeedStore()
   const exporter = useExportStore()
+  const adaptive = useAdaptiveStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -84,6 +86,14 @@ export function wireEvents(): void {
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
 
   onEvent(EVT.export, (data) => exporter.applyResult(data as ExportResult))
+
+  onEvent(EVT.adaptiveApplied, (data) => {
+    const notice = data as AdaptiveNotice
+    adaptive.applyApplied(notice)
+    // 日志里也留一条：徽标会随参数变化消失，而「它什么时候改过」之后还得能查到。
+    log.push(t('adaptive.appliedLog', { key: notice.key, from: notice.from, to: notice.to }))
+  })
+  onEvent(EVT.adaptiveSuggestion, (data) => adaptive.applySuggestion(data as AdaptiveNotice))
 
   onEvent(EVT.speedSource, (data) => speed.applySource(data as SourceDecision))
 

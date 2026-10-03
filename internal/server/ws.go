@@ -41,6 +41,13 @@ const (
 	eventPong  = "pong"
 	eventError = "error"
 
+	// eventAdaptiveApplied 在自适应静默调整了参数之后广播。
+	// 界面据此给参数加徽标并提供「还原」——规格明确写了不允许静默改动。
+	eventAdaptiveApplied = "adaptive/applied"
+
+	// eventAdaptiveSuggestion 在自适应只给建议时广播，值本身没有变。
+	eventAdaptiveSuggestion = "adaptive/suggestion"
+
 	// eventSpeedSource 在自动选源之后广播，说明「为什么用了这个源」。
 	eventSpeedSource = "speed/source"
 

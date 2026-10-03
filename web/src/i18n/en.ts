@@ -306,4 +306,13 @@ export const en: Record<keyof typeof zh, string> = {
   'opt.utc': 'UTC',
   'opt.both': 'Both merged',
   'preset.appliesNextRun': 'Changes take effect on the next scan',
+  'adaptive.mobile_isp': 'Mobile broadband detected: uplink is narrower, so maxing out concurrency hurts your own connection',
+  'adaptive.high_timeout': 'High timeout rate: too much concurrency makes most requests time out together',
+  'adaptive.badge': 'Adjusted to your network',
+  'adaptive.revert': 'Revert',
+  'adaptive.suggestionTitle': 'Suggested change',
+  'adaptive.accept': 'Apply',
+  'adaptive.ignore': 'Ignore',
+  'adaptive.mute': "Don't ask again",
+  'adaptive.appliedLog': '{key} was adjusted automatically: {from} to {to}',
 }
