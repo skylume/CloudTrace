@@ -123,6 +123,27 @@ type speedBreakerPayload struct {
 	URLMode string `json:"url_mode"`
 }
 
+// scanOptions 组装扫描任务的选项。
+//
+// 单独成一个方法是为了能被直接断言：这里的每一项都是「配置到任务」的接线，
+// 少传一项不会报错，只会让某个功能静默失效——远端源就曾经这样漏过一次。
+// 抽出来之后，用例可以直接检查这些字段，不必真的跑一次扫描。
+func (s *server) scanOptions(params model.ScanParams) scan.Options {
+	return scan.Options{
+		Params: params,
+		// 每次扫描换一个种子：采样的意义就是每轮挑不同的地址，固定种子
+		// 会让用户每次扫到同一批。
+		Seed:   time.Now().UnixNano(),
+		Logger: s.logger,
+		// 远端源从配置现取：用户可能刚在界面上加了地址还没保存任务参数，
+		// 拿配置才是他看到的那个列表。
+		RemoteURLs: s.cfg.Get().Source.EnabledURLs(),
+		// 归属地补齐只在本地查表与内存里算，不发请求，因此可以挂在每个
+		// 节点的产出路径上。
+		Enrich: s.geoEnrich(),
+	}
+}
+
 // handleScanStart 校验参数并启动扫描任务。
 //
 // 参数校验同步做掉：任务一旦启动就在后台 goroutine 里跑，到那时才报参数
@@ -139,19 +160,7 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	runner, err := scan.NewRunner(scan.Options{
-		Params: params,
-		// 每次扫描换一个种子：采样的意义就是每轮挑不同的地址，固定种子
-		// 会让用户每次扫到同一批。
-		Seed:   time.Now().UnixNano(),
-		Logger: s.logger,
-		// 远端源从配置现取：用户可能刚在界面上加了地址还没保存任务参数，
-		// 拿配置才是他看到的那个列表。
-		RemoteURLs: s.cfg.Get().Source.EnabledURLs(),
-		// 归属地补齐只在本地查表与内存里算，不发请求，因此可以挂在每个
-		// 节点的产出路径上。
-		Enrich: s.geoEnrich(),
-	})
+	runner, err := scan.NewRunner(s.scanOptions(params))
 	if err != nil {
 		return fail(CodeInvalidParam, err.Error())
 	}
