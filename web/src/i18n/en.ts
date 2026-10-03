@@ -286,4 +286,5 @@ export const en: Record<keyof typeof zh, string> = {
   'speed.source.probe_failed': 'Exit probe failed, falling back to the official source',
   'result.emptyDesc': 'Once a scan finishes, usable nodes and their latency and speed show up here',
   'history.emptyDesc': 'Every finished task is saved automatically so you can reuse or compare it later',
+  'result.refreshed': 'Refreshed to the latest results on the server',
 }

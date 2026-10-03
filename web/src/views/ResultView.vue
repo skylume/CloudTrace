@@ -14,8 +14,10 @@ import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
+import type { IPRecord } from '@/api/types'
 import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
 import { useExportStore } from '@/stores/export'
+import { useHistoryStore } from '@/stores/history'
 import { useResultsStore } from '@/stores/results'
 import { useSpeedStore } from '@/stores/speed'
 import { useTaskStore } from '@/stores/task'
@@ -28,6 +30,64 @@ const fields = useFieldsStore()
 const task = useTaskStore()
 const speed = useSpeedStore()
 const exporter = useExportStore()
+const history = useHistoryStore()
+
+/**
+ * 下拉刷新。
+ *
+ * 「刷新」在这里有明确语义，不是走个过场：
+ *   - 结果来自某份历史 -> 重新读那一份（标签与备注可能被别的窗口改过）
+ *   - 结果是本次扫描出来的 -> 从服务端拉「最新一份」，把另一个窗口或上一次
+ *     运行的结果取回来
+ *
+ * 只在页面滚到顶部时才触发：列表已经往下翻过时再拉，用户想滚回顶部，而不是刷新。
+ */
+const pullDistance = ref(0)
+const PULL_THRESHOLD = 70
+let pullStartY = 0
+let pulling = false
+
+function onPullStart(event: TouchEvent): void {
+  if (window.scrollY > 0) return
+  pullStartY = event.touches[0]?.clientY ?? 0
+  pulling = true
+}
+
+function onPullMove(event: TouchEvent): void {
+  if (!pulling) return
+  const current = event.touches[0]?.clientY ?? 0
+  // 只认下拉；上滑是正常滚动，跟着算会让页面卡住。
+  pullDistance.value = Math.max(0, current - pullStartY)
+}
+
+async function onPullEnd(): Promise<void> {
+  if (!pulling) return
+  pulling = false
+  const distance = pullDistance.value
+  pullDistance.value = 0
+  if (distance < PULL_THRESHOLD) return
+  await refreshResults()
+}
+
+async function refreshResults(): Promise<void> {
+  if (results.sourceId !== '') {
+    history.load(results.sourceId, { count: results.total })
+    return
+  }
+
+  try {
+    const response = await fetch('/latest.json', { credentials: 'same-origin' })
+    if (!response.ok) {
+      // 没跑过任务时是 404，这不是故障，只是没有可刷新的东西。
+      ui.pushToast({ kind: 'warn', message: t('result.empty') })
+      return
+    }
+    results.replaceAll((await response.json()) as IPRecord[])
+    ui.pushToast({ kind: 'ok', message: t('result.refreshed') })
+  } catch {
+    ui.pushToast({ kind: 'bad', message: t('error.E_NETWORK') })
+  }
+}
 const ui = useUIStore()
 
 const narrow = useNarrow()
@@ -136,7 +196,16 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 </script>
 
 <template>
-  <div class="page">
+  <div
+    class="page"
+    @touchstart.passive="narrow && onPullStart($event)"
+    @touchmove.passive="narrow && onPullMove($event)"
+    @touchend="narrow && onPullEnd()"
+  >
+    <p v-if="pullDistance > 0" class="pull ct-subtle" :style="{ height: Math.min(pullDistance, 90) + 'px' }">
+      {{ pullDistance >= PULL_THRESHOLD ? t('common.retry') : '' }}
+    </p>
+
     <EmptyState
       v-if="showEmpty"
       class="ct-card"
@@ -219,6 +288,15 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 </template>
 
 <style scoped>
+.pull {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  overflow: hidden;
+  transition: height var(--duration-fast) var(--ease);
+}
+
 .page {
   display: flex;
   flex-direction: column;

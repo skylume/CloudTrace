@@ -15,12 +15,36 @@ import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settings
 import { useGeoStore } from '@/stores/geo'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
+import { useNarrow } from '@/utils/useMediaQuery'
 
 const settings = useSettingsStore()
 const geo = useGeoStore()
 const ui = useUIStore()
 
+const narrow = useNarrow()
 const activeGroup = ref(SETTING_GROUPS[0]!.id)
+/**
+ * 窄屏下哪些分组是展开的。
+ *
+ * 与 activeGroup 分开：宽屏一次只看一组，窄屏把所有组叠起来、各自可折叠——
+ * 手机上「点芯片切组」意味着每换一组都要滚回顶部，而折叠列表不需要。
+ */
+const openGroups = ref<string[]>([SETTING_GROUPS[0]!.id])
+
+function toggleGroup(id: string): void {
+  openGroups.value = openGroups.value.includes(id)
+    ? openGroups.value.filter((item) => item !== id)
+    : [...openGroups.value, id]
+}
+
+/** 窄屏渲染全部分组，宽屏只渲染当前选中的那一组。 */
+const visibleGroups = computed(() =>
+  narrow.value ? SETTING_GROUPS : SETTING_GROUPS.filter((item) => item.id === activeGroup.value),
+)
+
+function isOpen(id: string): boolean {
+  return !narrow.value || openGroups.value.includes(id)
+}
 const healthChecked = computed(() => settings.health !== null)
 const healthIssues = computed(() => settings.health?.issues ?? [])
 const confirmingReset = ref(false)
@@ -34,8 +58,6 @@ const values = computed<Record<string, unknown>>(
   () => (settings.values ?? {}) as unknown as Record<string, unknown>,
 )
 
-const group = computed(() => SETTING_GROUPS.find((item) => item.id === activeGroup.value) ?? SETTING_GROUPS[0]!)
-
 const groupLabel = (id: string) => groupText[ui.lang][id] ?? id
 
 /** 改一项：只把这一项按点号路径拼成嵌套 patch，不动别的键。 */
@@ -47,8 +69,8 @@ function resetField(path: string): void {
   sendCommand('settings/reset', { keys: [path] })
 }
 
-function resetGroup(): void {
-  sendCommand('settings/reset', { keys: [group.value.id] })
+function resetGroupOf(id: string): void {
+  sendCommand('settings/reset', { keys: [id] })
 }
 
 /** 恢复推荐设置影响面大，先确认再发。 */
@@ -75,7 +97,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       :message="t('settings.restartRequired', { keys: settings.restartRequired.join(', ') })"
     />
 
-    <nav class="groups" aria-label="设置分组">
+    <nav v-if="!narrow" class="groups" aria-label="设置分组">
       <button
         v-for="item in SETTING_GROUPS"
         :key="item.id"
@@ -89,22 +111,35 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
     </nav>
 
     <div class="columns">
-      <section class="ct-card">
-        <h2 class="ct-card-title">
-          <span>{{ groupLabel(group.id) }}</span>
-          <span class="spacer" />
-          <button type="button" class="ct-link" @click="resetGroup()">{{ t('common.reset') }}</button>
-        </h2>
-        <SettingsField
-          v-for="field in group.fields"
-          :key="field.path"
-          :field="field"
-          :value="readPath(values, field.path)"
-          :locale="ui.lang"
-          @change="change"
-          @reset="resetField"
-        />
-      </section>
+      <div class="main">
+        <section v-for="item in visibleGroups" :key="item.id" class="ct-card">
+          <h2 class="ct-card-title">
+            <button
+              v-if="narrow"
+              type="button"
+              class="ct-link disclosure"
+              :aria-expanded="isOpen(item.id)"
+              @click="toggleGroup(item.id)"
+            >
+              {{ isOpen(item.id) ? '▾' : '▸' }} {{ groupLabel(item.id) }}
+            </button>
+            <span v-else>{{ groupLabel(item.id) }}</span>
+            <span class="spacer" />
+            <button type="button" class="ct-link" @click="resetGroupOf(item.id)">{{ t('common.reset') }}</button>
+          </h2>
+          <template v-if="isOpen(item.id)">
+            <SettingsField
+              v-for="field in item.fields"
+              :key="field.path"
+              :field="field"
+              :value="readPath(values, field.path)"
+              :locale="ui.lang"
+              @change="change"
+              @reset="resetField"
+            />
+          </template>
+        </section>
+      </div>
 
       <div class="side">
         <section class="ct-card">
@@ -193,6 +228,19 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   border-color: var(--color-primary);
   background: var(--color-primary-soft);
   color: var(--color-primary-text);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.disclosure {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .columns {
