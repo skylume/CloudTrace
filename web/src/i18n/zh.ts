@@ -297,4 +297,5 @@ export const zh = {
   'opt.local': '本地时间',
   'opt.utc': 'UTC',
   'opt.both': '两者合并',
+  'preset.appliesNextRun': '改动会在下次扫描时生效',
 } as const

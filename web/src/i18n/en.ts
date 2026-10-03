@@ -305,4 +305,5 @@ export const en: Record<keyof typeof zh, string> = {
   'opt.local': 'Local time',
   'opt.utc': 'UTC',
   'opt.both': 'Both merged',
+  'preset.appliesNextRun': 'Changes take effect on the next scan',
 }

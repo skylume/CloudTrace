@@ -8,18 +8,38 @@
  *
  * 参数的中文标签、范围、说明都来自 i18n 映射表，组件里不硬编码。
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { CUSTOM_PRESET, SCAN_PARAMS, SCAN_PRESETS, matchPreset } from '@/i18n/params'
+import { useUIStore } from '@/stores/ui'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
 const presetId = defineModel<string>('presetId', { required: true })
 
 defineProps<{ disabled?: boolean }>()
 
-const expanded = ref(false)
+const ui = useUIStore()
+
+/**
+ * 是否展开全部参数。
+ *
+ * 由 `ui.density` 决定而不是组件自己的状态：披露是「首次默认」，不是每次的
+ * 关卡——用户展开过一次，下次进来就该直接是展开的，不该让他再点一次。
+ */
+const expanded = computed(() => ui.showAdvanced)
+
+/**
+ * 展开 / 收起。
+ *
+ * 用户的最近一次选择说了算：展开记成「高级」，收起记成「简单」。`auto` 只在
+ * 用户还没表过态时起作用（默认简单）。这比「展开过就再也收不回去」更符合
+ * 直觉，而想回到简单还有 Ctrl+Shift+A。
+ */
+function toggleExpanded(): void {
+  ui.setDensity(expanded.value ? 'simple' : 'advanced')
+}
 
 const segments = computed(() => [
   ...SCAN_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey as never) })),
@@ -58,6 +78,20 @@ function updateParam(key: string, value: number | boolean): void {
   presetId.value = matchPreset(next)
 }
 
+/**
+ * 是否超出建议区间。
+ *
+ * 只看有值的情况：0 在探测次数里表示「自动」，不是「太小」。
+ */
+function outOfRange(spec: (typeof SCAN_PARAMS)[number]): boolean {
+  const value = Number(params.value[spec.key] ?? 0)
+  if (!Number.isFinite(value)) return false
+  if (value === 0 && spec.kind === 'int') return false
+  if (spec.warnBelow !== undefined && value < spec.warnBelow) return true
+  if (spec.warnAbove !== undefined && value > spec.warnAbove) return true
+  return false
+}
+
 function onNumber(key: string, raw: string, spec: { min?: number; max?: number }): void {
   const value = Number(raw)
   if (!Number.isFinite(value)) return
@@ -72,7 +106,7 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
       <span>{{ t('preset.summary') }}</span>
       <span v-if="deviatedFrom" class="deviated">{{ deviatedFrom }}</span>
       <span class="spacer" />
-      <button type="button" class="ct-link" @click="expanded = !expanded">
+      <button type="button" class="ct-link" @click="toggleExpanded">
         {{ expanded ? t('preset.collapse') : t('preset.all') }}
       </button>
     </h2>
@@ -84,12 +118,15 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
       @update:model-value="applyPreset"
     />
 
+    <p v-if="deviatedFrom" class="notice ct-subtle">{{ t('preset.appliesNextRun') }}</p>
+
     <div class="grid">
       <label v-for="spec in visibleParams" :key="spec.key" class="field">
         <span class="label" :title="t(spec.hintKey as never)">{{ t(spec.labelKey as never) }}</span>
         <input
           v-if="spec.kind === 'int'"
           class="ct-input tnum"
+          :class="{ warn: outOfRange(spec) }"
           type="number"
           :value="params[spec.key] ?? 0"
           :min="spec.min"
@@ -114,6 +151,16 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
 <style scoped>
 .spacer {
   flex: 1;
+}
+
+.notice {
+  margin: var(--space-2) 0 0;
+}
+
+/* 超出建议区间只标色不拦截：用户有权这么设，但该知道代价。 */
+.field .ct-input.warn {
+  border-color: var(--color-warn);
+  color: var(--color-warn);
 }
 
 .deviated {

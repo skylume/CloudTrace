@@ -19,6 +19,15 @@ export interface ParamSpec {
   max?: number
   /** 出现在档位参数摘要里；否则只在「全部参数」中显示。 */
   summary?: boolean
+  /**
+   * 建议区间。超出只标警示色，**不阻止填写**。
+   *
+   * 与 min/max 是两件事：min/max 是「填不进去」的硬边界，建议区间是「填了会
+   * 有什么后果」。用户有权把自己网络的参数设成别人看来不合理的样子，但该
+   * 知道代价是什么。
+   */
+  warnBelow?: number
+  warnAbove?: number
 }
 
 /** 扫描参数清单。顺序就是界面上显示的顺序。 */
@@ -40,6 +49,8 @@ export const SCAN_PARAMS: ParamSpec[] = [
     min: 1,
     max: 200,
     summary: true,
+    // 弱网与老路由上并发拉满会把自己的网络压垮，而结果反而更差。
+    warnAbove: 150,
   },
   {
     key: 'latencyThreshold',
@@ -50,6 +61,8 @@ export const SCAN_PARAMS: ParamSpec[] = [
     min: 1,
     max: 5000,
     summary: true,
+    // 阈值压到 100 以下，能通过的节点会少到几乎没有，白等一轮。
+    warnBelow: 100,
   },
   {
     key: 'pingTimes',
@@ -59,6 +72,8 @@ export const SCAN_PARAMS: ParamSpec[] = [
     min: 0,
     max: 20,
     summary: true,
+    // 每轮多测几次更准，但时间成倍增长。
+    warnAbove: 5,
   },
   {
     key: 'port',
