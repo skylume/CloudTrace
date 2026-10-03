@@ -36,7 +36,7 @@
 
   --color-text: #0f172a;
   --color-text-muted: #5b6879;
-  --color-text-subtle: #8a95a6;
+  --color-text-subtle: #646e7c;
 
   --color-primary: #4f46e5;
   --color-primary-hover: #4338ca;
@@ -55,8 +55,8 @@
   --color-ok-bg: rgb(15 118 110 / 10%);
   --color-ok-border: rgb(15 118 110 / 22%);
 
-  --color-warn: #b45309;
-  --color-warn-bg: rgb(180 83 9 / 10%);
+  --color-warn: #a04a08;
+  --color-warn-bg: rgb(160 74 8 / 10%);
   --color-warn-border: rgb(180 83 9 / 22%);
 
   --color-bad: #be123c;
@@ -70,7 +70,7 @@
   --latency-fast: #0f766e;
   --latency-mid: #b45309;
   --latency-slow: #c2410c;
-  --latency-dead: #8a95a6;
+  --latency-dead: #646e7c;
 
   /* 两级投影：近处一道细的收边，远处一道大的拉开层次。 */
   --elevation-1: 0 1px 2px rgb(15 23 42 / 5%), 0 6px 16px rgb(15 23 42 / 6%);
@@ -94,10 +94,10 @@
 
   --color-text: #e8ecf3;
   --color-text-muted: #8b95a5;
-  --color-text-subtle: #6b7583;
+  --color-text-subtle: #7d8797;
 
-  --color-primary: #6366f1;
-  --color-primary-hover: #818cf8;
+  --color-primary: #5b5ef0;
+  --color-primary-hover: #7c7ef5;
   --color-primary-soft: rgb(99 102 241 / 20%);
   --color-primary-soft-strong: rgb(99 102 241 / 30%);
   --color-primary-text: #a5b4fc;
@@ -126,7 +126,7 @@
   --latency-fast: #34d399;
   --latency-mid: #fbbf24;
   --latency-slow: #fb923c;
-  --latency-dead: #6b7583;
+  --latency-dead: #7d8797;
 
   --elevation-1: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 20px rgb(0 0 0 / 28%);
   --elevation-2: 0 1px 2px rgb(0 0 0 / 34%), 0 16px 40px rgb(0 0 0 / 36%);
@@ -172,6 +172,8 @@
   --color-text-subtle: #d1d5db;
   --color-primary: #a5b4fc;
   --color-primary-text: #c7d2fe;
+  /* 主色在这个模式下是浅色，按钮文字必须跟着变深，否则白字浅底读不出来。 */
+  --color-on-primary: #0b0b0b;
   --color-ok: #6ee7b7;
   --color-warn: #fcd34d;
   --color-bad: #fda4af;

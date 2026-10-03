@@ -284,4 +284,6 @@ export const en: Record<keyof typeof zh, string> = {
   'speed.source.mobile': 'Your exit is China Mobile, so a mobile source is used',
   'speed.source.not_mobile': 'Your exit is not China Mobile, so the official source is used',
   'speed.source.probe_failed': 'Exit probe failed, falling back to the official source',
+  'result.emptyDesc': 'Once a scan finishes, usable nodes and their latency and speed show up here',
+  'history.emptyDesc': 'Every finished task is saved automatically so you can reuse or compare it later',
 }

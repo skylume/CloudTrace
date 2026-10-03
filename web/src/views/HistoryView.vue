@@ -9,6 +9,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import HistoryList from '@/components/history/HistoryList.vue'
 import Banner from '@/components/ui/Banner.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
 import { useHistoryStore } from '@/stores/history'
 import { useResultsStore } from '@/stores/results'
@@ -114,12 +115,14 @@ function closeDiff(): void {
       <button type="button" class="ct-link" @click="closeDiff">{{ t('common.close') }}</button>
     </div>
 
-    <div v-if="filtered.length === 0" class="ct-card empty">
-      <p class="empty-title">{{ t('history.empty') }}</p>
-      <button type="button" class="ct-btn ct-btn--primary" @click="ui.activeView = 'scan'">
-        {{ t('result.emptyAction') }}
-      </button>
-    </div>
+    <EmptyState
+      v-if="filtered.length === 0"
+      class="ct-card"
+      :title="t('history.empty')"
+      :desc="t('history.emptyDesc')"
+      :action-label="t('result.emptyAction')"
+      @action="ui.activeView = 'scan'"
+    />
     <HistoryList v-else :entries="filtered" :compare-ids="compareIds" @load="load" @toggle-compare="toggleCompare" />
   </div>
 </template>
@@ -174,18 +177,5 @@ function closeDiff(): void {
 
 .worse {
   color: var(--color-bad);
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-7) var(--space-4);
-  text-align: center;
-}
-
-.empty-title {
-  font-weight: 500;
 }
 </style>

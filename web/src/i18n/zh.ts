@@ -276,4 +276,6 @@ export const zh = {
   'speed.source.mobile': '出口是中国移动，用移动测速源',
   'speed.source.not_mobile': '出口不是中国移动，用官方源',
   'speed.source.probe_failed': '出口探测失败，回退官方源',
+  'result.emptyDesc': '扫描完成后，这里会列出可用节点与它们的延迟、速度',
+  'history.emptyDesc': '每次任务跑完都会自动存一份，之后可以复用或对比',
 } as const

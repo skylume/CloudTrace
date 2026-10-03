@@ -10,7 +10,7 @@ import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
 import Banner from '@/components/ui/Banner.vue'
-import RadarPulse from '@/components/ui/RadarPulse.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
@@ -122,13 +122,14 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 
 <template>
   <div class="page">
-    <div v-if="showEmpty" class="ct-card empty">
-      <RadarPulse />
-      <p class="empty-title">{{ t('result.empty') }}</p>
-      <button type="button" class="ct-btn ct-btn--primary" @click="ui.activeView = 'scan'">
-        {{ t('result.emptyAction') }}
-      </button>
-    </div>
+    <EmptyState
+      v-if="showEmpty"
+      class="ct-card"
+      :title="t('result.empty')"
+      :desc="t('result.emptyDesc')"
+      :action-label="t('result.emptyAction')"
+      @action="ui.activeView = 'scan'"
+    />
 
     <template v-else>
       <Banner
@@ -254,19 +255,6 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 .source-line {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-7) var(--space-4);
-  text-align: center;
-}
-
-.empty-title {
-  font-weight: 500;
 }
 
 .foot {

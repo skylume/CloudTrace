@@ -13,7 +13,7 @@ import PresetPanel from '@/components/scan/PresetPanel.vue'
 import ProcessPanel from '@/components/scan/ProcessPanel.vue'
 import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
-import RadarPulse from '@/components/ui/RadarPulse.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
 import { matchPreset, presetValues } from '@/i18n/params'
 import { useActionStore } from '@/stores/actions'
@@ -125,11 +125,12 @@ function stop(): void {
       </div>
 
       <div class="side">
-        <div v-if="showEmpty" class="ct-card empty">
-          <RadarPulse />
-          <p class="empty-title">{{ t('scan.empty.title') }}</p>
-          <p class="ct-subtle">{{ t('scan.empty.desc') }}</p>
-        </div>
+        <EmptyState
+          v-if="showEmpty"
+          class="ct-card"
+          :title="t('scan.empty.title')"
+          :desc="t('scan.empty.desc')"
+        />
         <ProcessPanel v-else />
         <LogPanel />
       </div>
@@ -163,19 +164,6 @@ function stop(): void {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-6) var(--space-4);
-  text-align: center;
-}
-
-.empty-title {
-  font-weight: 500;
 }
 
 @media (max-width: 1024px) {
