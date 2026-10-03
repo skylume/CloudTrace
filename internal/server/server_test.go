@@ -688,6 +688,37 @@ func TestWSScanStartRejectsInvalidParams(t *testing.T) {
 	}
 }
 
+/**
+ * 探测次数留空（0）表示「不指定」，不能当成非法参数。
+ *
+ * 界面上把它显示成「自动」，内置「标准」档填的就是 0——曾经这一档一启动就
+ * 失败，报「探测次数 0 必须至少为 1」。
+ *
+ * 这里借「已有任务在跑」来判定校验是否放行：拿到 E_BUSY 说明参数过了校验
+ * （紧接着才轮到互斥检查），拿到 E_INVALID_PARAM 说明被拒了。这样不必真的
+ * 发起一次扫描就能断言到校验的边界。
+ */
+func TestWSScanStartAcceptsEmptyPingTimes(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	release := blockTask(t, st, model.PhaseScan)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"scan/start","data":{"port":443,"workers":8,"latency_threshold":230,`+
+		`"ping_times":0,"timeout_ms":1000,"source_mode":"official","ip_version":4,"mode":"tcping"}}`)
+
+	m := readUntil(t, conn, eventError, 3*time.Second)
+	var p errorPayload
+	decode(t, m, &p)
+	if p.Code != CodeBusy {
+		t.Errorf("code = %q，期望 %q——拿到 E_INVALID_PARAM 说明探测次数 0 仍被当成非法值",
+			p.Code, CodeBusy)
+	}
+	release()
+}
+
 // 已有任务在跑时，第二个 scan/start 必须回 E_BUSY，不得并行。
 func TestWSScanStartReturnsBusy(t *testing.T) {
 	st := newTestStack(t, nil)

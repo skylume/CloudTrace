@@ -36,6 +36,41 @@ func TestWSSpeedStartRejectsInvalidParams(t *testing.T) {
 	}
 }
 
+/**
+ * 一份「按配置组装好的完整参数」必须整体被接受。
+ *
+ * 前端发起测速时会把并发、间隔、测速源、评分权重、熔断阈值这些全部带上，
+ * 服务端不替调用方读配置。这份载荷的形状一旦与校验不符，用户改过的每一项
+ * 都会静默失效——所以要有一处断言把它们整体过一遍，而不是只测默认值能跑。
+ *
+ * 同样借「已有任务在跑」判断：E_BUSY 说明整份参数都过了校验。
+ */
+func TestWSSpeedStartAcceptsFullParamsFromConfig(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	release := blockTask(t, st, model.PhaseSpeed)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	// 逐项取值都刻意不取默认值，其中 timeout_ms 为 0 表示「交给后端决定」。
+	const full = `{"scope":"single","targets":[{"ip":"1.1.1.1","port":443}],"ip_version":4,` +
+		`"url_mode":"mobile_only","custom_url":"","use_tls":"true","concurrency":4,` +
+		`"target_qualified":25,"interval_ms":800,"min_speed":6.5,"weight_speed":2,` +
+		`"weight_latency":0.5,"weight_jitter":0.2,"per_region_topn":3,` +
+		`"download_duration_s":15,"breaker_429":5,"usability_check":false,"timeout_ms":0}`
+
+	send(t, conn, `{"type":"speed/start","data":`+full+`}`)
+
+	m := readUntil(t, conn, eventError, 3*time.Second)
+	var p errorPayload
+	decode(t, m, &p)
+	if p.Code != CodeBusy {
+		t.Errorf("code = %q，期望 %q（%s）——说明这份参数没被整体接受", p.Code, CodeBusy, p.Msg)
+	}
+	release()
+}
+
 // 没有选中任何目标同样要在启动前拦住。
 func TestWSSpeedStartRejectsEmptyTargets(t *testing.T) {
 	st := newTestStack(t, nil)
