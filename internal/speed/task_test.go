@@ -284,6 +284,20 @@ func TestNormalizeParamsKeepsZeroJitterWeight(t *testing.T) {
 	}
 }
 
+// 只把速度权重设成 0 是「只按延迟排序」这个明确诉求，不能被静默改回 1。
+//
+// 兜底只在三个权重全为 0（评分会全变成 0）时才该出手。
+func TestNormalizeParamsKeepsZeroSpeedWeightWhenLatencyWeighs(t *testing.T) {
+	got := NormalizeParams(model.SpeedParams{
+		Targets:       []model.IPRecord{target("1.1.1.1", 443)},
+		WeightSpeed:   0,
+		WeightLatency: 1,
+	})
+	if got.WeightSpeed != 0 {
+		t.Errorf("速度权重 = %v，期望保持 0", got.WeightSpeed)
+	}
+}
+
 // 显式给出的非零值不能被覆盖。
 func TestNormalizeParamsKeepsExplicitValues(t *testing.T) {
 	in := model.SpeedParams{

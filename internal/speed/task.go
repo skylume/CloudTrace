@@ -118,12 +118,14 @@ func NormalizeParams(p model.SpeedParams) model.SpeedParams {
 	if p.TimeoutMS == 0 {
 		p.TimeoutMS = defaultTimeoutMS
 	}
-	// 权重为 0 会让所有评分都变成 0，结果表看起来像「全都不合格」。
-	// 抖动权重默认就是 0，是有意义的取值，因此只兜底前两项。
-	if p.WeightSpeed == 0 {
+	// 三个权重全为 0 时评分会全是 0，结果表看起来像「全都不合格」，这时才
+	// 兜底成默认权重。
+	//
+	// 按项兜底是不行的：把速度权重设成 0 是「只按延迟排序」这个明确诉求，
+	// 逐项兜底会把它静默改回 1，用户看到的排序结果和设置对不上。抖动权重
+	// 本来就默认 0，因此「全为 0」实际只在速度和延迟都被清零时成立。
+	if p.WeightSpeed == 0 && p.WeightLatency == 0 && p.WeightJitter == 0 {
 		p.WeightSpeed = defaultWeight
-	}
-	if p.WeightLatency == 0 {
 		p.WeightLatency = defaultWeight
 	}
 	return p
