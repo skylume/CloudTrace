@@ -9,6 +9,19 @@ import { computed, ref } from 'vue'
 
 import { UNREACHABLE, type IPRecord, type Summary } from '@/api/types'
 
+export type GroupBy = 'none' | 'colo' | 'region' | 'asn'
+
+/** 一个分组的汇总：父行给的是决策信息，不是明细。 */
+export interface RecordGroup {
+  key: string
+  label: string
+  records: IPRecord[]
+  count: number
+  minLatency: number
+  avgLatency: number
+  bestSpeed: number
+}
+
 export type SortKey = 'latency' | 'latency_avg' | 'loss' | 'jitter' | 'score' | 'speed_mbps' | 'region'
 
 /** 排序维度与后端的取值一致，方向取该维度的自然方向。 */
@@ -68,6 +81,7 @@ export const useResultsStore = defineStore('results', () => {
   const maxLatency = ref<number | null>(null)
   const sortKey = ref<SortKey>('loss')
   const sortDesc = ref(false)
+  const groupBy = ref<GroupBy>('none')
 
   function touch(): void {
     version.value += 1
@@ -147,6 +161,30 @@ export const useResultsStore = defineStore('results', () => {
    */
   const stats = computed<Summary>(() => summarize(all.value))
 
+  /**
+   * 分组结果。
+   *
+   * 组按最低延迟升序排——父行回答的是「这个数据中心值不值得测」，而延迟是
+   * 那个问题的答案。组内保持当前排序，切分组不改变用户已经选好的顺序。
+   */
+  const groups = computed<RecordGroup[]>(() => {
+    if (groupBy.value === 'none') return []
+
+    const buckets = new Map<string, IPRecord[]>()
+    for (const record of visible.value) {
+      const { key } = groupKeyOf(record, groupBy.value)
+      const list = buckets.get(key)
+      if (list) list.push(record)
+      else buckets.set(key, [record])
+    }
+
+    const out: RecordGroup[] = []
+    for (const [key, list] of buckets) {
+      out.push({ key, label: groupKeyOf(list[0]!, groupBy.value).label, records: list, ...summarizeGroup(list) })
+    }
+    return out.sort((a, b) => a.minLatency - b.minLatency || a.key.localeCompare(b.key))
+  })
+
   function toggleSelect(key: string): void {
     const next = new Set(selected.value)
     if (next.has(key)) next.delete(key)
@@ -175,6 +213,8 @@ export const useResultsStore = defineStore('results', () => {
   return {
     all,
     visible,
+    groups,
+    groupBy,
     total,
     stats,
     regionCounts,
@@ -281,6 +321,42 @@ function toNumber(ip: string): number | null {
     value = value * 256 + n
   }
   return value
+}
+
+/** 取一条记录的分组键与显示名。 */
+function groupKeyOf(record: IPRecord, by: GroupBy): { key: string; label: string } {
+  switch (by) {
+    case 'colo':
+      return { key: (record.colo || 'unknown').toUpperCase(), label: record.region_name || record.colo || '—' }
+    case 'region':
+      return { key: record.region_name || record.colo || 'unknown', label: record.region_name || record.colo || '—' }
+    default:
+      return { key: String(record.asn || 0), label: record.as_org || (record.asn ? `AS${record.asn}` : '—') }
+  }
+}
+
+/** 组内汇总。口径与整体统计一致：不可达与未测速不参与平均。 */
+function summarizeGroup(list: IPRecord[]): Omit<RecordGroup, 'key' | 'label' | 'records'> {
+  let minLatency = UNREACHABLE
+  let latencySum = 0
+  let latencyCount = 0
+  let bestSpeed = 0
+
+  for (const record of list) {
+    if (reachable(record)) {
+      if (latencyCount === 0 || record.latency < minLatency) minLatency = record.latency
+      latencySum += record.latency_avg
+      latencyCount += 1
+    }
+    if (record.speed_mbps > bestSpeed) bestSpeed = record.speed_mbps
+  }
+
+  return {
+    count: list.length,
+    minLatency,
+    avgLatency: latencyCount > 0 ? latencySum / latencyCount : UNREACHABLE,
+    bestSpeed,
+  }
 }
 
 /** summarize 与后端 Summary 的口径一致：不可达与未测速都不参与平均。 */

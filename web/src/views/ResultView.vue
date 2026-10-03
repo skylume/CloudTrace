@@ -24,7 +24,6 @@ const ui = useUIStore()
 
 const view = ref<'result' | 'speed'>('result')
 const expanded = ref<string[]>([])
-const groupBy = ref<'none' | 'colo' | 'region' | 'asn'>('none')
 
 onMounted(() => void fields.load())
 
@@ -73,6 +72,16 @@ async function copyTop(count: number): Promise<void> {
 function speedSelected(): void {
   const targets = results.selectedRecords
   if (targets.length === 0) return
+  startSpeed(targets)
+}
+
+/** 「测速本组」走同一条路径：先选中，再按选中发起。 */
+function onGroupSpeed(records: typeof results.all): void {
+  startSpeed(records)
+}
+
+function startSpeed(targets: typeof results.all): void {
+  if (targets.length === 0) return
   sendCommand('speed/start', { scope: 'single', targets })
   view.value = 'speed'
 }
@@ -110,7 +119,7 @@ function applyPreset(id: string): void {
         />
         <span class="spacer" />
         <SegmentedControl :segments="presetSegments" :model-value="fields.presetId" @update:model-value="applyPreset" />
-        <select v-model="groupBy" class="ct-input" :aria-label="t('result.group.none')">
+        <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
           <option value="none">{{ t('result.group.none') }}</option>
           <option value="colo">{{ t('result.group.colo') }}</option>
           <option value="region">{{ t('result.group.region') }}</option>
@@ -123,7 +132,7 @@ function applyPreset(id: string): void {
         </button>
       </div>
 
-      <DataTable v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" />
+      <DataTable v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" @speed="onGroupSpeed" />
       <p class="ct-subtle foot">{{ results.visible.length }} / {{ results.total }}</p>
     </template>
   </div>

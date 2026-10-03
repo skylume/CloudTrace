@@ -2,37 +2,36 @@
 /**
  * 结果表：列由后端字段清单驱动。
  *
- * 模板里只有一层 `v-for="column in columns"`——从 8 列加到 19 列，这个文件
- * 一行都不会变。手写每一列的写法每加一个字段都要改前端，必然漂移。
+ * 模板里只有一层 v-for——从 8 列加到 19 列，这个文件一行都不会变。手写每一列
+ * 的写法每加一个字段都要改前端，必然漂移。
  *
- * 表格本身不做虚拟滚动：结果集默认几百条，分页足够；虚拟滚动等真有上万条
- * 的用例再加，过早引入会让「双击复制」「行内展开」都变复杂。
+ * 行渲染抽在 RecordRow 里，平铺与分组两种模式复用同一份：两处各写一遍的话，
+ * 双击复制、信号条、选中态这些细节迟早会不一致。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
-import RecordDetail from './RecordDetail.vue'
-import SignalBar from '@/components/ui/SignalBar.vue'
+import GroupRow from './GroupRow.vue'
+import RecordRow from './RecordRow.vue'
 import { t } from '@/i18n'
 import type { FieldDef, IPRecord } from '@/api/types'
-import { formatField, renderSpec } from '@/utils/recordFormat'
-import { useFieldsStore } from '@/stores/fields'
 import { recordKey, useResultsStore, type SortKey } from '@/stores/results'
+import { renderSpec } from '@/utils/recordFormat'
 
 const props = defineProps<{
   columns: FieldDef[]
   records: IPRecord[]
-  /** 名次起点，分页时用于显示序号。 */
-  offset?: number
 }>()
 
 const results = useResultsStore()
-const fields = useFieldsStore()
 
-const expanded = defineModel<string[]>('expanded', { default: () => [] })
+const emit = defineEmits<{ (event: 'speed', records: IPRecord[]): void }>()
 
-const valuesOf = (record: IPRecord) => record as unknown as Record<string, unknown>
+/** 展开的行（按 ip:port）。 */
+const expandedRows = defineModel<string[]>('expanded', { default: () => [] })
+/** 展开的分组（按分组键）。 */
+const expandedGroups = ref<string[]>([])
 
-/** 排序：点表头切换；只对后端支持的维度生效，其余字段按地址序兜底。 */
+/** 排序：只对后端支持的维度生效，其余字段按地址序兜底。 */
 const SORTABLE: Record<string, SortKey> = {
   latency: 'latency',
   latency_avg: 'latency_avg',
@@ -60,22 +59,25 @@ function isSorted(key: string): 'asc' | 'desc' | '' {
   return results.sortDesc ? 'desc' : 'asc'
 }
 
-function toggleExpand(record: IPRecord): void {
+function toggleRow(record: IPRecord): void {
   const key = recordKey(record)
-  expanded.value = expanded.value.includes(key)
-    ? expanded.value.filter((item) => item !== key)
-    : [...expanded.value, key]
+  expandedRows.value = expandedRows.value.includes(key)
+    ? expandedRows.value.filter((item) => item !== key)
+    : [...expandedRows.value, key]
 }
 
-/** 双击单元格复制该格内容——拿到结果后九成的动作是复制。 */
-async function copyCell(record: IPRecord, key: string): Promise<void> {
-  const text = formatField(key, valuesOf(record)[key], record)
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    /* 剪贴板不可用时不打断用户，右键菜单还有复制整行 */
-  }
+function toggleGroup(key: string): void {
+  expandedGroups.value = expandedGroups.value.includes(key)
+    ? expandedGroups.value.filter((item) => item !== key)
+    : [...expandedGroups.value, key]
 }
+
+/** 分组模式下的名次仍然连续：展开某个组时序号不能重新从 1 开始。 */
+const ranks = computed(() => {
+  const map = new Map<string, number>()
+  props.records.forEach((record, index) => map.set(recordKey(record), index + 1))
+  return map
+})
 
 const allSelected = computed(
   () => props.records.length > 0 && props.records.every((record) => results.selected.has(recordKey(record))),
@@ -84,6 +86,17 @@ const allSelected = computed(
 function toggleAll(): void {
   if (allSelected.value) results.clearSelection()
   else results.selectAllVisible()
+}
+
+/**
+ * 测速本组：把该组节点选中，然后交给页面发起测速。
+ *
+ * 组件不自己发起——发起测速意味着切视图，那是页面的事；组件只表达「用户想
+ * 测这一组」。
+ */
+function selectGroup(records: IPRecord[]): void {
+  results.selected = new Set(records.map(recordKey))
+  emit('speed', records)
 }
 </script>
 
@@ -115,51 +128,38 @@ function toggleAll(): void {
         </tr>
       </thead>
       <tbody>
-        <template v-for="(record, index) in props.records" :key="recordKey(record)">
-          <tr :class="{ picked: results.selected.has(recordKey(record)) }">
-            <td class="narrow">
-              <input
-                type="checkbox"
-                class="ct-check"
-                :checked="results.selected.has(recordKey(record))"
-                :aria-label="record.ip"
-                @change="results.toggleSelect(recordKey(record))"
+        <template v-if="results.groups.length > 0">
+          <template v-for="group in results.groups" :key="group.key">
+            <GroupRow
+              :group="group"
+              :expanded="expandedGroups.includes(group.key)"
+              :selectable="group.count > 0"
+              @toggle="toggleGroup(group.key)"
+              @speed="selectGroup(group.records)"
+            />
+            <template v-if="expandedGroups.includes(group.key)">
+              <RecordRow
+                v-for="record in group.records"
+                :key="recordKey(record)"
+                :record="record"
+                :columns="props.columns"
+                :rank="ranks.get(recordKey(record)) ?? 0"
+                :expanded="expandedRows.includes(recordKey(record))"
+                @toggle="toggleRow(record)"
               />
-            </td>
-            <td class="narrow">
-              <button
-                type="button"
-                class="ct-link"
-                :aria-label="t('result.expand')"
-                @click="toggleExpand(record)"
-              >
-                {{ expanded.includes(recordKey(record)) ? '▾' : '▸' }}
-              </button>
-            </td>
-            <td class="narrow num tnum">{{ (props.offset ?? 0) + index + 1 }}</td>
-            <td
-              v-for="column in props.columns"
-              :key="column.key"
-              :class="{ num: renderSpec(column.key).align === 'right' }"
-              @dblclick="copyCell(record, column.key)"
-            >
-              <SignalBar v-if="renderSpec(column.key).render === 'latency'" :latency="record.latency" />
-              <span
-                v-else
-                :class="{
-                  tnum: renderSpec(column.key).render === 'number',
-                  mono: renderSpec(column.key).render === 'mono',
-                }"
-              >
-                {{ formatField(column.key, valuesOf(record)[column.key], record) }}
-              </span>
-            </td>
-          </tr>
-          <tr v-if="expanded.includes(recordKey(record))" class="detail-row">
-            <td :colspan="props.columns.length + 3">
-              <RecordDetail :record="record" :fields="fields.fields" />
-            </td>
-          </tr>
+            </template>
+          </template>
+        </template>
+        <template v-else>
+          <RecordRow
+            v-for="record in props.records"
+            :key="recordKey(record)"
+            :record="record"
+            :columns="props.columns"
+            :rank="ranks.get(recordKey(record)) ?? 0"
+            :expanded="expandedRows.includes(recordKey(record))"
+            @toggle="toggleRow(record)"
+          />
         </template>
       </tbody>
     </table>
@@ -224,12 +224,6 @@ tbody tr.picked {
 
 tbody tr.picked td:first-child {
   box-shadow: inset 2px 0 0 var(--color-primary);
-}
-
-.detail-row td {
-  height: auto;
-  padding: 0;
-  background: var(--color-surface-sunken);
 }
 
 .narrow {
