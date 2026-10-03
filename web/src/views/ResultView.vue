@@ -19,16 +19,19 @@ import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fi
 import { useExportStore } from '@/stores/export'
 import { useHistoryStore } from '@/stores/history'
 import { useResultsStore } from '@/stores/results'
+import { useSettingsStore } from '@/stores/settings'
 import { useSpeedStore } from '@/stores/speed'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
 import { formatLatency, formatSpeed } from '@/utils/latency'
+import { buildSpeedParams } from '@/utils/speedParams'
 import { useNarrow } from '@/utils/useMediaQuery'
 
 const results = useResultsStore()
 const fields = useFieldsStore()
 const task = useTaskStore()
 const speed = useSpeedStore()
+const settings = useSettingsStore()
 const exporter = useExportStore()
 const history = useHistoryStore()
 
@@ -149,9 +152,16 @@ function onGroupSpeed(records: typeof results.all): void {
   startSpeed(records)
 }
 
+/**
+ * 发起测速。
+ *
+ * 参数在这里按当前配置组装好整份发出去。后端拿到的是**完整参数**，不会
+ * 替我们去读配置——只发目标和范围的话，设置页里改过的并发、间隔、测速源
+ * 就一个都不会生效。
+ */
 function startSpeed(targets: typeof results.all): void {
   if (targets.length === 0) return
-  sendCommand('speed/start', { scope: 'single', targets })
+  sendCommand('speed/start', buildSpeedParams(settings.values, { scope: 'single', targets }))
   view.value = 'speed'
 }
 
