@@ -10,36 +10,36 @@ package config
 
 // SpeedConfig 是测速相关配置（前缀 speed.）。
 type SpeedConfig struct {
-	URLMode            string  `json:"url_mode"`             // auto | official | mobile_friendly | mobile_only | custom
-	CustomURL          string  `json:"custom_url"`           // custom 模式下的测速地址
-	Concurrency        int     `json:"concurrency"`          // 测速并发 1–16
-	TargetQualified    int     `json:"target_qualified"`     // 收够多少个合格结果就提前收敛
-	IntervalMS         int     `json:"interval_ms"`          // 串行测速间隔（防 429）
-	MinSpeed           float64 `json:"min_speed"`            // 合格线 MB/s
-	WeightSpeed        float64 `json:"weight_speed"`         // 评分权重：速度
-	WeightLatency      float64 `json:"weight_latency"`       // 评分权重：延迟
-	WeightJitter       float64 `json:"weight_jitter"`        // 评分权重：抖动
-	PerRegionTopN      int     `json:"per_region_topn"`      // 分地区 TopN（0 = 不分地区）
-	DownloadDurationS  int     `json:"download_duration_s"`  // 单次下载时长
-	MaxDownloadMB      int     `json:"max_download_mb"`      // 最大下载量（0 = 不限）
-	Breaker429         int     `json:"breaker_429"`          // 连续多少次限流即熔断
-	UsabilityCheck     bool    `json:"usability_check"`      // 测速前是否先做可用性校验
-	UsabilityTimeoutMS int     `json:"usability_timeout_ms"` // 可用性校验的单次超时
+	URLMode           string  `json:"url_mode"`            // auto | official | mobile_friendly | mobile_only | custom
+	CustomURL         string  `json:"custom_url"`          // custom 模式下的测速地址
+	Concurrency       int     `json:"concurrency"`         // 测速并发 1–16
+	TargetQualified   int     `json:"target_qualified"`    // 收够多少个合格结果就提前收敛
+	IntervalMS        int     `json:"interval_ms"`         // 串行测速间隔（防 429）
+	MinSpeed          float64 `json:"min_speed"`           // 合格线 MB/s
+	WeightSpeed       float64 `json:"weight_speed"`        // 评分权重：速度
+	WeightLatency     float64 `json:"weight_latency"`      // 评分权重：延迟
+	WeightJitter      float64 `json:"weight_jitter"`       // 评分权重：抖动
+	PerRegionTopN     int     `json:"per_region_topn"`     // 分地区 TopN（0 = 不分地区）
+	DownloadDurationS int     `json:"download_duration_s"` // 单次下载时长
+	MaxDownloadMB     int     `json:"max_download_mb"`     // 最大下载量（0 = 不限）
+	Breaker429        int     `json:"breaker_429"`         // 连续多少次限流即熔断
 }
+
+// 「测速前可用性校验」的开关属于 scan 分组（`scan.usability_check`）。
+// 这里曾经另有一个 speed.usability_check，与本项同名同义却谁也没读，
+// 两个开关并存只会让人以为它们各管一段——已删掉，只留 scan 那一个。
 
 func defaultSpeed() SpeedConfig {
 	return SpeedConfig{
-		URLMode:            "auto",
-		Concurrency:        1,
-		TargetQualified:    10,
-		IntervalMS:         1200,
-		WeightSpeed:        1.0,
-		WeightLatency:      1.0,
-		WeightJitter:       0.0,
-		DownloadDurationS:  10,
-		Breaker429:         3,
-		UsabilityCheck:     true,
-		UsabilityTimeoutMS: 3000,
+		URLMode:           "auto",
+		Concurrency:       1,
+		TargetQualified:   10,
+		IntervalMS:        1200,
+		WeightSpeed:       1.0,
+		WeightLatency:     1.0,
+		WeightJitter:      0.0,
+		DownloadDurationS: 10,
+		Breaker429:        3,
 	}
 }
 
@@ -230,9 +230,6 @@ func (c *SpeedConfig) normalize() {
 	}
 	if c.Breaker429 == 0 {
 		c.Breaker429 = d.Breaker429
-	}
-	if c.UsabilityTimeoutMS == 0 {
-		c.UsabilityTimeoutMS = d.UsabilityTimeoutMS
 	}
 }
 

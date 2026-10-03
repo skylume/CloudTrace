@@ -229,9 +229,6 @@ func (c Config) validateSpeed(add func(string, any, string)) {
 	if c.Speed.Breaker429 < 1 || c.Speed.Breaker429 > 100 {
 		add("speed.breaker_429", c.Speed.Breaker429, "必须在 1–100 之间")
 	}
-	if c.Speed.UsabilityTimeoutMS < 1 || c.Speed.UsabilityTimeoutMS > 60000 {
-		add("speed.usability_timeout_ms", c.Speed.UsabilityTimeoutMS, "必须在 1–60000 之间")
-	}
 }
 
 func (c Config) validateSource(add func(string, any, string)) {
