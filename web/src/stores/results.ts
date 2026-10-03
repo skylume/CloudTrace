@@ -82,6 +82,13 @@ export const useResultsStore = defineStore('results', () => {
   const sortKey = ref<SortKey>('loss')
   const sortDesc = ref(false)
   const groupBy = ref<GroupBy>('none')
+  /**
+   * 当前这批结果的来源历史 ID；为空表示「最新一份」。
+   *
+   * 导出必须知道这个：结果页可以显示从历史加载的那一份，此时「导出最新」会
+   * 导出一份完全不同的数据，而用户看不出区别。
+   */
+  const sourceId = ref('')
   /** 关键词：匹配地址、地区、运营商。Ctrl+F 聚焦到它的输入框。 */
   const keyword = ref('')
 
@@ -100,7 +107,8 @@ export const useResultsStore = defineStore('results', () => {
     touch()
   }
 
-  function replaceAll(list: IPRecord[]): void {
+  function replaceAll(list: IPRecord[], fromHistoryID = ''): void {
+    sourceId.value = fromHistoryID
     const next = new Map<string, IPRecord>()
     for (const record of list) next.set(recordKey(record), record)
     records.value = next
@@ -110,6 +118,7 @@ export const useResultsStore = defineStore('results', () => {
 
   function clear(): void {
     keyword.value = ''
+    sourceId.value = ''
     records.value = new Map()
     selected.value = new Set()
     regionFilter.value = []
@@ -229,6 +238,7 @@ export const useResultsStore = defineStore('results', () => {
     groups,
     groupBy,
     keyword,
+    sourceId,
     total,
     stats,
     regionCounts,

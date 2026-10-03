@@ -8,6 +8,7 @@ import { api } from '@/api/rest'
 import { EVT, onEvent, sendCommand, setSendFailureHandler, wsClient } from '@/api/client'
 import { t } from '@/i18n'
 
+import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
 import { useLogStore } from './log'
@@ -18,7 +19,7 @@ import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
 import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
-import type { GeoStatus, HealthReport, IPRecord, SettingsPayload, TaskState } from '@/api/types'
+import type { ExportResult, GeoStatus, HealthReport, IPRecord, SettingsPayload, TaskState } from '@/api/types'
 
 /** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
 export function refreshSettings(): void {
@@ -51,6 +52,7 @@ export function wireEvents(): void {
   const ui = useUIStore()
   const log = useLogStore()
   const speed = useSpeedStore()
+  const exporter = useExportStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -80,6 +82,8 @@ export function wireEvents(): void {
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
+
+  onEvent(EVT.export, (data) => exporter.applyResult(data as ExportResult))
 
   onEvent(EVT.speedSource, (data) => speed.applySource(data as SourceDecision))
 
@@ -126,6 +130,8 @@ export function wireEvents(): void {
     const message = errorText(payload)
     ui.pushToast({ kind: 'bad', message })
     log.push(message, 'bad')
+    // 出错时也要解除导出按钮的等待态，否则它会一直转下去。
+    exporter.fail()
   })
 
   onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))

@@ -67,7 +67,7 @@ function toggleCompare(id: string): void {
 function applyLoaded(): void {
   const payload = history.loaded
   if (!payload) return
-  results.replaceAll(payload.record.results)
+  results.replaceAll(payload.record.results, payload.record.id)
   if (payload.paramDiff.length > 0) {
     paramNotice.value = t('history.paramDiff', { minutes: Math.round(payload.ageMinutes) })
   }

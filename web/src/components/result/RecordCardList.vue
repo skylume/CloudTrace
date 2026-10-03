@@ -16,6 +16,7 @@ import SignalBar from '@/components/ui/SignalBar.vue'
 import { t } from '@/i18n'
 import type { IPRecord } from '@/api/types'
 import { useFieldsStore } from '@/stores/fields'
+import { useUIStore } from '@/stores/ui'
 import { recordKey, useResultsStore } from '@/stores/results'
 import { formatField } from '@/utils/recordFormat'
 import { formatLoss, formatSpeed } from '@/utils/latency'
@@ -26,7 +27,36 @@ const props = defineProps<{
 
 const results = useResultsStore()
 const fields = useFieldsStore()
+const ui = useUIStore()
 const expanded = ref<string[]>([])
+
+/** 左滑阈值：小于这个位移才算误触，不做任何事。 */
+const SWIPE_THRESHOLD = 60
+
+/** 当前被滑动的卡片，用于把它往左推一点给出反馈。 */
+const swiping = ref<{ key: string; dx: number } | null>(null)
+let touchStartX = 0
+
+function onTouchStart(record: IPRecord, event: TouchEvent): void {
+  touchStartX = event.touches[0]?.clientX ?? 0
+  swiping.value = { key: recordKey(record), dx: 0 }
+}
+
+function onTouchMove(record: IPRecord, event: TouchEvent): void {
+  if (!swiping.value || swiping.value.key !== recordKey(record)) return
+  const current = event.touches[0]?.clientX ?? 0
+  // 只认左滑：右滑在这里没有语义，跟着动会让卡片看起来能拖动。
+  const dx = Math.min(0, current - touchStartX)
+  swiping.value = { key: recordKey(record), dx }
+}
+
+function onTouchEnd(record: IPRecord): void {
+  const dx = swiping.value?.dx ?? 0
+  swiping.value = null
+  if (dx > -SWIPE_THRESHOLD) return
+  void copy(record)
+  ui.pushToast({ kind: 'ok', message: t('common.copied') })
+}
 
 function toggle(record: IPRecord): void {
   const key = recordKey(record)
@@ -48,7 +78,14 @@ async function copy(record: IPRecord): Promise<void> {
 <template>
   <ul class="cards">
     <li v-for="record in props.records" :key="recordKey(record)" class="card">
-      <div class="head" @click="toggle(record)">
+      <div
+        class="head"
+        :style="{ transform: `translateX(${swiping?.key === recordKey(record) ? swiping.dx : 0}px)` }"
+        @click="toggle(record)"
+        @touchstart.passive="onTouchStart(record, $event)"
+        @touchmove.passive="onTouchMove(record, $event)"
+        @touchend="onTouchEnd(record)"
+      >
         <input
           type="checkbox"
           class="ct-check"
@@ -118,6 +155,9 @@ async function copy(record: IPRecord): Promise<void> {
 
 .head {
   display: flex;
+  /* 左滑时跟着手指移动一点，让「可以滑」这件事被发现。 */
+  transition: transform var(--duration-fast) var(--ease);
+  touch-action: pan-y;
   align-items: center;
   gap: var(--space-3);
   /* 整行可点，触摸目标远大于 44px。 */

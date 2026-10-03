@@ -8,12 +8,14 @@ import { computed, onMounted, ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
+import MobileActionBar from '@/components/result/MobileActionBar.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
+import { useExportStore } from '@/stores/export'
 import { useResultsStore } from '@/stores/results'
 import { useSpeedStore } from '@/stores/speed'
 import { useTaskStore } from '@/stores/task'
@@ -25,6 +27,7 @@ const results = useResultsStore()
 const fields = useFieldsStore()
 const task = useTaskStore()
 const speed = useSpeedStore()
+const exporter = useExportStore()
 const ui = useUIStore()
 
 const narrow = useNarrow()
@@ -94,6 +97,18 @@ function startSpeed(targets: typeof results.all): void {
 
 function applyPreset(id: string): void {
   fields.applyPreset(id as ColumnPresetId)
+}
+
+/**
+ * 导出当前结果。
+ *
+ * 字段用当前可见列：用户看到的和导出的必须是同一份东西，否则「导出少了几列」
+ * 会被当成丢数据。格式留空表示用后端的默认值。
+ */
+function exportResult(): void {
+  if (results.visible.length === 0) return
+  // 带上来历：显示的是历史加载的那一份时，导「最新」会导出完全不同的数据。
+  exporter.request({ fields: fields.visibleKeys, id: results.sourceId })
 }
 
 /**
@@ -179,6 +194,9 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         </select>
         <button type="button" class="ct-btn" @click="copyTop(3)">{{ t('result.copyTop') }}</button>
         <button type="button" class="ct-btn" @click="copyTop(results.visible.length)">{{ t('result.copyAll') }}</button>
+        <button type="button" class="ct-btn" :disabled="exporter.pending" @click="exportResult">
+          {{ t('common.export') }}
+        </button>
         <button type="button" class="ct-btn ct-btn--primary" :disabled="selectedCount === 0" @click="speedSelected">
           {{ t('result.speedSelected', { count: selectedCount }) }}
         </button>
@@ -187,6 +205,15 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
       <RecordCardList v-if="narrow" :records="results.visible" />
       <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" @speed="onGroupSpeed" />
       <p class="ct-subtle foot">{{ results.visible.length }} / {{ results.total }}</p>
+
+      <MobileActionBar
+        v-if="narrow"
+        :selected-count="selectedCount"
+        :in-speed-view="view === 'speed'"
+        @copy="copyTop(results.visible.length)"
+        @speed="speedSelected"
+        @export="exportResult"
+      />
     </template>
   </div>
 </template>
