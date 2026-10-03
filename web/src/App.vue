@@ -9,6 +9,7 @@
 import { computed } from 'vue'
 
 import AppShell from '@/components/layout/AppShell.vue'
+import ToastStack from '@/components/ui/ToastStack.vue'
 import type { NavItem } from '@/components/layout/SideNav.vue'
 import { t } from '@/i18n'
 import { useUIStore } from '@/stores/ui'
@@ -42,4 +43,6 @@ const title = computed(() => t(`nav.${activeId.value}` as never))
   <AppShell :items="NAV" :active="activeId" :title="title" @select="ui.activeView = $event">
     <component :is="activeComponent" />
   </AppShell>
+  <!-- 提示栈挂在外壳之外：它是全局的，不该被内容区的滚动或布局影响。 -->
+  <ToastStack />
 </template>

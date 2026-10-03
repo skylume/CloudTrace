@@ -12,6 +12,7 @@ import { computed } from 'vue'
 import { t } from '@/i18n'
 import type { HistoryIndexEntry } from '@/api/types'
 import { useHistoryStore } from '@/stores/history'
+import { useUIStore } from '@/stores/ui'
 import { formatLatency, formatSpeed } from '@/utils/latency'
 
 const props = defineProps<{
@@ -23,6 +24,24 @@ const props = defineProps<{
 const emit = defineEmits<{ (event: 'load', id: string): void; (event: 'toggleCompare', id: string): void }>()
 
 const history = useHistoryStore()
+const ui = useUIStore()
+
+/**
+ * 删除走软删除 + Toast 撤销，不弹确认框。
+ *
+ * 弹框是为了防不可逆的操作；删除历史是可逆的（后端有回收站与撤销窗口），
+ * 为一个可逆操作打断用户不划算——撤销入口比确认框更轻，也更难点错。
+ */
+function removeEntry(id: string): void {
+  history.remove(id)
+  const seconds = Math.round(history.undoWindowMs / 1000)
+  ui.pushToast({
+    kind: 'warn',
+    message: t('history.deleted', { seconds }),
+    action: { label: t('common.undo'), run: () => history.undo(id) },
+    timeout: history.undoWindowMs,
+  })
+}
 
 /** 相对时间比绝对时间更有用：「12 分钟前」比「14:05」更能说明新旧。 */
 function relativeTime(createdAt: string): string {
@@ -79,7 +98,7 @@ const sorted = computed(() =>
           {{ t('history.compare') }}
         </button>
         <button type="button" class="ct-btn" @click="emit('load', entry.id)">{{ t('history.load') }}</button>
-        <button type="button" class="ct-btn" @click="history.remove(entry.id)">{{ t('common.delete') }}</button>
+        <button type="button" class="ct-btn" @click="removeEntry(entry.id)">{{ t('common.delete') }}</button>
       </div>
     </li>
   </ul>

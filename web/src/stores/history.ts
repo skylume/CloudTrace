@@ -35,6 +35,13 @@ export const useHistoryStore = defineStore('history', () => {
   const filter = ref<HistoryFilter>({})
   const loaded = ref<LoadedHistory | null>(null)
   const diff = ref<HistoryDiff | null>(null)
+  /**
+   * 撤销窗口（毫秒）。
+   *
+   * 由后端在删除响应里给，前端不写死：两端对窗口长度的认知必须一致，否则会
+   * 出现「撤销按钮还在、后端已经落定」的情况。
+   */
+  const undoWindowMs = ref(15000)
 
   const starred = computed(() => entries.value.filter((entry) => entry.starred))
   const allTags = computed(() => {
@@ -56,6 +63,10 @@ export const useHistoryStore = defineStore('history', () => {
 
   function applyDiff(next: HistoryDiff): void {
     diff.value = next
+  }
+
+  function applyUndoWindow(ms: number): void {
+    if (ms > 0) undoWindowMs.value = ms
   }
 
   /** 拉列表。这是列表页唯一会发出的请求。 */
@@ -101,11 +112,13 @@ export const useHistoryStore = defineStore('history', () => {
     filter,
     loaded,
     diff,
+    undoWindowMs,
     starred,
     allTags,
     applyList,
     applyLoaded,
     applyDiff,
+    applyUndoWindow,
     refresh,
     load,
     remove,

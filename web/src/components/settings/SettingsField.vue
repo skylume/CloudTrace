@@ -27,10 +27,16 @@ const emit = defineEmits<{
 const text = computed(() => fieldText(props.field.path, props.locale))
 const hint = computed(() => (text.value.hint === '' ? t('common.none') : text.value.hint))
 
-/** 枚举项的取值文案：主题、字号这些在别处已有翻译，直接复用。 */
+/**
+ * 枚举取值的文案。
+ *
+ * 用统一的 opt.* 键而不是按字段路径拼键：同一个取值（如 off、auto）在多个
+ * 字段里含义相同，按路径拼就得为每个字段各写一遍，改一处必漏一处。
+ */
 function optionLabel(option: string): string {
-  const key = `${props.field.path}.${option}`
+  const key = `opt.${option}`
   const translated = t(key as never)
+  // 没收录的取值回退显示原值，至少还能看出后端给的是什么。
   return translated === key ? option : translated
 }
 

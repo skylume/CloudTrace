@@ -19,6 +19,7 @@ const (
 	cmdHistoryGet     = "history/get"
 	cmdHistoryLoad    = "history/load"
 	cmdHistoryDelete  = "history/delete"
+	cmdHistoryUndo    = "history/undo"
 	cmdHistoryTag     = "history/tag"
 	cmdHistoryCompare = "history/compare"
 )
@@ -30,6 +31,7 @@ func (s *server) historyHandlers() map[string]commandHandler {
 		cmdHistoryGet:     s.handleHistoryGet,
 		cmdHistoryLoad:    s.handleHistoryLoad,
 		cmdHistoryDelete:  s.handleHistoryDelete,
+		cmdHistoryUndo:    s.handleHistoryUndo,
 		cmdHistoryTag:     s.handleHistoryTag,
 		cmdHistoryCompare: s.handleHistoryCompare,
 	}
@@ -69,6 +71,11 @@ type historyLoadResp struct {
 	ParamDiff []history.ParamDiff `json:"param_diff"`
 	// AgeMinutes 是这份历史距今多少分钟，供前端拼「这是 N 分钟前扫的」。
 	AgeMinutes float64 `json:"age_minutes"`
+}
+
+// historyIDResp 是只回一个 ID 的通用响应。
+type historyIDResp struct {
+	ID string `json:"id"`
 }
 
 type historyDeleteResp struct {
@@ -174,6 +181,23 @@ func (s *server) handleHistoryDelete(c *wsConn, data json.RawMessage) error {
 		ID:     req.ID,
 		UndoMS: s.history().UndoWindow().Milliseconds(),
 	})
+	return nil
+}
+
+// handleHistoryUndo 撤销一次删除。
+//
+// 与删除对称：删除把记录挪进回收站并给一个撤销窗口，这条命令在窗口内把它挪
+// 回来。窗口过了之后记录已经被清理，恢复会失败——这是预期行为，前端据此把
+// 撤销入口收掉，不要让它一直挂在那里骗人。
+func (s *server) handleHistoryUndo(c *wsConn, data json.RawMessage) error {
+	var req historyIDReq
+	if err := decodeReq(data, &req, "历史 ID"); err != nil {
+		return err
+	}
+	if err := s.history().Restore(req.ID); err != nil {
+		return s.historyError(err)
+	}
+	c.sendEvent(cmdHistoryUndo, historyIDResp{ID: req.ID})
 	return nil
 }
 

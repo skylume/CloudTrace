@@ -134,6 +134,7 @@ function selectGroup(records: IPRecord[]): void {
               :group="group"
               :expanded="expandedGroups.includes(group.key)"
               :selectable="group.count > 0"
+              :column-count="props.columns.length"
               @toggle="toggleGroup(group.key)"
               @speed="selectGroup(group.records)"
             />

@@ -18,6 +18,7 @@ export const CMD = {
   historyGet: 'history/get',
   historyLoad: 'history/load',
   historyDelete: 'history/delete',
+  historyUndo: 'history/undo',
   historyTag: 'history/tag',
   historyCompare: 'history/compare',
 
@@ -49,6 +50,7 @@ export const EVT = {
   historyGet: 'history/get',
   historyLoad: 'history/load',
   historyDelete: 'history/delete',
+  historyUndo: 'history/undo',
   historyTag: 'history/tag',
   historyCompare: 'history/compare',
   historyChanged: 'history/changed',

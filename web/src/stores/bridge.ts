@@ -94,6 +94,10 @@ export function wireEvents(): void {
     history.applyList((payload.entries ?? []) as never[], payload.total ?? 0)
   })
   onEvent(EVT.historyLoad, (data) => history.applyLoaded(data as LoadedHistory))
+  onEvent(EVT.historyDelete, (data) => {
+    const payload = data as { id?: string; undo_ms?: number }
+    if (payload.undo_ms) history.applyUndoWindow(payload.undo_ms)
+  })
   onEvent(EVT.historyCompare, (data) => {
     const payload = data as { diff?: unknown }
     if (payload.diff) history.applyDiff(payload.diff as never)

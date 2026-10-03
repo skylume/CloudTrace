@@ -17,6 +17,13 @@ defineProps<{
   expanded: boolean
   /** 该组是否已有节点被选中，用于「测速本组」的可用性。 */
   selectable: boolean
+  /**
+   * 数据列的数量。
+   *
+   * 必须由外部给：父行要占满整行，而列数随列预设变化。写死一个数字的话，
+   * 从「标准」切到「完整」时父行就铺不满了。
+   */
+  columnCount: number
 }>()
 
 const emit = defineEmits<{ (event: 'toggle'): void; (event: 'speed'): void }>()
@@ -33,7 +40,7 @@ const emit = defineEmits<{ (event: 'toggle'): void; (event: 'speed'): void }>()
       <b>{{ group.key }}</b>
       <span class="ct-subtle">{{ group.label }}</span>
     </td>
-    <td colspan="3" class="summary tnum ct-muted">
+    <td :colspan="Math.max(1, columnCount - 1)" class="summary tnum ct-muted">
       {{ t('result.group.summary', {
         count: group.count,
         latency: `${formatLatency(group.minLatency)}ms`,
