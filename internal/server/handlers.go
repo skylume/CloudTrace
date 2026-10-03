@@ -145,6 +145,9 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		// 会让用户每次扫到同一批。
 		Seed:   time.Now().UnixNano(),
 		Logger: s.logger,
+		// 远端源从配置现取：用户可能刚在界面上加了地址还没保存任务参数，
+		// 拿配置才是他看到的那个列表。
+		RemoteURLs: s.cfg.Get().Source.EnabledURLs(),
 		// 归属地补齐只在本地查表与内存里算，不发请求，因此可以挂在每个
 		// 节点的产出路径上。
 		Enrich: s.geoEnrich(),

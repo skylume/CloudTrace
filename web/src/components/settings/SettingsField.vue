@@ -86,12 +86,13 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
       </select>
 
       <input
-        v-else-if="field.kind === 'int'"
+        v-else-if="field.kind === 'int' || field.kind === 'float'"
         type="number"
         class="ct-input tnum"
         :value="Number(value ?? 0)"
         :min="field.min"
         :max="field.max"
+        :step="field.kind === 'float' ? (field.step ?? 0.1) : 1"
         @input="onNumber(($event.target as HTMLInputElement).value)"
       />
 
@@ -112,7 +113,7 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         @change="emit('change', field.path, ($event.target as HTMLInputElement).value)"
       />
 
-      <span v-if="field.min !== undefined" class="ct-subtle range tnum">
+      <span v-if="field.min !== undefined && field.kind !== 'float'" class="ct-subtle range tnum">
         {{ field.min }}–{{ field.max }}
       </span>
       <button type="button" class="ct-link reset" @click="emit('reset', field.path)">

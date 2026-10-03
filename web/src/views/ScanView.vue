@@ -5,7 +5,7 @@
  * 这个文件只做编排：连 store、组装请求、把区域分给组件。具体控件一律在
  * 子组件里——页面模板保持短，才能逼着结构被拆开。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import LogPanel from '@/components/scan/LogPanel.vue'
@@ -61,6 +61,34 @@ const WIRE_KEYS: Record<string, string> = {
  */
 let unregister: (() => void) | null = null
 
+/**
+ * 把来源写回配置。
+ *
+ * 远端地址与自定义文本都是配置项，而扫描任务读的是配置——不写回的话，用户
+ * 加的远端地址只存在于这个页面的内存里，一刷新就没了，扫描时也不会去拉。
+ *
+ * 带防抖：输入框是逐字符触发变更的，每敲一个字都发一次配置更新既浪费也会
+ * 让服务端的配置写入变成瓶颈。
+ */
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersistSource(): void {
+  if (persistTimer !== null) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    sendCommand('settings/update', {
+      patch: {
+        source: { remote_urls: source.value.remote },
+        scan: { custom_source: source.value.customText },
+      },
+      origins: { 'source.remote_urls': 'user', 'scan.custom_source': 'user' },
+    })
+  }, 400)
+}
+
+watch(() => source.value.remote, schedulePersistSource, { deep: true })
+watch(() => source.value.customText, schedulePersistSource)
+
 onMounted(() => {
   unregister = actions.register('startScan', start)
   // 配置到了就按配置初始化；没到时先用「快速」档，界面不会空着。
@@ -73,9 +101,23 @@ onMounted(() => {
   }
   params.value = next
   presetId.value = matchPreset(next)
+
+  // 来源也从配置恢复：用户上次加过的远端地址与写过的文本不该每次重填。
+  const src = settings.values?.source as Record<string, unknown> | undefined
+  const remote = src?.['remote_urls']
+  if (Array.isArray(remote)) {
+    source.value = { ...source.value, remote: remote as typeof source.value.remote }
+  }
+  const custom = scan['custom_source']
+  if (typeof custom === 'string' && custom !== '') {
+    source.value = { ...source.value, customText: custom }
+  }
 })
 
-onBeforeUnmount(() => unregister?.())
+onBeforeUnmount(() => {
+  unregister?.()
+  if (persistTimer !== null) clearTimeout(persistTimer)
+})
 
 /** 组装后端要的扫描参数。 */
 function buildRequest(): Record<string, unknown> {

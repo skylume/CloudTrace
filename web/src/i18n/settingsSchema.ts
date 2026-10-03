@@ -8,15 +8,17 @@
  * `settings/reset` 接受的键一致，中间不做任何转换。
  */
 
-export type FieldKind = 'bool' | 'int' | 'text' | 'enum' | 'list' | 'path'
+export type FieldKind = 'bool' | 'int' | 'float' | 'text' | 'enum' | 'list' | 'path'
 
 export interface SettingField {
   /** 点号路径，如 `scan.workers`。 */
   path: string
   kind: FieldKind
-  /** 数值范围（kind 为 int 时有效）。 */
+  /** 数值范围（kind 为 int / float 时有效）。 */
   min?: number
   max?: number
+  /** 小数位（kind 为 float 时有效）。 */
+  step?: number
   /** 枚举取值（kind 为 enum 时有效）。 */
   options?: string[]
   /** 该组里排在前面、值得优先展示的项。 */
@@ -41,6 +43,9 @@ export const SETTING_GROUPS: SettingGroup[] = [
     fields: [
       { path: 'ui.theme', kind: 'enum', options: ['system', 'dark', 'light'], primary: true },
       { path: 'ui.lang', kind: 'enum', options: ['zh', 'en'] },
+      { path: 'ui.density', kind: 'enum', options: ['auto', 'simple', 'advanced'] },
+      { path: 'ui.start_page', kind: 'enum', options: ['scan', 'result', 'history', 'settings'] },
+      { path: 'ui.time_format', kind: 'enum', options: ['local', 'utc'] },
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
       { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
       { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
@@ -65,6 +70,10 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'scan.two_phase', kind: 'bool' },
       { path: 'scan.verify_nodes', kind: 'bool' },
       { path: 'scan.usability_check', kind: 'bool' },
+      { path: 'scan.source_mode', kind: 'enum', options: ['official', 'custom', 'both'] },
+      { path: 'scan.allowed_regions', kind: 'list' },
+      { path: 'scan.blocked_regions', kind: 'list' },
+      { path: 'scan.pre_filter_ports', kind: 'list' },
     ],
   },
   {
@@ -77,6 +86,12 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'speed.custom_url', kind: 'text' },
       { path: 'speed.download_duration_s', kind: 'int', min: 1, max: 60 },
       { path: 'speed.breaker_429', kind: 'int', min: 0, max: 100 },
+      { path: 'speed.interval_ms', kind: 'int', min: 0, max: 5000 },
+      { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 },
+      { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 100 },
+      { path: 'speed.weight_speed', kind: 'float', min: 0, max: 10, step: 0.1 },
+      { path: 'speed.weight_latency', kind: 'float', min: 0, max: 10, step: 0.1 },
+      { path: 'speed.weight_jitter', kind: 'float', min: 0, max: 10, step: 0.1 },
     ],
   },
   {
@@ -86,6 +101,24 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'source.official_url_v6', kind: 'text' },
       { path: 'source.refresh_hours', kind: 'int', min: 0, max: 720 },
       { path: 'source.allow_custom', kind: 'bool' },
+      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
+      { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000 },
+      { path: 'source.retry', kind: 'int', min: 0, max: 10 },
+      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 },
+    ],
+  },
+  {
+    id: 'net',
+    fields: [
+      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
+      { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
+      { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
+      { path: 'net.max_workers', kind: 'int', min: 1, max: 200, primary: true },
+      { path: 'net.proxy', kind: 'text' },
+      { path: 'net.force_direct', kind: 'bool' },
+      { path: 'net.custom_dns', kind: 'list' },
+      { path: 'net.dns_fallback', kind: 'bool' },
+      { path: 'net.user_agent', kind: 'text' },
     ],
   },
   {
@@ -107,6 +140,9 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'history.keep_days', kind: 'int', min: 1, max: 3650 },
       { path: 'history.auto_save', kind: 'bool' },
       { path: 'history.undo_seconds', kind: 'int', min: 0, max: 120 },
+      { path: 'history.auto_dedup', kind: 'bool' },
+      { path: 'data.dir', kind: 'path' },
+      { path: 'data.portable', kind: 'bool' },
     ],
   },
   {
@@ -115,6 +151,9 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'export.default_format', kind: 'enum', options: ['csv', 'json', 'txt'], primary: true },
       { path: 'export.preset', kind: 'text' },
       { path: 'export.include_unreached', kind: 'bool' },
+      { path: 'export.csv_bom', kind: 'bool' },
+      { path: 'export.default_fields', kind: 'enum', options: ['all', 'slim', 'ip_port'] },
+      { path: 'export.filename_template', kind: 'text' },
     ],
   },
   {
@@ -143,6 +182,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
     fields: [
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
       { path: 'advanced.diagnostic_bundle', kind: 'bool' },
+      { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
+      { path: 'advanced.check_update', kind: 'bool' },
     ],
   },
 ]
@@ -223,6 +264,47 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
     'advanced.diagnostic_bundle': { label: '允许导出诊断包', hint: '打包日志与脱敏后的配置，便于反馈问题' },
+    'ui.density': { label: '参数密度', hint: '简单模式下参数默认折叠；一旦展开过高级模式就会永久记住' },
+    'ui.start_page': { label: '启动页面', hint: '下次打开直接落在哪一页' },
+    'ui.time_format': { label: '时间显示', hint: '本地时间或 UTC' },
+
+    'scan.source_mode': { label: '来源模式', hint: '官方网段、自定义来源，或两者合并。扫描页会自动设置它' },
+    'scan.allowed_regions': { label: '地区白名单', hint: '只保留这些地区的节点，留空表示不限。地区未知的会保守保留' },
+    'scan.blocked_regions': { label: '地区黑名单', hint: '排除这些地区的节点' },
+    'scan.pre_filter_ports': { label: '前置端口过滤', hint: '在 TCP 测试之前就排除这些端口的候选，省下探测时间' },
+
+    'speed.interval_ms': { label: '测速间隔', hint: '每个目标之间等多久再测下一个，用来降低被限速的概率' },
+    'speed.max_download_mb': { label: '单次最大下载量', hint: '超过就停止该节点的测速。0 表示不限' },
+    'speed.per_region_topn': { label: '每地区取前 N 名', hint: '按地区各取前几名参与测速。0 表示不按地区分配' },
+    'speed.weight_speed': { label: '评分权重 · 速度', hint: '综合评分里速度占的比重' },
+    'speed.weight_latency': { label: '评分权重 · 延迟', hint: '综合评分里延迟占的比重' },
+    'speed.weight_jitter': { label: '评分权重 · 抖动', hint: '综合评分里抖动占的比重。抖动大意味着忽快忽慢' },
+
+    'source.merge_strategy': { label: '多源合并方式', hint: '并集取所有来源的地址；交集只取同时出现在所有来源里的' },
+    'source.timeout_ms': { label: '拉取超时', hint: '单个远端源等多久算失败' },
+    'source.retry': { label: '拉取重试', hint: '远端源失败后重试几次' },
+    'source.retry_interval_ms': { label: '重试间隔', hint: '两次重试之间等多久' },
+
+    'net.connect_timeout_ms': { label: '连接超时', hint: '建立 TCP 连接等多久算失败' },
+    'net.use_tls': { label: 'TLS 探测', hint: '自动时按端口推断：443 与 8443 走 TLS，其余不走' },
+    'net.ip_version': { label: '地址族', hint: '只测 IPv4、只测 IPv6，或两者都测' },
+    'net.max_workers': { label: '并发硬上限', hint: '所有任务共享的上限，任何档位都不能突破它' },
+    'net.proxy': { label: 'HTTP 代理', hint: '拉取官方网段与远端源时走这个代理。留空表示直连' },
+    'net.force_direct': { label: '强制直连', hint: '忽略环境变量里的代理设置。节点探测始终直连，不受这里影响' },
+    'net.custom_dns': { label: '自定义 DNS', hint: '解析域名时用这些 DNS 服务器，留空用系统默认' },
+    'net.dns_fallback': { label: 'DNS 回退', hint: '系统 DNS 解析失败时回退到内置的公共 DNS' },
+    'net.user_agent': { label: '请求 User-Agent', hint: '拉取数据源时用的 UA。默认浏览器 UA，被拦时可能有用' },
+
+    'history.auto_dedup': { label: '自动去重', hint: '同参数短时间内重复存档时合并，避免历史列表被同一份结果刷屏' },
+    'data.dir': { label: '数据目录', hint: '历史、缓存、ASN 库都放在这里。留空按便携模式决定' },
+    'data.portable': { label: '便携模式', hint: '数据放在程序同级目录，换台机器拷走就能接着用' },
+
+    'export.csv_bom': { label: 'CSV 带 BOM', hint: '开着 Excel 打开不乱码；给脚本用时可以关掉' },
+    'export.default_fields': { label: '默认字段集', hint: '导出时预选的字段组合' },
+    'export.filename_template': { label: '文件名模板', hint: '可用占位符：时间、类型、条数' },
+
+    'advanced.log_keep_days': { label: '日志保留天数', hint: '超过天数的日志会被清理' },
+    'advanced.check_update': { label: '检查更新', hint: '启动时检查是否有新版本' },
   },
   en: {
     'ui.theme': { label: 'Theme', hint: 'Dark, light, or follow the system. Applies instantly' },
@@ -293,6 +375,47 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
     'advanced.diagnostic_bundle': { label: 'Allow diagnostic bundle', hint: 'Packages logs and a redacted config for reporting issues' },
+    'ui.density': { label: 'Parameter density', hint: 'Simple hides parameters by default; expanding once is remembered' },
+    'ui.start_page': { label: 'Start page', hint: 'Which page to open on next launch' },
+    'ui.time_format': { label: 'Time display', hint: 'Local time or UTC' },
+
+    'scan.source_mode': { label: 'Source mode', hint: 'Official ranges, custom sources, or both. The scan page sets this for you' },
+    'scan.allowed_regions': { label: 'Region allowlist', hint: 'Keep only nodes in these regions; empty means no limit. Unknown regions are kept' },
+    'scan.blocked_regions': { label: 'Region blocklist', hint: 'Drop nodes in these regions' },
+    'scan.pre_filter_ports': { label: 'Pre-filter ports', hint: 'Drop candidates on these ports before any TCP probe, saving time' },
+
+    'speed.interval_ms': { label: 'Test interval', hint: 'Wait this long between targets to reduce the chance of being rate limited' },
+    'speed.max_download_mb': { label: 'Max download per node', hint: 'Stop testing a node past this amount. 0 means unlimited' },
+    'speed.per_region_topn': { label: 'Top N per region', hint: 'Take the top N from each region. 0 disables the per-region split' },
+    'speed.weight_speed': { label: 'Score weight · speed', hint: 'How much speed counts in the overall score' },
+    'speed.weight_latency': { label: 'Score weight · latency', hint: 'How much latency counts in the overall score' },
+    'speed.weight_jitter': { label: 'Score weight · jitter', hint: 'How much jitter counts. High jitter means inconsistent speed' },
+
+    'source.merge_strategy': { label: 'Merge strategy', hint: 'Union takes every address; intersect keeps only those present in all sources' },
+    'source.timeout_ms': { label: 'Fetch timeout', hint: 'How long a single remote source may take' },
+    'source.retry': { label: 'Fetch retries', hint: 'Retries after a remote source fails' },
+    'source.retry_interval_ms': { label: 'Retry interval', hint: 'Wait between retries' },
+
+    'net.connect_timeout_ms': { label: 'Connect timeout', hint: 'How long establishing a TCP connection may take' },
+    'net.use_tls': { label: 'TLS probing', hint: 'Auto infers from the port: 443 and 8443 use TLS, others do not' },
+    'net.ip_version': { label: 'Address family', hint: 'IPv4 only, IPv6 only, or both' },
+    'net.max_workers': { label: 'Global concurrency cap', hint: 'Shared by every task; no preset can exceed it' },
+    'net.proxy': { label: 'HTTP proxy', hint: 'Used for official ranges and remote sources. Empty means direct' },
+    'net.force_direct': { label: 'Force direct', hint: 'Ignore proxy settings from the environment. Node probing is always direct' },
+    'net.custom_dns': { label: 'Custom DNS', hint: 'Resolvers used for hostnames; empty uses the system ones' },
+    'net.dns_fallback': { label: 'DNS fallback', hint: 'Fall back to built-in public resolvers when system DNS fails' },
+    'net.user_agent': { label: 'Request User-Agent', hint: 'UA used when fetching sources. Useful when a source blocks the default' },
+
+    'history.auto_dedup': { label: 'Auto dedupe', hint: 'Merge records saved with the same parameters in a short window, so the list is not flooded' },
+    'data.dir': { label: 'Data directory', hint: 'History, cache and the ASN database live here. Empty follows portable mode' },
+    'data.portable': { label: 'Portable mode', hint: 'Keep data next to the binary so copying the folder moves everything' },
+
+    'export.csv_bom': { label: 'CSV with BOM', hint: 'Keeps Excel from mangling the encoding; turn it off for scripts' },
+    'export.default_fields': { label: 'Default field set', hint: 'The field set pre-selected when exporting' },
+    'export.filename_template': { label: 'Filename template', hint: 'Placeholders available: time, type, count' },
+
+    'advanced.log_keep_days': { label: 'Log retention (days)', hint: 'Logs older than this are cleaned up' },
+    'advanced.check_update': { label: 'Check for updates', hint: 'Look for a newer version on startup' },
   },
 }
 
@@ -313,6 +436,7 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     export: '导出',
     server: '服务面板',
     notify: '通知',
+    net: '网络',
     advanced: '高级与调试',
   },
   en: {
@@ -325,6 +449,7 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     export: 'Export',
     server: 'Service panel',
     notify: 'Notifications',
+    net: 'Network',
     advanced: 'Advanced',
   },
 }
