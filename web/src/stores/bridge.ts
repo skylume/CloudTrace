@@ -10,6 +10,7 @@ import { t } from '@/i18n'
 
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
+import { useLogStore } from './log'
 import { useResultsStore } from './results'
 import { useSettingsStore } from './settings'
 import { useTaskStore } from './task'
@@ -47,6 +48,7 @@ export function wireEvents(): void {
   const history = useHistoryStore()
   const geo = useGeoStore()
   const ui = useUIStore()
+  const log = useLogStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -64,14 +66,28 @@ export function wireEvents(): void {
     refreshGeo()
   })
 
-  onEvent(EVT.state, (data) => task.applyState(data as TaskState))
+  onEvent(EVT.state, (data) => {
+    const next = data as TaskState
+    const previous = task.state
+    if (next.phase !== previous.phase || next.status !== previous.status) {
+      log.push(t('task.' + next.status) + ' · ' + t('task.phase.' + next.phase))
+    }
+    task.applyState(next)
+  })
   onEvent(EVT.progress, (data) => task.applyProgress(data as ProgressPayload))
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
-  onEvent(EVT.geo, (data) => geo.apply(data as GeoStatus))
+  onEvent(EVT.geo, (data) => {
+    const next = data as GeoStatus
+    const before = geo.status?.status.records ?? 0
+    geo.apply(next)
+    if (next.status.records !== before) {
+      log.push(t('geo.records') + ' ' + String(next.status.records))
+    }
+  })
 
   onEvent(EVT.historyList, (data) => {
     const payload = data as { entries?: unknown[]; total?: number }
@@ -89,7 +105,9 @@ export function wireEvents(): void {
 
   onEvent(EVT.error, (data) => {
     const payload = data as ErrorPayload
-    ui.pushToast({ kind: 'bad', message: errorText(payload) })
+    const message = errorText(payload)
+    ui.pushToast({ kind: 'bad', message })
+    log.push(message, 'bad')
   })
 
   onEvent(EVT.health, () => {
