@@ -13,6 +13,7 @@ import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
 import { useLogStore } from './log'
+import { usePresetsStore } from './presets'
 import { useResultsStore } from './results'
 import { useSettingsStore } from './settings'
 import { useSpeedStore, type BreakerNotice, type SourceDecision } from './speed'
@@ -20,7 +21,15 @@ import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
 import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
-import type { ExportResult, GeoStatus, HealthReport, IPRecord, SettingsPayload, TaskState } from '@/api/types'
+import type {
+  ExportResult,
+  GeoStatus,
+  HealthReport,
+  IPRecord,
+  PresetsPayload,
+  SettingsPayload,
+  TaskState,
+} from '@/api/types'
 
 /** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
 export function refreshSettings(): void {
@@ -36,6 +45,11 @@ export function refreshHistory(filter?: HistoryFilter): void {
 
 export function refreshGeo(): void {
   sendCommand('geo/status')
+}
+
+/** refreshPresets 拉一次档位列表。 */
+export function refreshPresets(): void {
+  usePresetsStore().refresh()
 }
 
 /**
@@ -55,6 +69,7 @@ export function wireEvents(): void {
   const speed = useSpeedStore()
   const exporter = useExportStore()
   const adaptive = useAdaptiveStore()
+  const presets = usePresetsStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -68,6 +83,7 @@ export function wireEvents(): void {
   wsClient().onOpen(() => {
     // 首连与每次重连都会走到这里。
     refreshSettings()
+    refreshPresets()
     refreshHistory()
     refreshGeo()
   })
@@ -105,6 +121,7 @@ export function wireEvents(): void {
   })
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
+  onEvent(EVT.presets, (data) => presets.apply(data as PresetsPayload))
   onEvent(EVT.geo, (data) => {
     const next = data as GeoStatus
     const before = geo.status?.status.records ?? 0

@@ -169,6 +169,10 @@ export const en: Record<keyof typeof zh, string> = {
   'preset.all': 'All parameters',
   'preset.collapse': 'Hide parameters',
   'preset.saveAs': 'Save as my preset',
+  'preset.namePlaceholder': 'Name this set of parameters',
+  'preset.saved': 'Saved as "{name}"',
+  'preset.saveFailed': 'Not saved: the name cannot be empty and there must be at least one parameter',
+  'preset.mine': 'My presets',
 
   'param.scan.sample_max': 'Sample limit',
   'param.scan.sample_max.hint': 'How many addresses to test. 500 is enough; 5000 is thorough but slower',

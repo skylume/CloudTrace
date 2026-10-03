@@ -14,6 +14,8 @@
  * 返回的是机器可读的规则标识，文案由界面层决定（与自适应、选源说明同一口径）。
  */
 
+import { paramNameOf } from '@/i18n/params'
+
 export interface ParamWarning {
   /** 规则标识，界面据此选文案。 */
   rule: string
@@ -103,22 +105,13 @@ export function checkCombinations(config: Record<string, unknown>): ParamWarning
 }
 
 /**
- * 扫描页的扁平驼峰参数 → 配置里的点号路径。
+ * 检查扫描页参数面板里的组合（参数是扁平驼峰命名）。
  *
- * 只列规则用得到的键：多一份全量映射就等于多一处会与 `ScanView` 的
- * `WIRE_KEYS` 走散的地方。
+ * 路径换算复用面板那份唯一的映射表：各写一份就等于多一处会走散的地方。
  */
-const SCAN_PATHS: Record<string, string> = {
-  'scan.workers': 'workers',
-  'scan.timeout_ms': 'timeoutMs',
-  'scan.latency_threshold': 'latencyThreshold',
-  'scan.sample_max': 'sampleMax',
-}
-
-/** 检查扫描页参数面板里的组合（参数是扁平驼峰命名）。 */
 export function checkScanParams(params: Record<string, unknown>): ParamWarning[] {
   return collect((path) => {
-    const key = SCAN_PATHS[path]
-    return key === undefined ? null : readPath(params, key)
+    const name = paramNameOf(path)
+    return name === undefined ? null : readPath(params, name)
   })
 }

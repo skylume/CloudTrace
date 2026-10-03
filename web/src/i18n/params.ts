@@ -1,11 +1,13 @@
 /**
- * 扫描参数与内置档位。
+ * 扫描参数的标签、取值范围与说明，以及档位与参数之间的换算。
  *
  * 参数的中文标签、取值范围、说明都集中在这里，组件只负责渲染——文案散在
  * 模板里就没法统一改，也没法做双语。
  *
- * 档位是**参数快照**：选档位等于批量填充一组值，填完立刻可以改。因此这里
- * 只描述「每个档位填什么」，不描述「档位是一个关卡」。
+ * 档位本身不在这里：内置档位与自定义档位都由后端定义并存盘（见 `stores/presets`）。
+ * 前端留一份常量表看起来省事，但两边一定会分叉——改了后端的内置档位，前端那
+ * 份拷贝还在用旧值，而用户看到的正是前端那份。这里只负责把后端的档位值换算成
+ * 界面用的形状。
  */
 
 export interface ParamSpec {
@@ -118,55 +120,89 @@ export const SCAN_PARAMS: ParamSpec[] = [
   },
 ]
 
-export interface Preset {
-  id: string
-  labelKey: string
-  /** 该档位填充的参数值。键名与 ScanParams 一致。 */
-  values: Record<string, number | boolean>
+/**
+ * 界面参数名 → 配置里的点号路径。
+ *
+ * 这一张表是「面板上的字段」与「配置项」之间唯一的换算处。参数联动校验、档位
+ * 判定、另存为档位都要用它，各写一份就等于多几处会走散的地方。
+ */
+export const PARAM_PATHS: Record<string, string> = {
+  sampleMax: 'scan.sample_max',
+  workers: 'scan.workers',
+  latencyThreshold: 'scan.latency_threshold',
+  pingTimes: 'scan.ping_times',
+  port: 'scan.port',
+  timeoutMs: 'scan.timeout_ms',
+  retry: 'scan.retry',
+  twoPhase: 'scan.two_phase',
+  verifyNodes: 'scan.verify_nodes',
 }
 
-/**
- * 内置档位。
- *
- * 取值来自功能规格：并发上限只到 200、采样上限只到 5000——更大的值既没必要
- * 也拖时间，界面上不提供，也不诱导用户往极端值调。
- */
-export const SCAN_PRESETS: Preset[] = [
-  {
-    id: 'fast',
-    labelKey: 'preset.fast',
-    values: { sampleMax: 500, workers: 100, latencyThreshold: 300, pingTimes: 1, port: 443 },
-  },
-  {
-    id: 'standard',
-    labelKey: 'preset.standard',
-    values: { sampleMax: 2000, workers: 150, latencyThreshold: 230, pingTimes: 0, port: 443 },
-  },
-  {
-    id: 'precise',
-    labelKey: 'preset.precise',
-    values: { sampleMax: 5000, workers: 200, latencyThreshold: 200, pingTimes: 3, port: 443 },
-  },
-]
+/** 点号路径 → 界面参数名。 */
+const PATH_TO_PARAM: Record<string, string> = Object.fromEntries(
+  Object.entries(PARAM_PATHS).map(([name, path]) => [path, name]),
+)
+
+/** 点号路径对应的界面参数名；不属于本面板的字段返回 undefined。 */
+export function paramNameOf(path: string): string | undefined {
+  return PATH_TO_PARAM[path]
+}
 
 /** 自定义档位的 id。用户手改任一参数后落到这里。 */
 export const CUSTOM_PRESET = 'custom'
 
+/** 一个档位在界面上的形状：值是界面参数名。 */
+export type PresetValues = Record<string, number | boolean>
+
 /**
- * 判断一组参数值属于哪个档位。
+ * 把档位的值换算成界面参数。
  *
- * 只比档位声明过的那些键：用户没碰过的参数不该让档位判定失败。
+ * 只认面板上有的字段：档位里可能带着测速相关的键，它们不属于这个面板，硬塞
+ * 进来会让面板显示一堆自己改不了的项。
  */
-export function matchPreset(values: Record<string, unknown>): string {
-  for (const preset of SCAN_PRESETS) {
-    const same = Object.entries(preset.values).every(([key, want]) => values[key] === want)
-    if (same) return preset.id
+export function presetValues(preset: { values: Record<string, unknown> } | undefined): PresetValues {
+  const out: PresetValues = {}
+  for (const [path, value] of Object.entries(preset?.values ?? {})) {
+    const name = PATH_TO_PARAM[path]
+    if (name === undefined) continue
+    if (typeof value === 'number' || typeof value === 'boolean') out[name] = value
+  }
+  return out
+}
+
+/**
+ * 判断当前参数属于哪个档位。
+ *
+ * 只比档位声明过、且面板上有的那些键：用户没碰过的参数不该让档位判定失败，
+ * 档位里带的测速参数也不该影响这个面板的判定。一个档位在面板上一个键都没声明
+ * 时跳过它——拿不到依据就不该下结论。
+ */
+export function matchPreset(values: Record<string, unknown>, presets: PresetLike[]): string {
+  for (const preset of presets) {
+    const comparable = Object.keys(preset.values).filter((path) => PATH_TO_PARAM[path] !== undefined)
+    if (comparable.length === 0) continue
+    if (comparable.every((path) => values[PATH_TO_PARAM[path]!] === preset.values[path])) return preset.id
   }
   return CUSTOM_PRESET
 }
 
-/** 把档位的参数值展开成一份可直接用的参数对象。 */
-export function presetValues(id: string): Record<string, number | boolean> {
-  const preset = SCAN_PRESETS.find((item) => item.id === id)
-  return preset ? { ...preset.values } : {}
+/** matchPreset 只需要 id 与值，不关心档位的其它字段。 */
+export interface PresetLike {
+  id: string
+  values: Record<string, unknown>
+}
+
+/**
+ * 把界面参数换算成配置里的点号路径，用于「另存为我的档位」。
+ *
+ * 与 presetValues 互逆。往返一趟必须能回到原值，否则存下来的档位切回去就不
+ * 是原来那组参数了。
+ */
+export function paramPaths(values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [name, path] of Object.entries(PARAM_PATHS)) {
+    const value = values[name]
+    if (typeof value === 'number' || typeof value === 'boolean') out[path] = value
+  }
+  return out
 }

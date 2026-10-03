@@ -15,10 +15,11 @@ import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
-import { matchPreset, presetValues } from '@/i18n/params'
+import { CUSTOM_PRESET, matchPreset, presetValues } from '@/i18n/params'
 import { useActionStore } from '@/stores/actions'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
+import { usePresetsStore } from '@/stores/presets'
 import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/task'
@@ -29,10 +30,16 @@ const log = useLogStore()
 const results = useResultsStore()
 const settings = useSettingsStore()
 const actions = useActionStore()
+const presets = usePresetsStore()
 
-/** 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。 */
-const params = ref<Record<string, number | boolean>>({ ...presetValues('fast') })
-const presetId = ref('fast')
+/**
+ * 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。
+ *
+ * 初值先空着，等配置或档位列表到了再填：档位列表是异步来的，在这里写死一个
+ * 内置档位等于把后端那份定义又抄了一遍。
+ */
+const params = ref<Record<string, number | boolean>>({})
+const presetId = ref(CUSTOM_PRESET)
 const source = ref<ScanSource>({ official: true, remote: [], customText: '' })
 /** 官方网段条数。后端还没提供这个数字时显示 0，不假装知道。 */
 const officialCount = ref(0)
@@ -89,18 +96,28 @@ function schedulePersistSource(): void {
 watch(() => source.value.remote, schedulePersistSource, { deep: true })
 watch(() => source.value.customText, schedulePersistSource)
 
-onMounted(() => {
-  unregister = actions.register('startScan', start)
-  // 配置到了就按配置初始化；没到时先用「快速」档，界面不会空着。
+/**
+ * 按配置与档位列表初始化面板。
+ *
+ * 参数优先取配置：那是用户上次用过的那组值。配置里一个扫描参数都没有时（首次
+ * 运行）退到启动档位，界面不会空着。
+ *
+ * 档位列表是异步来的，所以这里既要能在挂载时跑，也要在列表到达后再跑一次——
+ * 否则首次进入会一直显示「自定义」，只因为档位还没到。
+ */
+function syncFromSettings(): void {
   const scan = settings.values?.scan as Record<string, unknown> | undefined
-  if (!scan) return
-  const next = { ...params.value }
+  const next: Record<string, number | boolean> = {}
   for (const [camel, wire] of Object.entries(WIRE_KEYS)) {
-    const value = scan[wire]
+    const value = scan?.[wire]
     if (typeof value === 'number' || typeof value === 'boolean') next[camel] = value
   }
-  params.value = next
-  presetId.value = matchPreset(next)
+
+  const filled = Object.keys(next).length > 0 ? next : presetValues(presets.byID(presets.defaultID))
+  if (Object.keys(filled).length === 0) return
+
+  params.value = { ...params.value, ...filled }
+  presetId.value = matchPreset(params.value, presets.list)
 
   // 来源也从配置恢复：用户上次加过的远端地址与写过的文本不该每次重填。
   const src = settings.values?.source as Record<string, unknown> | undefined
@@ -108,10 +125,23 @@ onMounted(() => {
   if (Array.isArray(remote)) {
     source.value = { ...source.value, remote: remote as typeof source.value.remote }
   }
-  const custom = scan['custom_source']
+  const custom = scan?.['custom_source']
   if (typeof custom === 'string' && custom !== '') {
     source.value = { ...source.value, customText: custom }
   }
+}
+
+onMounted(() => {
+  unregister = actions.register('startScan', start)
+  syncFromSettings()
+})
+
+// 档位列表到达后重新判定一次档位。只在这里补判定，不重填参数——用户可能已经
+// 在改了，把参数覆盖回去比显示「自定义」更糟。
+watch(() => presets.loaded, () => {
+  if (!presets.loaded) return
+  if (Object.keys(params.value).length === 0) syncFromSettings()
+  else presetId.value = matchPreset(params.value, presets.list)
 })
 
 onBeforeUnmount(() => {
@@ -132,6 +162,9 @@ function buildRequest(): Record<string, unknown> {
   else if (source.value.official) payload.source_mode = 'official'
   else payload.source_mode = 'custom'
   payload.custom_source = source.value.customText
+  // 档位标识只用于历史归档，不进参数快照。手调的参数不属于任何档位，留空——
+  // 硬塞一个「自定义」进去，历史里就会出现一个并不存在的档位名。
+  payload.preset = presetId.value === CUSTOM_PRESET ? '' : presetId.value
   return payload
 }
 

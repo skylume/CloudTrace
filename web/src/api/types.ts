@@ -123,6 +123,31 @@ export interface SpeedParams {
 export type ParamOrigin = 'default' | 'preset' | 'user'
 export type ParamOrigins = Record<string, ParamOrigin>
 
+/**
+ * 一个档位：一批参数值的快照。
+ *
+ * `values` 的键是配置里的点号路径（`scan.workers`），与 `origins` 同形——两份
+ * 表用同一套键，「这一项是从哪个档位来的」才对得上。
+ */
+export interface Preset {
+  id: string
+  name: string
+  note?: string
+  /** 内置档位只读：不可改、不可删。 */
+  builtin: boolean
+  icon?: string
+  color?: string
+  order: number
+  values: Record<string, unknown>
+  origins?: ParamOrigins
+}
+
+export interface PresetsPayload {
+  presets: Preset[]
+  /** 启动档位的 id。 */
+  default: string
+}
+
 export interface HistoryRecord {
   id: string
   type: 'scan' | 'speed'

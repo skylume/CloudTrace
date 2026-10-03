@@ -12,7 +12,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
-import { SCAN_PRESETS } from '@/i18n/params'
+import { usePresetsStore } from '@/stores/presets'
 import { useActionStore } from '@/stores/actions'
 import { useResultsStore } from '@/stores/results'
 import { useTaskStore } from '@/stores/task'
@@ -24,6 +24,7 @@ const ui = useUIStore()
 const task = useTaskStore()
 const results = useResultsStore()
 const actions = useActionStore()
+const presets = usePresetsStore()
 
 interface Command {
   id: string
@@ -104,17 +105,19 @@ const commands = computed<Command[]>(() => {
     { id: 'health', group: 'action', label: t('health.run'), run: () => sendCommand('health/check') },
   ]
 
-  const presets: Command[] = SCAN_PRESETS.map((preset) => ({
+  // 档位命令直接应用档位：命令面板的价值就是「不离开键盘把事办了」，只跳过去
+  // 还得再点一下就没意义了。
+  const presetCommands: Command[] = presets.list.map((preset) => ({
     id: `preset-${preset.id}`,
     group: 'preset',
-    label: t(preset.labelKey as never),
+    label: preset.name,
     run: () => {
       ui.activeView = 'scan'
-      ui.setDensity('advanced')
+      presets.use(preset.id)
     },
   }))
 
-  return [...pages, ...operations, ...presets]
+  return [...pages, ...operations, ...presetCommands]
 })
 
 /** 匹配：标签里包含关键词即可。刻意不做模糊打分——命令总共十几条，打分只会让顺序变得难以预期。 */

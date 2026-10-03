@@ -8,13 +8,14 @@
  *
  * 参数的中文标签、范围、说明都来自 i18n 映射表，组件里不硬编码。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import Banner from '@/components/ui/Banner.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, SCAN_PARAMS, SCAN_PRESETS, matchPreset } from '@/i18n/params'
+import { CUSTOM_PRESET, SCAN_PARAMS, matchPreset, paramPaths, presetValues } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
+import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
 import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
@@ -25,6 +26,7 @@ defineProps<{ disabled?: boolean }>()
 
 const ui = useUIStore()
 const adaptive = useAdaptiveStore()
+const presets = usePresetsStore()
 
 /**
  * 建议的整句话。
@@ -55,8 +57,14 @@ function toggleExpanded(): void {
   ui.setDensity(expanded.value ? 'simple' : 'advanced')
 }
 
+/**
+ * 档位下拉的选项。
+ *
+ * 档位列表来自后端，顺序也由后端定（内置在前、各自按 Order 排）。前端不重排：
+ * 两处都排序，用户看到的顺序与后端认定的顺序迟早会不一样。
+ */
 const segments = computed(() => [
-  ...SCAN_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey as never) })),
+  ...presets.list.map((preset) => ({ value: preset.id, label: preset.name })),
   { value: CUSTOM_PRESET, label: t('preset.custom') },
 ])
 
@@ -68,17 +76,25 @@ const visibleParams = computed(() =>
 /** 偏离档位时的提示：告诉用户「你已经不在原来的档位上了」。 */
 const deviatedFrom = computed(() => {
   if (presetId.value === CUSTOM_PRESET) return ''
-  const current = matchPreset(params.value)
-  if (current !== CUSTOM_PRESET) return ''
-  const source = SCAN_PRESETS.find((preset) => preset.id === presetId.value)
-  return source ? t('preset.deviated', { name: t(source.labelKey as never) }) : ''
+  if (matchPreset(params.value, presets.list) !== CUSTOM_PRESET) return ''
+  const source = presets.byID(presetId.value)
+  return source ? t('preset.deviated', { name: source.name }) : ''
 })
 
+/**
+ * 换档位。
+ *
+ * 两件事一起做：把值填进面板（用户立刻看到变化），并让服务端把值写进配置。
+ * 后者不能省——配置里那份参数来源表是自适应逻辑的唯一依据，只在本地填值的话
+ * 自适应会把档位填的值当成「用户从未碰过的默认值」。
+ */
 function applyPreset(id: string): void {
   presetId.value = id
-  const preset = SCAN_PRESETS.find((item) => item.id === id)
+  if (id === CUSTOM_PRESET) return
+  const preset = presets.byID(id)
   if (!preset) return
-  params.value = { ...params.value, ...preset.values }
+  params.value = { ...params.value, ...presetValues(preset) }
+  presets.use(id)
 }
 
 /**
@@ -89,7 +105,32 @@ function applyPreset(id: string): void {
 function updateParam(key: string, value: number | boolean): void {
   const next = { ...params.value, [key]: value }
   params.value = next
-  presetId.value = matchPreset(next)
+  presetId.value = matchPreset(next, presets.list)
+}
+
+// ---- 另存为我的档位 ----
+
+const saving = ref(false)
+const draftName = ref('')
+
+function startSave(): void {
+  draftName.value = ''
+  saving.value = true
+}
+
+/** 存的是面板上当前这组值，不是档位里那组——用户要的是「把现在这些存下来」。 */
+function confirmSave(): void {
+  const name = draftName.value.trim()
+  const ok = presets.save({ name, values: paramPaths(params.value) })
+  ui.pushToast(
+    ok
+      ? { kind: 'ok', message: t('preset.saved', { name }) }
+      : { kind: 'warn', message: t('preset.saveFailed') },
+  )
+  if (ok) {
+    saving.value = false
+    draftName.value = ''
+  }
 }
 
 /**
@@ -133,10 +174,25 @@ function warningText(item: ParamWarning): string {
       <span>{{ t('preset.summary') }}</span>
       <span v-if="deviatedFrom" class="deviated">{{ deviatedFrom }}</span>
       <span class="spacer" />
+      <button type="button" class="ct-link" @click="startSave">{{ t('preset.saveAs') }}</button>
       <button type="button" class="ct-link" @click="toggleExpanded">
         {{ expanded ? t('preset.collapse') : t('preset.all') }}
       </button>
     </h2>
+
+    <!-- 另存为：就地展开一行输入，不弹窗——弹窗会打断「调完参数顺手存一下」这个动作。 -->
+    <div v-if="saving" class="save-row">
+      <input
+        v-model="draftName"
+        class="ct-input"
+        type="text"
+        :placeholder="t('preset.namePlaceholder')"
+        @keyup.enter="confirmSave"
+        @keyup.esc="saving = false"
+      />
+      <button type="button" class="ct-btn ct-btn--primary" @click="confirmSave">{{ t('common.save') }}</button>
+      <button type="button" class="ct-btn" @click="saving = false">{{ t('common.cancel') }}</button>
+    </div>
 
     <SegmentedControl
       :segments="segments"
@@ -228,6 +284,17 @@ function warningText(item: ParamWarning): string {
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.save-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.save-row .ct-input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 自适应徽标：小、克制，但一眼能看出这个值不是自己设的。点一下还原。 */

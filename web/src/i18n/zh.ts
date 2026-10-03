@@ -161,6 +161,10 @@ export const zh = {
   'preset.all': '全部参数',
   'preset.collapse': '收起参数',
   'preset.saveAs': '另存为我的档位',
+  'preset.namePlaceholder': '给这组参数起个名字',
+  'preset.saved': '已存为「{name}」',
+  'preset.saveFailed': '档位没存下来：名字不能为空，且至少要有一个参数',
+  'preset.mine': '我的档位',
 
   'param.scan.sample_max': '采样上限',
   'param.scan.sample_max.hint': '最多挑多少个地址来测。500 够用，5000 更全面但更慢',

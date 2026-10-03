@@ -26,6 +26,12 @@ export const CMD = {
   settingsUpdate: 'settings/update',
   settingsReset: 'settings/reset',
 
+  presetsList: 'presets/list',
+  presetsApply: 'presets/apply',
+  presetsSave: 'presets/save',
+  presetsDelete: 'presets/delete',
+  presetsSetDefault: 'presets/set_default',
+
   export: 'export',
   healthCheck: 'health/check',
   geoStatus: 'geo/status',
@@ -64,6 +70,8 @@ export const EVT = {
   historyChanged: 'history/changed',
 
   settings: 'settings',
+  /** 档位列表：既是一次读取的结果，也是任何一次档位变更的广播。 */
+  presets: 'presets',
   export: 'export',
   health: 'health',
   geo: 'geo',
