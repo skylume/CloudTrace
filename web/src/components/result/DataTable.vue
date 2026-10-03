@@ -105,7 +105,7 @@ function selectGroup(records: IPRecord[]): void {
     <table class="table">
       <thead>
         <tr>
-          <th class="narrow">
+          <th class="narrow ct-sticky ct-sticky-1">
             <input
               type="checkbox"
               class="ct-check"
@@ -114,12 +114,16 @@ function selectGroup(records: IPRecord[]): void {
               @change="toggleAll"
             />
           </th>
-          <th class="narrow" />
-          <th class="narrow num">#</th>
+          <th class="narrow ct-sticky ct-sticky-2" />
+          <th class="narrow num ct-sticky ct-sticky-3">#</th>
           <th
-            v-for="column in props.columns"
+            v-for="(column, index) in props.columns"
             :key="column.key"
-            :class="{ sortable: SORTABLE[column.key], num: renderSpec(column.key).align === 'right' }"
+            :class="{
+              sortable: SORTABLE[column.key],
+              num: renderSpec(column.key).align === 'right',
+              'ct-sticky ct-sticky-4': index === 0,
+            }"
             @click="sortBy(column.key)"
           >
             {{ column.label }}

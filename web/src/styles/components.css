@@ -192,3 +192,57 @@
     padding: 0 var(--space-1);
   }
 }
+
+/*
+ * 表格的冻结列。
+ *
+ * 横向滚动时把行标识留在原地：滚到右边看 ASN、组织名这些列时，看不到自己看的
+ * 是哪一行，等于白滚。冻结的宽度由组件按列序算出来，这里只管样式。
+ *
+ * 必须有实底色：透明的话滚动的内容会从下面穿过去。选中行的底色是半透明的，
+ * 用一层渐变把它压在实底上——直接给半透明色会让内容透出来。
+ */
+.ct-sticky {
+  position: sticky;
+  z-index: 1;
+  background-color: var(--color-surface);
+}
+
+/*
+ * 冻结列的横向偏移。
+ *
+ * 前三个窄列的宽度只在这里定义一次：表头与数据行都用这几个类，各写一遍数值
+ * 迟早会漂移，而错位的表头比不冻结更难用。
+ */
+:root {
+  --table-narrow-width: 34px;
+}
+
+.ct-sticky-1 {
+  left: 0;
+}
+
+.ct-sticky-2 {
+  left: var(--table-narrow-width);
+}
+
+.ct-sticky-3 {
+  left: calc(var(--table-narrow-width) * 2);
+}
+
+.ct-sticky-4 {
+  left: calc(var(--table-narrow-width) * 3);
+}
+
+thead .ct-sticky {
+  z-index: 3;
+  background-color: var(--color-surface-sunken);
+}
+
+tbody tr:hover .ct-sticky {
+  background-color: var(--color-surface-hover);
+}
+
+tbody tr.picked .ct-sticky {
+  background-image: linear-gradient(var(--color-primary-soft), var(--color-primary-soft));
+}

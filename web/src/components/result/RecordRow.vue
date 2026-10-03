@@ -44,7 +44,7 @@ async function copyCell(key: string): Promise<void> {
 
 <template>
   <tr :class="{ picked: results.selected.has(recordKey(props.record)) }">
-    <td class="narrow">
+    <td class="narrow ct-sticky ct-sticky-1">
       <input
         type="checkbox"
         class="ct-check"
@@ -53,16 +53,16 @@ async function copyCell(key: string): Promise<void> {
         @change="results.toggleSelect(recordKey(props.record))"
       />
     </td>
-    <td class="narrow">
+    <td class="narrow ct-sticky ct-sticky-2">
       <button type="button" class="ct-link" :aria-label="t('result.expand')" @click="emit('toggle')">
         {{ props.expanded ? '▾' : '▸' }}
       </button>
     </td>
-    <td class="narrow num tnum">{{ props.rank }}</td>
+    <td class="narrow num tnum ct-sticky ct-sticky-3">{{ props.rank }}</td>
     <td
-      v-for="column in props.columns"
+      v-for="(column, index) in props.columns"
       :key="column.key"
-      :class="{ num: renderSpec(column.key).align === 'right' }"
+      :class="{ num: renderSpec(column.key).align === 'right', 'ct-sticky ct-sticky-4': index === 0 }"
       @dblclick="copyCell(column.key)"
     >
       <SignalBar v-if="renderSpec(column.key).render === 'latency'" :latency="props.record.latency" />
