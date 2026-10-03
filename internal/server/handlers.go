@@ -8,6 +8,7 @@ import (
 
 	"cloudtrace/internal/adaptive"
 	"cloudtrace/internal/app"
+	"cloudtrace/internal/config"
 	"cloudtrace/internal/event"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
@@ -145,18 +146,30 @@ func (s *server) scanOptions(params model.ScanParams) scan.Options {
 	}
 }
 
+/**
+ * scanStartReq 是 scan/start 的载荷。
+ *
+ * 档位名与任务参数分开：档位名只用于历史归档，不进参数快照。参数快照要能被
+ * 「用同样的参数再跑一次」直接复用，多混一个字段就多一处要过滤的地方。
+ */
+type scanStartReq struct {
+	model.ScanParams
+	// Preset 是本次使用的档位标识；空表示用户是手调的，历史里不记档位。
+	Preset string `json:"preset"`
+}
+
 // handleScanStart 校验参数并启动扫描任务。
 //
 // 参数校验同步做掉：任务一旦启动就在后台 goroutine 里跑，到那时才报参数
 // 错误的话，前端只能收到一条笼统的 error 事件，没法定位到具体字段。
 func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
-	var params model.ScanParams
+	var req scanStartReq
 	if len(data) > 0 {
-		if err := json.Unmarshal(data, &params); err != nil {
+		if err := json.Unmarshal(data, &req); err != nil {
 			return fail(CodeInvalidParam, "扫描参数不是合法 JSON")
 		}
 	}
-	params = scan.NormalizeParams(params)
+	params := scan.NormalizeParams(req.ScanParams)
 	if err := scan.ValidateParams(params); err != nil {
 		return fail(CodeInvalidParam, err.Error())
 	}
@@ -166,15 +179,15 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseScan, s.runScanTask(runner, params))
+	return s.startTask(model.PhaseScan, s.runScanTask(runner, params, s.presetName(req.Preset)))
 }
 
 // runScanTask 把扫描执行器包成任务体，并在跑完后存档。
-func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams) task.RunFunc {
+func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams, preset string) task.RunFunc {
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(runner.Run, func(duration float64) {
+	return taskRunner(preset, runner.Run, func(duration float64) {
 		s.archiveScan(params, s.currentPreset(), res, duration)
 	})
 }
@@ -187,15 +200,21 @@ func (s *server) geoEnrich() func(*model.IPRecord) {
 	return s.svc.Geo.Enrich
 }
 
+// speedStartReq 是 speed/start 的载荷，结构与 scan/start 一致。
+type speedStartReq struct {
+	model.SpeedParams
+	Preset string `json:"preset"`
+}
+
 // handleSpeedStart 校验参数并启动测速任务。
 func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
-	var params model.SpeedParams
+	var req speedStartReq
 	if len(data) > 0 {
-		if err := json.Unmarshal(data, &params); err != nil {
+		if err := json.Unmarshal(data, &req); err != nil {
 			return fail(CodeInvalidParam, "测速参数不是合法 JSON")
 		}
 	}
-	params = speed.NormalizeParams(params)
+	params := speed.NormalizeParams(req.SpeedParams)
 	if err := speed.ValidateParams(params); err != nil {
 		return fail(CodeInvalidParam, err.Error())
 	}
@@ -210,15 +229,15 @@ func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseSpeed, s.runSpeedTask(runner, params))
+	return s.startTask(model.PhaseSpeed, s.runSpeedTask(runner, params, s.presetName(req.Preset)))
 }
 
 // runSpeedTask 把测速执行器包成任务体，并在跑完后存档。
-func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams) task.RunFunc {
+func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams, preset string) task.RunFunc {
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(runner.Run, func(duration float64) {
+	return taskRunner(preset, runner.Run, func(duration float64) {
 		s.archiveSpeed(params, s.currentPreset(), res, duration)
 	})
 }
@@ -229,6 +248,31 @@ func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams) ta
 // 编排层才是它唯一的存放处。
 func (s *server) currentPreset() string {
 	return s.svc.Tasks.Snapshot().Preset
+}
+
+/**
+ * presetName 把档位标识翻译成名字，供历史归档显示。
+ *
+ * 认不出来的标识原样返回：前端可能报上一个自定义的标签，丢掉它不如留着。
+ * 空标识表示用户手调的参数，不属于任何档位，历史里就空着。
+ */
+func (s *server) presetName(id string) string {
+	return presetLabel(s.svc.Presets, id)
+}
+
+// presetLabel 是 presetName 的实现，抽成独立函数以便直接断言——它没有别的
+// 依赖，只认档位库。
+func presetLabel(store *config.PresetStore, id string) string {
+	if id == "" {
+		return ""
+	}
+	if store == nil {
+		return id
+	}
+	if preset, ok := store.Get(id); ok {
+		return preset.Name
+	}
+	return id
 }
 
 // startTask 启动任务并把编排层的失败翻译成错误码。

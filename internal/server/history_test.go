@@ -358,7 +358,7 @@ func TestTaskRunnerSkipsArchiveOnAbort(t *testing.T) {
 	st := newTestStack(t, nil)
 
 	var archived bool
-	run := taskRunner(func(rep task.Reporter) (int, error) {
+	run := taskRunner("", func(rep task.Reporter) (int, error) {
 		// 模拟用户在跑的过程中按了停止。
 		st.svc.Tasks.Abort()
 		<-rep.Context().Done()
@@ -383,7 +383,7 @@ func TestTaskRunnerSkipsArchiveOnError(t *testing.T) {
 	st := newTestStack(t, nil)
 
 	var archived bool
-	run := taskRunner(func(task.Reporter) (int, error) {
+	run := taskRunner("", func(task.Reporter) (int, error) {
 		return 0, errors.New("没有生成任何候选")
 	}, func(float64) { archived = true })
 
@@ -402,7 +402,7 @@ func TestTaskRunnerArchivesOnSuccessWithDuration(t *testing.T) {
 
 	var got float64
 	var called bool
-	run := taskRunner(func(task.Reporter) (int, error) {
+	run := taskRunner("", func(task.Reporter) (int, error) {
 		time.Sleep(5 * time.Millisecond)
 		return 7, nil
 	}, func(d float64) {
@@ -420,6 +420,67 @@ func TestTaskRunnerArchivesOnSuccessWithDuration(t *testing.T) {
 	}
 	if got <= 0 {
 		t.Fatalf("耗时 = %v，期望为正", got)
+	}
+}
+
+/**
+ * 发起任务时带的档位标识要落进历史。
+ *
+ * 这条链路曾经整段是空的：任务状态里有一个档位名字段，却没有任何地方写它，
+ * 于是每一份历史都不知道自己是拿哪个档位跑出来的。回看历史时「这份是用什么
+ * 跑的」正是档位存在的意义之一。
+ */
+func TestTaskRunnerRecordsPresetName(t *testing.T) {
+	st := newTestStack(t, nil)
+
+	// 与命令处理那条路径一致：标识先翻译成名字，再交给任务体。
+	run := taskRunner(presetLabel(st.svc.Presets, config.PresetPrecise), func(task.Reporter) (int, error) {
+		return 0, nil
+	}, nil)
+	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	waitTaskIdle(t, st)
+
+	if got := st.svc.Tasks.Snapshot().Preset; got != "精细" {
+		t.Errorf("任务状态里的档位名 = %q，期望 %q", got, "精细")
+	}
+}
+
+// 手调的参数不属于任何档位，档位名留空，而不是硬塞一个「自定义」进去。
+func TestTaskRunnerLeavesPresetEmptyWhenAbsent(t *testing.T) {
+	st := newTestStack(t, nil)
+
+	run := taskRunner("", func(task.Reporter) (int, error) { return 0, nil }, nil)
+	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	waitTaskIdle(t, st)
+
+	if got := st.svc.Tasks.Snapshot().Preset; got != "" {
+		t.Errorf("档位名 = %q，期望为空", got)
+	}
+}
+
+// 认不出的标识原样保留：前端可能报上一个自定义的标签，丢掉它不如留着。
+func TestPresetLabelFallsBackToRawID(t *testing.T) {
+	st := newTestStack(t, nil)
+
+	cases := []struct{ id, want string }{
+		{"", ""},
+		{"我的档位", "我的档位"},
+		{config.PresetStandard, "标准"},
+		{config.PresetFast, "快速"},
+		{config.PresetPrecise, "精细"},
+	}
+	for _, tt := range cases {
+		if got := presetLabel(st.svc.Presets, tt.id); got != tt.want {
+			t.Errorf("presetLabel(%q) = %q，期望 %q", tt.id, got, tt.want)
+		}
+	}
+	// 档位库不可用时不能崩，也不能把标识吞掉。
+	if got := presetLabel(nil, config.PresetFast); got != config.PresetFast {
+		t.Errorf("档位库不可用时 = %q，期望原样返回", got)
 	}
 }
 

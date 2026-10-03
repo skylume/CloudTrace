@@ -342,8 +342,15 @@ func countMeasured(records []model.IPRecord) int {
 //
 // 存档发生在任务体内部、仍在运行态时：任务体返回之后编排层就落定终态了，
 // 那时再存会把一份已经结束的任务的存档算在下一个任务头上。
-func taskRunner(run func(task.Reporter) (int, error), done func(duration float64)) task.RunFunc {
+//
+// preset 是本次使用的档位名，进来就先记到任务状态上。存档时要读它，而存档
+// 发生在任务跑完之后——档位名不能等任务结束再传，那时编排层已经在准备下一
+// 个任务的状态了。
+func taskRunner(preset string, run func(task.Reporter) (int, error), done func(duration float64)) task.RunFunc {
 	return func(rep task.Reporter) (task.Outcome, error) {
+		if preset != "" {
+			rep.SetPreset(preset)
+		}
 		started := time.Now()
 		count, err := run(rep)
 		if err == nil && rep.Context().Err() == nil && done != nil {
