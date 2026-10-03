@@ -12,6 +12,9 @@ const (
 	dirLogs    = "logs"
 	dirBackup  = "backup"
 	fileName   = "config.json"
+	// presetsFileName 是自定义档位库。与配置分开放：档位是用户数据，
+	// 不是设置项，不该被 settings/update 的补丁碰到。
+	presetsFileName = "presets.json"
 )
 
 // ExecutableDir 返回当前可执行文件所在目录。
@@ -50,6 +53,9 @@ func ResolveDataDir(cfg Config, exeDir string) (string, error) {
 
 // ConfigPath 返回数据目录下配置文件的路径。
 func ConfigPath(dataDir string) string { return filepath.Join(dataDir, fileName) }
+
+// PresetsPath 返回数据目录下自定义档位库的路径。
+func PresetsPath(dataDir string) string { return filepath.Join(dataDir, presetsFileName) }
 
 // HistoryDir 返回历史记录根目录。
 func HistoryDir(dataDir string) string { return filepath.Join(dataDir, dirHistory) }
