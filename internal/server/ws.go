@@ -41,6 +41,9 @@ const (
 	eventPong  = "pong"
 	eventError = "error"
 
+	// eventSpeedSource 在自动选源之后广播，说明「为什么用了这个源」。
+	eventSpeedSource = "speed/source"
+
 	// eventSpeedBreaker 在测速被限流熔断时广播，带可操作的建议。
 	// 与 error 分开：错误只说「出错了」，这条要能让界面给出「降低并发」这类按钮。
 	eventSpeedBreaker = "speed/breaker"

@@ -102,6 +102,18 @@ function applyPreset(id: string): void {
  * 走 settings/update 而不是只改本地：并发与测速源都是服务端配置，只改本地
  * 的话下一次测速仍然会用回原值——用户会以为建议没生效。
  */
+/**
+ * 选源说明的文案。
+ *
+ * 认不出的原因码就退回显示原值：后端加了新原因而前端还没跟上时，至少不会显示
+ * 空白——空白会让人以为这个功能坏了。
+ */
+function sourceReason(code: string): string {
+  const key = `speed.source.${code}`
+  const translated = t(key as never)
+  return translated === key ? code : translated
+}
+
 function applyBreakerFix(patch: Record<string, unknown>): void {
   sendCommand('settings/update', { patch: { speed: patch }, origins: {} })
   speed.dismissBreaker()
@@ -127,6 +139,12 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         @action="applyBreakerFix({ concurrency: speed.suggestedConcurrency() })"
         @close="speed.dismissBreaker()"
       />
+
+      <p v-if="view === 'speed' && speed.source" class="ct-subtle source-line">
+        {{ t('speed.source.title') }}：<span class="ct-mono">{{ speed.source.url }}</span>
+        · {{ sourceReason(speed.source.code) }}
+        <template v-if="speed.source.detail">（{{ speed.source.detail }}）</template>
+      </p>
 
       <div class="stats">
         <div v-for="item in stats" :key="item.label" class="stat">
@@ -231,6 +249,11 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 
 .search {
   width: 180px;
+}
+
+.source-line {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .empty {

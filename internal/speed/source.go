@@ -117,47 +117,99 @@ func (r *SourceResolver) SetASNLookup(fn geo.LookupFunc) { r.asn = fn }
 //
 // auto 模式的探测失败**不算错误**：拿不到出口 ISP 只影响「要不要换移动源」，
 // 换不成官方源照样能测。为这点信息让整轮测速失败是本末倒置。
+// 选源原因。机器可读的短标识，前端据此选文案。
+const (
+	// ReasonPinned 是用户明确指定了测速源。
+	ReasonPinned = "pinned"
+	// ReasonCached 是沿用本次运行已有的判断，没有重新探测。
+	ReasonCached = "cached"
+	// ReasonMobile 是探测到出口属于中国移动，因而用移动测速源。
+	ReasonMobile = "mobile"
+	// ReasonNotMobile 是出口不属于中国移动，用官方源。
+	ReasonNotMobile = "not_mobile"
+	// ReasonProbeFailed 是出口探测失败，回退官方源。
+	ReasonProbeFailed = "probe_failed"
+)
+
+// SourceDecision 是一次选源的结果与理由。
+//
+// 把「为什么选它」一起返回，是因为自动选源对用户是个黑箱：同一份配置在不同
+// 网络下会选中不同的源，而用户看不到任何线索。理由本身比结果更值得展示。
+type SourceDecision struct {
+	URL string
+	// Code 是原因标识，见上面的 Reason* 常量。
+	Code string
+	// Detail 是补充说明（如「AS9808 中国移动」），可为空。
+	Detail string
+}
+
+// Resolve 只返回选中的地址，是 Decide 的薄包装。
 func (r *SourceResolver) Resolve(ctx context.Context, mode, customURL string) (string, error) {
+	decision, err := r.Decide(ctx, mode, customURL)
+	return decision.URL, err
+}
+
+// Decide 选源并说明理由。
+func (r *SourceResolver) Decide(ctx context.Context, mode, customURL string) (SourceDecision, error) {
 	switch mode {
 	case URLModeOfficial:
-		return officialSpeedURL, nil
+		return SourceDecision{URL: officialSpeedURL, Code: ReasonPinned}, nil
 	case URLModeMobileFriendly:
-		return mobileFriendlySpeedURL, nil
+		return SourceDecision{URL: mobileFriendlySpeedURL, Code: ReasonPinned}, nil
 	case URLModeMobileOnly:
-		return mobileOnlySpeedURL, nil
+		return SourceDecision{URL: mobileOnlySpeedURL, Code: ReasonPinned}, nil
 	case URLModeCustom:
 		raw := strings.TrimSpace(customURL)
 		if raw == "" {
-			return "", fmt.Errorf("选择了自定义测速源，但地址为空")
+			return SourceDecision{}, fmt.Errorf("选择了自定义测速源，但地址为空")
 		}
-		return raw, nil
+		return SourceDecision{URL: raw, Code: ReasonPinned}, nil
 	}
 
 	// auto 与无法识别的取值都走自动选源：配置里写错一个词不该让测速失败。
-	return r.resolveAuto(ctx), nil
+	return r.decideAuto(ctx), nil
 }
 
-// resolveAuto 探测出口 ISP 并据此选源，结果在 TTL 内复用。
-func (r *SourceResolver) resolveAuto(ctx context.Context) string {
+// decideAuto 探测出口 ISP 并据此选源，结果在 TTL 内复用。
+func (r *SourceResolver) decideAuto(ctx context.Context) SourceDecision {
 	if cached, ok := r.cachedValue(); ok {
-		return cached
+		return SourceDecision{URL: cached, Code: ReasonCached}
 	}
 
 	info, err := r.probe(ctx)
 	if err != nil {
 		r.note("出口 ISP 探测失败，回退官方测速源：%v", err)
-		return officialSpeedURL
+		return SourceDecision{URL: officialSpeedURL, Code: ReasonProbeFailed}
 	}
 	info = r.fillASN(info)
 
-	url := officialSpeedURL
+	decision := SourceDecision{URL: officialSpeedURL, Code: ReasonNotMobile}
 	if isChinaMobile(info) {
-		url = r.pick([]string{mobileFriendlySpeedURL, mobileOnlySpeedURL})
+		url := r.pick([]string{mobileFriendlySpeedURL, mobileOnlySpeedURL})
+		decision = SourceDecision{URL: url, Code: ReasonMobile, Detail: describeISP(info)}
 		r.note("出口 ISP 判定为中国移动（AS%d %s），使用移动测速源 %s", info.ASN, info.Org, url)
+	} else {
+		decision.Detail = describeISP(info)
 	}
 
-	r.store(url)
-	return url
+	r.store(decision.URL)
+	return decision
+}
+
+// describeISP 把出口的 AS 信息拼成一句可显示的说明。
+//
+// 探测没给 AS 信息时返回空串而不是「AS0」：0 是保留值，显示出来只会让人困惑。
+func describeISP(info ISPInfo) string {
+	if info.ASN == 0 && info.Org == "" {
+		return ""
+	}
+	if info.Org == "" {
+		return fmt.Sprintf("AS%d", info.ASN)
+	}
+	if info.ASN == 0 {
+		return info.Org
+	}
+	return fmt.Sprintf("AS%d %s", info.ASN, info.Org)
 }
 
 // fillASN 用本地 ASN 库补全出口的 AS 信息。

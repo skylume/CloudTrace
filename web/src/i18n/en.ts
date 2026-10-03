@@ -278,4 +278,10 @@ export const en: Record<keyof typeof zh, string> = {
   'speed.breaker.title': 'Rate limited — speed test stopped',
   'speed.lowerConcurrency': 'Lower concurrency to {value}',
   'speed.switchSource': 'Switch to the official source',
+  'speed.source.title': 'Test source',
+  'speed.source.pinned': 'Pinned by you',
+  'speed.source.cached': 'Reusing the decision from this run',
+  'speed.source.mobile': 'Your exit is China Mobile, so a mobile source is used',
+  'speed.source.not_mobile': 'Your exit is not China Mobile, so the official source is used',
+  'speed.source.probe_failed': 'Exit probe failed, falling back to the official source',
 }

@@ -270,4 +270,10 @@ export const zh = {
   'speed.breaker.title': '测速被限速，已停止',
   'speed.lowerConcurrency': '降低并发到 {value}',
   'speed.switchSource': '换用官方源',
+  'speed.source.title': '测速源',
+  'speed.source.pinned': '你指定的源',
+  'speed.source.cached': '沿用本次运行已有的判断',
+  'speed.source.mobile': '出口是中国移动，用移动测速源',
+  'speed.source.not_mobile': '出口不是中国移动，用官方源',
+  'speed.source.probe_failed': '出口探测失败，回退官方源',
 } as const

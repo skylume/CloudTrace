@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -189,7 +190,7 @@ func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
 	runner, err := speed.NewRunner(speed.Options{
 		Params: params,
 		// 选源器挂在服务端而不是每次新建：出口 ISP 探测结果要跨任务复用。
-		Source: s.speedSource.Resolve,
+		Source: s.resolveSpeedSource,
 		Logger: s.logger,
 	})
 	if err != nil {
@@ -237,6 +238,37 @@ func (s *server) startTask(phase string, runFn task.RunFunc) error {
 func (s *server) handleScanStop(_ *wsConn, _ json.RawMessage) error {
 	s.svc.Tasks.Abort()
 	return nil
+}
+
+// resolveSpeedSource 选测速源并把「为什么选它」广播出去。
+//
+// 自动选源对用户是个黑箱：同一份配置在不同网络下会选中不同的源，而界面上看不
+// 到任何线索。把理由发出去，用户才能判断「这次测得准不准」。
+//
+// 包在选源外面而不是改选源器本身：选源器是纯逻辑，不该知道有事件总线这回事。
+func (s *server) resolveSpeedSource(ctx context.Context, mode, customURL string) (string, error) {
+	decision, err := s.speedSource.Decide(ctx, mode, customURL)
+	if err != nil {
+		return "", err
+	}
+	s.hub.broadcast(eventSpeedSource, speedSourcePayload{
+		URL:    decision.URL,
+		Code:   decision.Code,
+		Detail: decision.Detail,
+		Mode:   mode,
+	})
+	return decision.URL, nil
+}
+
+// speedSourcePayload 是选源说明的载荷。
+type speedSourcePayload struct {
+	URL string `json:"url"`
+	// Code 是原因标识，前端据此选文案。
+	Code string `json:"code"`
+	// Detail 是补充说明，如「AS9808 中国移动」。
+	Detail string `json:"detail,omitempty"`
+	// Mode 是本次请求的测速源模式。
+	Mode string `json:"mode"`
 }
 
 // handleSpeedStop 中止当前测速，语义与停止扫描一致。

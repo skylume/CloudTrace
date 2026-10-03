@@ -15,8 +15,18 @@ export interface BreakerNotice {
   urlMode: string
 }
 
+export interface SourceDecision {
+  url: string
+  /** 原因标识，与后端 speed.Reason* 常量一致。 */
+  code: string
+  detail?: string
+  mode: string
+}
+
 export const useSpeedStore = defineStore('speed', () => {
   const breaker = ref<BreakerNotice | null>(null)
+  /** 最近一次自动选源的结果与理由。 */
+  const source = ref<SourceDecision | null>(null)
 
   function applyBreaker(notice: BreakerNotice): void {
     breaker.value = notice
@@ -24,6 +34,10 @@ export const useSpeedStore = defineStore('speed', () => {
 
   function dismissBreaker(): void {
     breaker.value = null
+  }
+
+  function applySource(decision: SourceDecision): void {
+    source.value = decision
   }
 
   /**
@@ -37,5 +51,5 @@ export const useSpeedStore = defineStore('speed', () => {
     return Math.max(1, Math.floor(current / 2))
   }
 
-  return { breaker, applyBreaker, dismissBreaker, suggestedConcurrency }
+  return { breaker, source, applyBreaker, dismissBreaker, applySource, suggestedConcurrency }
 })

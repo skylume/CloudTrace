@@ -13,7 +13,7 @@ import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './histo
 import { useLogStore } from './log'
 import { useResultsStore } from './results'
 import { useSettingsStore } from './settings'
-import { useSpeedStore, type BreakerNotice } from './speed'
+import { useSpeedStore, type BreakerNotice, type SourceDecision } from './speed'
 import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
@@ -80,6 +80,8 @@ export function wireEvents(): void {
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
+
+  onEvent(EVT.speedSource, (data) => speed.applySource(data as SourceDecision))
 
   onEvent(EVT.speedBreaker, (data) => {
     const notice = data as BreakerNotice
