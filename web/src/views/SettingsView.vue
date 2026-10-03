@@ -15,6 +15,7 @@ import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settings
 import { useGeoStore } from '@/stores/geo'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
+import { checkCombinations, type ParamWarning } from '@/utils/paramRules'
 import { useNarrow } from '@/utils/useMediaQuery'
 
 const settings = useSettingsStore()
@@ -60,6 +61,19 @@ const values = computed<Record<string, unknown>>(
 
 const groupLabel = (id: string) => groupText[ui.lang][id] ?? id
 
+/**
+ * 组合起来不合理的参数。
+ *
+ * 只提示，不给「一键修复」：该改哪一边取决于用户想干什么。放在页面顶部而
+ * 不是塞进某一组里，是因为涉及的键往往横跨两组（并发在扫描、间隔在测速），
+ * 挂在任一组下都会让人以为改另一组就好。
+ */
+const warnings = computed<ParamWarning[]>(() => checkCombinations(values.value))
+
+function warningText(item: ParamWarning): string {
+  return t(`paramRule.${item.rule}` as never, { a: item.values[0] ?? 0, b: item.values[1] ?? 0 })
+}
+
 /** 改一项：只把这一项按点号路径拼成嵌套 patch，不动别的键。 */
 function change(path: string, value: unknown): void {
   sendCommand('settings/update', { patch: buildPatch(path, value), origins: { [path]: 'user' } })
@@ -96,6 +110,17 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       tone="warn"
       :message="t('settings.restartRequired', { keys: settings.restartRequired.join(', ') })"
     />
+
+    <div v-if="warnings.length > 0" class="warnings">
+      <Banner
+        v-for="item in warnings"
+        :key="item.rule"
+        tone="warn"
+        :message="warningText(item)"
+        :note="t('paramRule.onlyHint')"
+        :closable="false"
+      />
+    </div>
 
     <nav v-if="!narrow" class="groups" aria-label="设置分组">
       <button
@@ -202,6 +227,12 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .groups {

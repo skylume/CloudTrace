@@ -16,6 +16,7 @@ import { t } from '@/i18n'
 import { CUSTOM_PRESET, SCAN_PARAMS, SCAN_PRESETS, matchPreset } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
 import { useUIStore } from '@/stores/ui'
+import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
 const presetId = defineModel<string>('presetId', { required: true })
@@ -111,6 +112,19 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
   const clamped = Math.min(Math.max(value, spec.min ?? 0), spec.max ?? Number.MAX_SAFE_INTEGER)
   updateParam(key, clamped)
 }
+
+/**
+ * 组合起来不合理的参数。
+ *
+ * 与「超出建议区间」是两件事：那是个体越界，这里是两项都合法、搭在一起却
+ * 会互相抵消。两者都只提示——参数怎么设是用户的事，界面负责让他知道代价。
+ */
+const warnings = computed<ParamWarning[]>(() => checkScanParams(params.value))
+
+/** 把命中时的取值填进文案。模板里不拼字符串，避免被工具链吃掉。 */
+function warningText(item: ParamWarning): string {
+  return t(`paramRule.${item.rule}` as never, { a: item.values[0] ?? 0, b: item.values[1] ?? 0 })
+}
 </script>
 
 <template>
@@ -131,16 +145,31 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
       @update:model-value="applyPreset"
     />
 
-    <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
-    <Banner
-      v-for="item in adaptive.visibleSuggestions"
-      :key="item.key"
-      tone="info"
-      :message="suggestionText(item)"
-      :action-label="t('adaptive.accept')"
-      @action="adaptive.accept(item)"
-      @close="adaptive.dismiss(item.key)"
-    />
+    <div v-if="adaptive.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
+      <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
+      <Banner
+        v-for="item in adaptive.visibleSuggestions"
+        :key="item.key"
+        tone="info"
+        :message="suggestionText(item)"
+        :action-label="t('adaptive.accept')"
+        @action="adaptive.accept(item)"
+        @close="adaptive.dismiss(item.key)"
+      />
+
+      <!--
+        组合问题：只提示，不改值，也不给「一键修复」——该改哪一边取决于
+        用户想干什么，界面猜不出来。因此这里连关闭都不给，改到不冲突为止。
+      -->
+      <Banner
+        v-for="item in warnings"
+        :key="item.rule"
+        tone="warn"
+        :message="warningText(item)"
+        :note="t('paramRule.onlyHint')"
+        :closable="false"
+      />
+    </div>
 
     <p v-if="deviatedFrom" class="notice ct-subtle">{{ t('preset.appliesNextRun') }}</p>
 
@@ -191,6 +220,14 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
 
 .notice {
   margin: var(--space-2) 0 0;
+}
+
+/* 卡片本身是块级容器，子元素之间没有间距，这里补上。 */
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 /* 自适应徽标：小、克制，但一眼能看出这个值不是自己设的。点一下还原。 */

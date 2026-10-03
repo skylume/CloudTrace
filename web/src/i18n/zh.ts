@@ -307,4 +307,9 @@ export const zh = {
   'adaptive.ignore': '忽略',
   'adaptive.mute': '不再提示',
   'adaptive.appliedLog': '{key} 已自动调整：{from} → {to}',
+  'paramRule.title': '这组参数配合起来有问题',
+  'paramRule.speed_concurrency_vs_interval': '测速并发 {a} 而间隔只有 {b} 毫秒：目标挤在一起下，容易被测速源限速，测出来的速度也不代表真实值',
+  'paramRule.scan_workers_vs_timeout': '并发 {a} 而超时只有 {b} 毫秒：大量请求会在排队时就被判成超时，结果里会多出一批「不可达」',
+  'paramRule.threshold_vs_sample': '延迟阈值 {a} 毫秒而采样只有 {b} 个：很可能一个都过不了，白等一轮',
+  'paramRule.onlyHint': '只是提示，不会替你改',
 } as const

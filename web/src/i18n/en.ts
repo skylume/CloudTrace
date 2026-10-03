@@ -315,4 +315,9 @@ export const en: Record<keyof typeof zh, string> = {
   'adaptive.ignore': 'Ignore',
   'adaptive.mute': "Don't ask again",
   'adaptive.appliedLog': '{key} was adjusted automatically: {from} to {to}',
+  'paramRule.title': 'These settings do not work well together',
+  'paramRule.speed_concurrency_vs_interval': 'Concurrency {a} with only {b} ms between targets: they pile onto the test source at once, which invites rate limiting and makes the numbers unrepresentative',
+  'paramRule.scan_workers_vs_timeout': 'Concurrency {a} with a {b} ms timeout: many requests time out while still queued, so the results gain a batch of false "unreachable" entries',
+  'paramRule.threshold_vs_sample': 'A {a} ms latency limit with only {b} sampled addresses: you will likely get nothing back after waiting a whole round',
+  'paramRule.onlyHint': 'This is a hint only — nothing is changed for you',
 }

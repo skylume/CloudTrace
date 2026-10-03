@@ -15,6 +15,13 @@ const props = withDefaults(
     tone?: 'info' | 'ok' | 'warn' | 'bad'
     /** 一句话说明发生了什么。 */
     message: string
+    /**
+     * 可选的第二行，用更淡的字色。
+     *
+     * 放「这条提示意味着什么」这类共性说明：多条横幅同时出现时，把这句写进
+     * 每条的 message 里会重复好几遍，写在这里只说一次。
+     */
+    note?: string
     /** 可选的「怎么办」，直接写动作，不要写「点击这里」。 */
     actionLabel?: string
     /** 是否可关闭。熔断这类必须看到的提示不给关闭。 */
@@ -39,7 +46,10 @@ const ICONS: Record<string, string> = {
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
       <path :d="ICONS[props.tone]" />
     </svg>
-    <span class="text">{{ props.message }}</span>
+    <span class="text">
+      <span>{{ props.message }}</span>
+      <small v-if="props.note" class="note">{{ props.note }}</small>
+    </span>
     <button v-if="props.actionLabel" type="button" class="action" @click="emit('action')">
       {{ props.actionLabel }}
     </button>
@@ -98,7 +108,15 @@ const ICONS: Record<string, string> = {
 }
 
 .text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
+}
+
+.note {
+  opacity: 0.75;
+  font-size: var(--font-size-xs);
 }
 
 .spacer {
