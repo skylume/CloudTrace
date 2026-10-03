@@ -59,7 +59,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'scan',
     fields: [
-      { path: 'scan.workers', kind: 'int', min: 1, max: 200, primary: true },
+      { path: 'scan.workers', kind: 'int', min: 1, max: 2000, primary: true },
       { path: 'scan.sample_max', kind: 'int', min: 0, max: 5000, primary: true },
       { path: 'scan.latency_threshold', kind: 'int', min: 1, max: 5000, primary: true },
       { path: 'scan.ping_times', kind: 'int', min: 0, max: 20 },
@@ -79,14 +79,20 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'speed',
     fields: [
-      { path: 'speed.concurrency', kind: 'int', min: 1, max: 32, primary: true },
+      // 上限 16 是配置校验的硬边界，不是随手取的数：并发越高，多个目标同时
+      // 下载就越会互相抢带宽，测出来的是平均值而不是任何一个节点的真实速度。
+      { path: 'speed.concurrency', kind: 'int', min: 1, max: 16, primary: true },
       { path: 'speed.target_qualified', kind: 'int', min: 1, max: 100, primary: true },
       { path: 'speed.min_speed', kind: 'int', min: 0, max: 1000 },
       { path: 'speed.url_mode', kind: 'enum', options: ['auto', 'official', 'mobile_friendly', 'mobile_only', 'custom'] },
       { path: 'speed.custom_url', kind: 'text' },
       { path: 'speed.download_duration_s', kind: 'int', min: 1, max: 60 },
-      { path: 'speed.breaker_429', kind: 'int', min: 0, max: 100 },
-      { path: 'speed.interval_ms', kind: 'int', min: 0, max: 5000 },
+      // 至少熔断一次：0 会让限速一路测下去，拿到的速度全是假的。
+      { path: 'speed.breaker_429', kind: 'int', min: 1, max: 100 },
+      // 下限从 1 起：0 在请求里与「没带这个字段」无法区分，后端会把它当成
+      // 未设置并补成 1.2 秒。与其让 0 静默变成别的数，不如不给这个选项——
+      // 想要「几乎不等」填 1 即可，那个值会被原样采纳。
+      { path: 'speed.interval_ms', kind: 'int', min: 1, max: 5000 },
       { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 },
       { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 100 },
       { path: 'speed.weight_speed', kind: 'float', min: 0, max: 10, step: 0.1 },
@@ -97,10 +103,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'source',
     fields: [
-      { path: 'source.official_url_v4', kind: 'text' },
-      { path: 'source.official_url_v6', kind: 'text' },
-      { path: 'source.refresh_hours', kind: 'int', min: 0, max: 720 },
-      { path: 'source.allow_custom', kind: 'bool' },
       { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
       { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000 },
       { path: 'source.retry', kind: 'int', min: 0, max: 10 },
@@ -113,7 +115,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
       { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
       { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
-      { path: 'net.max_workers', kind: 'int', min: 1, max: 200, primary: true },
+      { path: 'net.max_workers', kind: 'int', min: 1, max: 2000, primary: true },
       { path: 'net.proxy', kind: 'text' },
       { path: 'net.force_direct', kind: 'bool' },
       { path: 'net.custom_dns', kind: 'list' },
@@ -139,7 +141,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'history.keep_mode', kind: 'enum', options: ['count', 'days'] },
       { path: 'history.keep_days', kind: 'int', min: 1, max: 3650 },
       { path: 'history.auto_save', kind: 'bool' },
-      { path: 'history.undo_seconds', kind: 'int', min: 0, max: 120 },
       { path: 'history.auto_dedup', kind: 'bool' },
       { path: 'data.dir', kind: 'path' },
       { path: 'data.portable', kind: 'bool' },
@@ -149,8 +150,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: 'export',
     fields: [
       { path: 'export.default_format', kind: 'enum', options: ['csv', 'json', 'txt'], primary: true },
-      { path: 'export.preset', kind: 'text' },
-      { path: 'export.include_unreached', kind: 'bool' },
       { path: 'export.csv_bom', kind: 'bool' },
       { path: 'export.default_fields', kind: 'enum', options: ['all', 'slim', 'ip_port'] },
       { path: 'export.filename_template', kind: 'text' },
@@ -162,7 +161,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
       { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], primary: true },
       { path: 'server.token', kind: 'text' },
-      { path: 'server.session_ttl_min', kind: 'int', min: 5, max: 43200 },
+      { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
       { path: 'server.open_browser', kind: 'bool', primary: true },
       { path: 'server.autostart', kind: 'bool' },
     ],
@@ -181,7 +180,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: 'advanced',
     fields: [
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
-      { path: 'advanced.diagnostic_bundle', kind: 'bool' },
       { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
       { path: 'advanced.check_update', kind: 'bool' },
     ],
@@ -207,10 +205,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
 
-    'scan.workers': { label: '并发', hint: '同时测多少个地址。弱网或老路由建议 50–100，最高 200' },
+    'scan.workers': { label: '并发', hint: '同时测多少个地址。弱网或老路由建议 50–100，超过 300 会明显加重路由器负担' },
     'scan.sample_max': { label: '采样上限', hint: '最多挑多少个地址来测。500 够用，5000 更全面但更慢' },
     'scan.latency_threshold': { label: '延迟阈值', hint: '超过这个延迟的节点直接淘汰' },
-    'scan.ping_times': { label: '探测次数', hint: '每个地址测几次。0 表示按档位自动决定' },
+    'scan.ping_times': { label: '探测次数', hint: '每个地址测几次。0 表示自动' },
     'scan.port': { label: '默认端口', hint: '默认 443。部分网络下 2053 / 2083 更稳' },
     'scan.timeout_ms': { label: '探测超时', hint: '单次探测等多久算失败' },
     'scan.retry': { label: '失败重试', hint: '探测失败后重试几次' },
@@ -219,18 +217,13 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.verify_nodes': { label: '采集节点明细', hint: '关掉会少发大量请求、明显更快，代价是结果里没有地区与运营商' },
     'scan.usability_check': { label: '测速前可用性校验', hint: '测速之前再确认一次节点还活着' },
 
-    'speed.concurrency': { label: '测速并发', hint: '同时下载多少个。太高容易触发限速' },
+    'speed.concurrency': { label: '测速并发', hint: '同时下载多少个，上限 16。太高容易触发限速，测出来的速度也不准' },
     'speed.target_qualified': { label: '合格节点数', hint: '测到多少个达标节点就停' },
     'speed.min_speed': { label: '最低速度', hint: '低于这个速度算不合格' },
     'speed.url_mode': { label: '测速源', hint: '自动会根据你的出口运营商选；也可固定用官方源或指定地址' },
     'speed.custom_url': { label: '自定义测速地址', hint: '仅在测速源选「自定义」时使用' },
     'speed.download_duration_s': { label: '单次测速时长', hint: '每个节点下载多久' },
-    'speed.breaker_429': { label: '限速熔断阈值', hint: '连续多少次被限速就停止。0 表示不熔断' },
-
-    'source.official_url_v4': { label: '官方 IPv4 段地址', hint: '官方网段的来源地址' },
-    'source.official_url_v6': { label: '官方 IPv6 段地址', hint: '官方网段的来源地址' },
-    'source.refresh_hours': { label: '网段刷新周期', hint: '多少小时重新拉一次官方网段。0 表示只手动' },
-    'source.allow_custom': { label: '允许自定义来源', hint: '关掉后只使用官方网段与远端地址' },
+    'speed.breaker_429': { label: '限速熔断阈值', hint: '连续多少次被限速就停止。设成 1 等于一遇到限速就停' },
 
     'geo.asn_source': { label: 'ASN 数据源', hint: 'iptoasn 免账号体积小；GeoLite2 查询更快但文件大。关掉则不显示运营商' },
     'geo.asn_db_path': { label: '库文件位置', hint: '可指向目录或文件。手动放置的文件会被优先使用' },
@@ -243,11 +236,8 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'history.keep_mode': { label: '保留方式', hint: '按份数或按天数清理' },
     'history.keep_days': { label: '保留天数', hint: '保留方式选「按天数」时生效' },
     'history.auto_save': { label: '自动存档', hint: '任务跑完自动存一份历史' },
-    'history.undo_seconds': { label: '撤销窗口（秒）', hint: '删除后多久内可以撤销' },
 
     'export.default_format': { label: '默认导出格式', hint: 'CSV 带 BOM，Excel 打开不乱码' },
-    'export.preset': { label: '默认导出字段', hint: '导出时预选的字段组合' },
-    'export.include_unreached': { label: '导出包含不可达节点', hint: '默认不导出——不可达的节点交给下游没有意义' },
 
     'server.port': { label: '面板端口', hint: '改完需要重启才生效。旧版本用过 18543，当前统一为 17443' },
     'server.bind': { label: '监听地址', hint: '仅本机时只有这台电脑能访问；局域网会让同网段的设备都能打开，此时务必设好访问 Token' },
@@ -263,7 +253,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.sound': { label: '提示音', hint: '默认关闭，避免在公共场合突然出声' },
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
-    'advanced.diagnostic_bundle': { label: '允许导出诊断包', hint: '打包日志与脱敏后的配置，便于反馈问题' },
     'ui.density': { label: '参数密度', hint: '简单模式下参数默认折叠；一旦展开过高级模式就会永久记住' },
     'ui.start_page': { label: '启动页面', hint: '下次打开直接落在哪一页' },
     'ui.time_format': { label: '时间显示', hint: '本地时间或 UTC' },
@@ -318,10 +307,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
 
-    'scan.workers': { label: 'Concurrency', hint: 'How many addresses at once. 50-100 on weak networks; 200 max' },
+    'scan.workers': { label: 'Concurrency', hint: 'How many addresses at once. 50-100 on weak networks; above 300 strains the router' },
     'scan.sample_max': { label: 'Sample limit', hint: 'How many addresses to test. 500 is enough; 5000 is thorough but slower' },
     'scan.latency_threshold': { label: 'Latency limit', hint: 'Nodes above this latency are dropped' },
-    'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 lets the preset decide' },
+    'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 means automatic' },
     'scan.port': { label: 'Default port', hint: '443 by default. 2053 / 2083 are steadier on some networks' },
     'scan.timeout_ms': { label: 'Probe timeout', hint: 'How long one probe waits before failing' },
     'scan.retry': { label: 'Retries', hint: 'Retries after a failed probe' },
@@ -330,18 +319,13 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.verify_nodes': { label: 'Collect node details', hint: 'Off sends far fewer requests but drops region and operator info' },
     'scan.usability_check': { label: 'Usability check before speed test', hint: 'Confirms nodes are still alive right before testing' },
 
-    'speed.concurrency': { label: 'Test concurrency', hint: 'How many downloads at once. Too many triggers rate limits' },
+    'speed.concurrency': { label: 'Test concurrency', hint: 'How many downloads at once, 16 max. Too many triggers rate limits and skews the numbers' },
     'speed.target_qualified': { label: 'Qualified targets', hint: 'Stop after this many nodes pass' },
     'speed.min_speed': { label: 'Minimum speed', hint: 'Below this a node does not qualify' },
     'speed.url_mode': { label: 'Test source', hint: 'Auto picks by your ISP; you can also pin the official source or a custom URL' },
     'speed.custom_url': { label: 'Custom test URL', hint: 'Only used when the source is set to custom' },
     'speed.download_duration_s': { label: 'Test duration', hint: 'How long each node downloads' },
-    'speed.breaker_429': { label: 'Rate-limit breaker', hint: 'Stop after this many consecutive rate limits. 0 disables it' },
-
-    'source.official_url_v4': { label: 'Official IPv4 URL', hint: 'Where the official ranges come from' },
-    'source.official_url_v6': { label: 'Official IPv6 URL', hint: 'Where the official ranges come from' },
-    'source.refresh_hours': { label: 'Refresh interval', hint: 'Hours between official range refreshes. 0 means manual only' },
-    'source.allow_custom': { label: 'Allow custom sources', hint: 'When off, only official ranges and remote addresses are used' },
+    'speed.breaker_429': { label: 'Rate-limit breaker', hint: 'Stop after this many consecutive rate limits. 1 stops on the first one' },
 
     'geo.asn_source': { label: 'ASN source', hint: 'iptoasn needs no account and is small; GeoLite2 is faster but larger. Off hides operator info' },
     'geo.asn_db_path': { label: 'Database location', hint: 'A directory or a file. A manually placed file takes precedence' },
@@ -354,11 +338,8 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'history.keep_mode': { label: 'Retention mode', hint: 'Clean up by count or by age' },
     'history.keep_days': { label: 'Keep days', hint: 'Used when retention mode is by age' },
     'history.auto_save': { label: 'Auto-save', hint: 'Save a record automatically when a task finishes' },
-    'history.undo_seconds': { label: 'Undo window (seconds)', hint: 'How long a deletion can be undone' },
 
     'export.default_format': { label: 'Default format', hint: 'CSV includes a BOM so Excel opens it correctly' },
-    'export.preset': { label: 'Default fields', hint: 'The field set pre-selected when exporting' },
-    'export.include_unreachable': { label: 'Include unreachable nodes', hint: 'Off by default — unreachable nodes are useless downstream' },
 
     'server.port': { label: 'Panel port', hint: 'Requires a restart. Older builds used 18543; this one standardises on 17443' },
     'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in — set an access token first' },
@@ -374,7 +355,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.sound': { label: 'Sound', hint: 'Off by default so it does not blurt out in public' },
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
-    'advanced.diagnostic_bundle': { label: 'Allow diagnostic bundle', hint: 'Packages logs and a redacted config for reporting issues' },
     'ui.density': { label: 'Parameter density', hint: 'Simple hides parameters by default; expanding once is remembered' },
     'ui.start_page': { label: 'Start page', hint: 'Which page to open on next launch' },
     'ui.time_format': { label: 'Time display', hint: 'Local time or UTC' },

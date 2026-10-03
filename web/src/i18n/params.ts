@@ -47,10 +47,12 @@ export const SCAN_PARAMS: ParamSpec[] = [
     hintKey: 'param.scan.workers.hint',
     kind: 'int',
     min: 1,
-    max: 200,
+    // 硬上限就是后端校验的上限。它比内置档位高得多是有意的：档位只到 200，
+    // 但手填是高级选项，用户有权设得更大——该做的是给警示色，不是拦住他。
+    max: 2000,
     summary: true,
     // 弱网与老路由上并发拉满会把自己的网络压垮，而结果反而更差。
-    warnAbove: 150,
+    warnAbove: 300,
   },
   {
     key: 'latencyThreshold',
