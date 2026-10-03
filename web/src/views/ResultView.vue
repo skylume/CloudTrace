@@ -9,11 +9,13 @@ import { computed, onMounted, ref } from 'vue'
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
+import Banner from '@/components/ui/Banner.vue'
 import RadarPulse from '@/components/ui/RadarPulse.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
 import { useResultsStore } from '@/stores/results'
+import { useSpeedStore } from '@/stores/speed'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
 import { formatLatency, formatSpeed } from '@/utils/latency'
@@ -22,6 +24,7 @@ import { useNarrow } from '@/utils/useMediaQuery'
 const results = useResultsStore()
 const fields = useFieldsStore()
 const task = useTaskStore()
+const speed = useSpeedStore()
 const ui = useUIStore()
 
 const narrow = useNarrow()
@@ -92,6 +95,17 @@ function startSpeed(targets: typeof results.all): void {
 function applyPreset(id: string): void {
   fields.applyPreset(id as ColumnPresetId)
 }
+
+/**
+ * 按熔断建议改配置。
+ *
+ * 走 settings/update 而不是只改本地：并发与测速源都是服务端配置，只改本地
+ * 的话下一次测速仍然会用回原值——用户会以为建议没生效。
+ */
+function applyBreakerFix(patch: Record<string, unknown>): void {
+  sendCommand('settings/update', { patch: { speed: patch }, origins: {} })
+  speed.dismissBreaker()
+}
 </script>
 
 <template>
@@ -105,6 +119,15 @@ function applyPreset(id: string): void {
     </div>
 
     <template v-else>
+      <Banner
+        v-if="speed.breaker && view === 'speed'"
+        tone="warn"
+        :message="speed.breaker.message"
+        :action-label="t('speed.lowerConcurrency', { value: speed.suggestedConcurrency() })"
+        @action="applyBreakerFix({ concurrency: speed.suggestedConcurrency() })"
+        @close="speed.dismissBreaker()"
+      />
+
       <div class="stats">
         <div v-for="item in stats" :key="item.label" class="stat">
           <span class="ct-subtle">{{ item.label }}</span>

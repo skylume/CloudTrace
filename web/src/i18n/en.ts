@@ -275,4 +275,7 @@ export const en: Record<keyof typeof zh, string> = {
   'opt.warn': 'Warnings',
   'opt.error': 'Errors only',
   'history.deleted': 'Deleted — undo within {seconds} seconds',
+  'speed.breaker.title': 'Rate limited — speed test stopped',
+  'speed.lowerConcurrency': 'Lower concurrency to {value}',
+  'speed.switchSource': 'Switch to the official source',
 }

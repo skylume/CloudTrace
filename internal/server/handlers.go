@@ -92,8 +92,34 @@ func (s *server) onTaskError(payload any) {
 	code := CodeUnknown
 	if errors.Is(err, speed.ErrRateLimited) {
 		code = CodeNetwork
+		s.broadcastBreaker(err)
 	}
 	s.hub.broadcast(eventError, errorPayload{Code: code, Msg: err.Error()})
+}
+
+// broadcastBreaker 在熔断时额外广播一条可操作的通知。
+//
+// 与错误事件分开：错误提示只说明「出错了」，而熔断有明确的下一步——降低并发
+// 或者换测速源。把这两条建议随事件一起给出，界面才能把它们做成按钮，而不是
+// 让用户自己去设置页里找。
+//
+// 带上当前配置值而不是让前端猜：建议「降到多少」得有个起点，起点只能是当前值。
+func (s *server) broadcastBreaker(err error) {
+	cfg := s.cfg.Get()
+	s.hub.broadcast(eventSpeedBreaker, speedBreakerPayload{
+		Message:     err.Error(),
+		Concurrency: cfg.Speed.Concurrency,
+		URLMode:     cfg.Speed.URLMode,
+	})
+}
+
+// speedBreakerPayload 是熔断通知的载荷。
+type speedBreakerPayload struct {
+	Message string `json:"message"`
+	// Concurrency 是当前配置的测速并发，「降低并发」建议以它为起点。
+	Concurrency int `json:"concurrency"`
+	// URLMode 是当前的测速源模式，供「换个源」建议使用。
+	URLMode string `json:"url_mode"`
 }
 
 // handleScanStart 校验参数并启动扫描任务。

@@ -43,6 +43,8 @@ export const EVT = {
   scanDone: 'scan/done',
   scanAbort: 'scan/abort',
   speedPartial: 'speed/partial',
+  /** 测速被限流熔断。带可操作的建议，与一般错误分开。 */
+  speedBreaker: 'speed/breaker',
   speedDone: 'speed/done',
   speedAbort: 'speed/abort',
 

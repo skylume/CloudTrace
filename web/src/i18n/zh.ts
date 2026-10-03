@@ -267,4 +267,7 @@ export const zh = {
   'opt.warn': '警告',
   'opt.error': '仅错误',
   'history.deleted': '已删除，可在 {seconds} 秒内撤销',
+  'speed.breaker.title': '测速被限速，已停止',
+  'speed.lowerConcurrency': '降低并发到 {value}',
+  'speed.switchSource': '换用官方源',
 } as const

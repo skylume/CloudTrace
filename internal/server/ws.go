@@ -40,6 +40,10 @@ const (
 	eventState = "state"
 	eventPong  = "pong"
 	eventError = "error"
+
+	// eventSpeedBreaker 在测速被限流熔断时广播，带可操作的建议。
+	// 与 error 分开：错误只说「出错了」，这条要能让界面给出「降低并发」这类按钮。
+	eventSpeedBreaker = "speed/breaker"
 )
 
 // message 是前后端统一的 WS 报文：{"type": ..., "data": ...}。

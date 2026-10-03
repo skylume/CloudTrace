@@ -13,6 +13,7 @@ import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './histo
 import { useLogStore } from './log'
 import { useResultsStore } from './results'
 import { useSettingsStore } from './settings'
+import { useSpeedStore, type BreakerNotice } from './speed'
 import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
@@ -49,6 +50,7 @@ export function wireEvents(): void {
   const geo = useGeoStore()
   const ui = useUIStore()
   const log = useLogStore()
+  const speed = useSpeedStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -78,6 +80,13 @@ export function wireEvents(): void {
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
+
+  onEvent(EVT.speedBreaker, (data) => {
+    const notice = data as BreakerNotice
+    speed.applyBreaker(notice)
+    // 日志里也留一条：提示条会被关掉，而「刚才为什么停了」之后还得能查到。
+    log.push(notice.message, 'warn')
+  })
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
   onEvent(EVT.geo, (data) => {
