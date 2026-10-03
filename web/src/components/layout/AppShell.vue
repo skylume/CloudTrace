@@ -10,6 +10,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import SideNav, { type NavItem } from './SideNav.vue'
+import BrandMark from '@/components/ui/BrandMark.vue'
 import { t } from '@/i18n'
 import { useGeoStore } from '@/stores/geo'
 import { useTaskStore } from '@/stores/task'
@@ -86,7 +87,7 @@ function select(id: string): void {
   <div class="shell">
     <aside class="sidebar" :class="{ collapsed, drawer: narrow, open: drawerOpen }">
       <div class="brand">
-        <span class="mark" aria-hidden="true" />
+        <BrandMark :size="collapsed ? 22 : 26" />
         <span v-if="!collapsed" class="name">{{ t('app.name') }}</span>
       </div>
 
@@ -192,14 +193,6 @@ function select(id: string): void {
 .sidebar.collapsed .brand {
   justify-content: center;
   padding: 0;
-}
-
-.mark {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
 }
 
 .name {

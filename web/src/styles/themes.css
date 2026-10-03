@@ -45,7 +45,11 @@
   --color-primary-text: #4338ca;
   --color-on-primary: #ffffff;
 
+  /* 品牌橙只出现在 Logo 与「推荐」徽章上，位置固定、面积小。
+     结果表里会成片出现橙（慢），主色若也是橙，按钮会和慢节点混为一谈。 */
   --color-brand: #f38020;
+  --color-brand-soft: rgb(243 128 32 / 12%);
+  --color-brand-border: rgb(243 128 32 / 30%);
 
   --color-ok: #0f766e;
   --color-ok-bg: rgb(15 118 110 / 10%);
@@ -100,6 +104,8 @@
   --color-on-primary: #ffffff;
 
   --color-brand: #f38020;
+  --color-brand-soft: rgb(243 128 32 / 16%);
+  --color-brand-border: rgb(243 128 32 / 34%);
 
   --color-ok: #34d399;
   --color-ok-bg: rgb(52 211 153 / 14%);
