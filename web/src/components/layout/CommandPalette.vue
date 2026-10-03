@@ -98,7 +98,7 @@ const commands = computed<Command[]>(() => {
       id: 'contrast',
       group: 'action',
       label: t('contrast.label'),
-      run: () => (ui.contrast = !ui.contrast),
+      run: () => ui.setContrast(!ui.contrast),
     },
     { id: 'geo-update', group: 'action', label: t('geo.update'), run: () => sendCommand('geo/update') },
     { id: 'health', group: 'action', label: t('health.run'), run: () => sendCommand('health/check') },

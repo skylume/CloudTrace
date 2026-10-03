@@ -258,6 +258,8 @@ export interface UIConfig {
   time_format: 'local' | 'utc'
   start_page: string
   animation: boolean
+  /** 高对比度：与深浅正交的可访问性开关。 */
+  contrast: boolean
   remember_state: boolean
   adaptive_enabled: boolean
   adaptive_allow_preset: boolean

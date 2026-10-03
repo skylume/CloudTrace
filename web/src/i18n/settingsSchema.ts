@@ -45,6 +45,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
       { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
       { path: 'ui.animation', kind: 'bool', primary: true },
+      { path: 'ui.contrast', kind: 'bool', primary: true },
       { path: 'ui.remember_state', kind: 'bool' },
       { path: 'ui.adaptive_enabled', kind: 'bool' },
       { path: 'ui.adaptive_allow_preset', kind: 'bool' },
@@ -117,6 +118,27 @@ export const SETTING_GROUPS: SettingGroup[] = [
     ],
   },
   {
+    id: 'server',
+    fields: [
+      { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
+      { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], primary: true },
+      { path: 'server.token', kind: 'text' },
+      { path: 'server.session_ttl_min', kind: 'int', min: 5, max: 43200 },
+      { path: 'server.open_browser', kind: 'bool', primary: true },
+      { path: 'server.autostart', kind: 'bool' },
+    ],
+  },
+  {
+    id: 'notify',
+    fields: [
+      { path: 'notify.on_done', kind: 'bool', primary: true },
+      { path: 'notify.on_fail', kind: 'bool', primary: true },
+      { path: 'notify.web', kind: 'bool' },
+      { path: 'notify.tray', kind: 'bool' },
+      { path: 'notify.sound', kind: 'bool' },
+    ],
+  },
+  {
     id: 'advanced',
     fields: [
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
@@ -139,6 +161,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.table_density': { label: '表格密度', hint: '只改行高，不动字号——两者互不干扰' },
     'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行' },
     'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
+    'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
     'ui.remember_state': { label: '记住界面状态', hint: '下次打开回到上次停留的页面与设置' },
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
@@ -185,6 +208,19 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'export.preset': { label: '默认导出字段', hint: '导出时预选的字段组合' },
     'export.include_unreached': { label: '导出包含不可达节点', hint: '默认不导出——不可达的节点交给下游没有意义' },
 
+    'server.port': { label: '面板端口', hint: '改完需要重启才生效。旧版本用过 18543，当前统一为 17443' },
+    'server.bind': { label: '监听地址', hint: '仅本机时只有这台电脑能访问；局域网会让同网段的设备都能打开，此时务必设好访问 Token' },
+    'server.token': { label: '访问 Token', hint: '开放局域网访问时的口令。留空表示不校验，仅本机访问时可以这样' },
+    'server.session_ttl_min': { label: '会话有效期（分钟）', hint: '登录后多久需要重新输入 Token' },
+    'server.open_browser': { label: '启动后打开浏览器', hint: '双击运行时省去手动输地址。开发时可用 --no-browser 跳过' },
+    'server.autostart': { label: '开机自启', hint: '仅桌面版有效' },
+
+    'notify.on_done': { label: '任务完成提醒', hint: '扫描或测速结束时提示一次' },
+    'notify.on_fail': { label: '任务失败提醒', hint: '任务出错时提示' },
+    'notify.web': { label: '浏览器通知', hint: '需要浏览器授权；被拒绝时不会重复询问' },
+    'notify.tray': { label: '托盘通知', hint: '仅桌面版有效' },
+    'notify.sound': { label: '提示音', hint: '默认关闭，避免在公共场合突然出声' },
+
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
     'advanced.diagnostic_bundle': { label: '允许导出诊断包', hint: '打包日志与脱敏后的配置，便于反馈问题' },
   },
@@ -195,6 +231,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.table_density': { label: 'Table density', hint: 'Changes row height only, never the font size' },
     'ui.page_size': { label: 'Rows per page', hint: 'How many rows the result table shows per page' },
     'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
+    'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },
     'ui.remember_state': { label: 'Remember UI state', hint: 'Reopen on the last page with the last settings' },
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
@@ -241,6 +278,19 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'export.preset': { label: 'Default fields', hint: 'The field set pre-selected when exporting' },
     'export.include_unreachable': { label: 'Include unreachable nodes', hint: 'Off by default — unreachable nodes are useless downstream' },
 
+    'server.port': { label: 'Panel port', hint: 'Requires a restart. Older builds used 18543; this one standardises on 17443' },
+    'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in — set an access token first' },
+    'server.token': { label: 'Access token', hint: 'The password for LAN access. Empty disables the check, which is fine for loopback only' },
+    'server.session_ttl_min': { label: 'Session lifetime (minutes)', hint: 'How long a sign-in lasts before the token is needed again' },
+    'server.open_browser': { label: 'Open browser on start', hint: 'Saves typing the address when double-clicking. Use --no-browser during development' },
+    'server.autostart': { label: 'Start on login', hint: 'Desktop build only' },
+
+    'notify.on_done': { label: 'Notify on completion', hint: 'One notification when a scan or speed test finishes' },
+    'notify.on_fail': { label: 'Notify on failure', hint: 'Notify when a task errors out' },
+    'notify.web': { label: 'Browser notifications', hint: 'Needs browser permission; a denial is not asked for again' },
+    'notify.tray': { label: 'Tray notifications', hint: 'Desktop build only' },
+    'notify.sound': { label: 'Sound', hint: 'Off by default so it does not blurt out in public' },
+
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
     'advanced.diagnostic_bundle': { label: 'Allow diagnostic bundle', hint: 'Packages logs and a redacted config for reporting issues' },
   },
@@ -261,6 +311,8 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     geo: 'ASN 与地理',
     history: '历史与数据',
     export: '导出',
+    server: '服务面板',
+    notify: '通知',
     advanced: '高级与调试',
   },
   en: {
@@ -271,6 +323,8 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     geo: 'ASN & geo',
     history: 'History & data',
     export: 'Export',
+    server: 'Service panel',
+    notify: 'Notifications',
     advanced: 'Advanced',
   },
 }

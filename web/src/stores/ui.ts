@@ -127,6 +127,7 @@ export const useUIStore = defineStore('ui', () => {
     // density 为 auto 时保持 auto：它表示「还没决定」，由首次使用来决定。
     density.value = ui.density
     animation.value = ui.animation
+    contrast.value = ui.contrast
     lang.value = ui.lang
   }
 
@@ -160,6 +161,17 @@ export const useUIStore = defineStore('ui', () => {
   function setLang(next: Locale): void {
     lang.value = next
     persist({ lang: next })
+  }
+
+  /**
+   * setContrast 切换高对比度并写回服务端。
+   *
+   * 它和主题一样存在服务端：一半界面设置存在服务端、一半存在本地，是最难向
+   * 用户解释的那种状态——「为什么换台电脑就变了」。
+   */
+  function setContrast(next: boolean): void {
+    contrast.value = next
+    persist({ contrast: next })
   }
 
   // 把状态贴到 DOM 与 localStorage。集中在一处，避免各组件各贴一部分。
@@ -212,5 +224,6 @@ export const useUIStore = defineStore('ui', () => {
     setDensity,
     setTheme,
     setLang,
+    setContrast,
   }
 })

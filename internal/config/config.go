@@ -96,6 +96,7 @@ type UIConfig struct {
 	TimeFormat          string `json:"time_format"`           // local | utc
 	StartPage           string `json:"start_page"`            // 启动页面
 	Animation           bool   `json:"animation"`             // 动效开关（可访问性）
+	Contrast            bool   `json:"contrast"`              // 高对比度（可访问性，与深浅正交）
 	RememberState       bool   `json:"remember_state"`        // 状态记忆
 	AdaptiveEnabled     bool   `json:"adaptive_enabled"`      // 自适应总开关
 	AdaptiveAllowPreset bool   `json:"adaptive_allow_preset"` // 是否允许调整内置档位填入的值
