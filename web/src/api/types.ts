@@ -158,6 +158,22 @@ export interface HistoryIndexEntry {
   params_hash?: string
 }
 
+/** 两份历史的对比结果。 */
+export interface HistoryDiff {
+  added_count: number
+  removed_count: number
+  changed_count: number
+  unchanged_count: number
+  avg_latency_a: number
+  avg_latency_b: number
+  latency_delta: number
+  best_changed: boolean
+  best_a: string
+  best_b: string
+  /** 各地区数量的变化（B 减 A），只列出有变化的部分。 */
+  region_delta: Record<string, number>
+}
+
 export interface ParamDiff {
   key: string
   label: string

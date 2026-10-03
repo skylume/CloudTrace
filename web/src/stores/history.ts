@@ -1,22 +1,26 @@
 /**
  * 历史：列表只读索引，详情才读记录文件。
  *
- * 索引里放够了列表要显示的字段，因此「列个表」不发任何读文件的请求——
- * 这是历史体系最要紧的一条性能约束，前端也要守住它。
+ * 索引里放够了列表要显示的字段，因此「列个表」不发任何读文件的请求——这是
+ * 历史体系最要紧的一条性能约束，前端也要守住它：列表页不调 history/get。
+ *
+ * 删除走软删除 + 撤销窗口，窗口长度由后端给（不写死在前端）：两端对窗口长度
+ * 的认知必须一致，否则会出现「撤销按钮还在、后端已经落定」的情况。
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { HistoryIndexEntry, HistoryRecord, ParamDiff } from '@/api/types'
+import { sendCommand } from '@/api/client'
+import type { HistoryDiff, HistoryIndexEntry, HistoryRecord, ParamDiff } from '@/api/types'
 
 export interface HistoryFilter {
-  type?: 'scan' | 'speed'
+  type?: string
   ip_version?: number
-  keyword?: string
-  tag?: string
+  region?: string
+  tags?: string[]
   starred?: boolean
-  limit?: number
-  offset?: number
+  min_count?: number
+  max_count?: number
 }
 
 export interface LoadedHistory {
@@ -30,12 +34,13 @@ export const useHistoryStore = defineStore('history', () => {
   const total = ref(0)
   const filter = ref<HistoryFilter>({})
   const loaded = ref<LoadedHistory | null>(null)
+  const diff = ref<HistoryDiff | null>(null)
 
   const starred = computed(() => entries.value.filter((entry) => entry.starred))
-  const regions = computed(() => {
+  const allTags = computed(() => {
     const set = new Set<string>()
     for (const entry of entries.value) {
-      for (const code of entry.regions ?? []) set.add(code)
+      for (const tag of entry.tags ?? []) set.add(tag)
     }
     return [...set].sort()
   })
@@ -49,13 +54,63 @@ export const useHistoryStore = defineStore('history', () => {
     loaded.value = payload
   }
 
-  /** 变更事件只带 id 与动作，列表要重新拉一次——本地拼不出准确的顺序。 */
-  function markStale(): void {
-    // 具体刷新由接线层触发，这里只留一个可观测的标记位。
-    stale.value = true
+  function applyDiff(next: HistoryDiff): void {
+    diff.value = next
   }
 
-  const stale = ref(false)
+  /** 拉列表。这是列表页唯一会发出的请求。 */
+  function refresh(): void {
+    sendCommand('history/list', { filter: filter.value })
+  }
 
-  return { entries, total, filter, loaded, starred, regions, stale, applyList, applyLoaded, markStale }
+  /**
+   * 加载一份历史。
+   *
+   * current 由前端带上：用户可能改完参数还没保存就来加载历史，服务端从配置里
+   * 取会给出与实际不符的差异结论。
+   */
+  function load(id: string, current: unknown): void {
+    sendCommand('history/load', { id, current })
+  }
+
+  function remove(id: string): void {
+    sendCommand('history/delete', { id })
+  }
+
+  function undo(id: string): void {
+    sendCommand('history/undo', { id })
+  }
+
+  function saveTags(id: string, patch: { tags?: string[]; note?: string; starred?: boolean }): void {
+    const entry = entries.value.find((item) => item.id === id)
+    sendCommand('history/tag', {
+      id,
+      tags: patch.tags ?? entry?.tags ?? [],
+      note: patch.note ?? entry?.note ?? '',
+      starred: patch.starred ?? entry?.starred ?? false,
+    })
+  }
+
+  function compare(idA: string, idB: string): void {
+    sendCommand('history/compare', { idA, idB })
+  }
+
+  return {
+    entries,
+    total,
+    filter,
+    loaded,
+    diff,
+    starred,
+    allTags,
+    applyList,
+    applyLoaded,
+    applyDiff,
+    refresh,
+    load,
+    remove,
+    undo,
+    saveTags,
+    compare,
+  }
 })

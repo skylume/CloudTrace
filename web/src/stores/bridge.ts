@@ -28,7 +28,7 @@ export function refreshSettings(): void {
 export function refreshHistory(filter?: HistoryFilter): void {
   const store = useHistoryStore()
   if (filter) store.filter = filter
-  sendCommand('history/list', { filter: store.filter })
+  store.refresh()
 }
 
 export function refreshGeo(): void {
@@ -92,14 +92,17 @@ export function wireEvents(): void {
   onEvent(EVT.historyList, (data) => {
     const payload = data as { entries?: unknown[]; total?: number }
     history.applyList((payload.entries ?? []) as never[], payload.total ?? 0)
-    history.stale = false
   })
   onEvent(EVT.historyLoad, (data) => history.applyLoaded(data as LoadedHistory))
+  onEvent(EVT.historyCompare, (data) => {
+    const payload = data as { diff?: unknown }
+    if (payload.diff) history.applyDiff(payload.diff as never)
+  })
   onEvent(EVT.historyChanged, (data) => {
     const change = data as HistoryChangePayload
-    history.markStale()
-    // 变更事件只带 id 与动作，列表要重新拉一次：本地拼不出准确的顺序。
-    console.debug('[bridge] 历史变更', change.id, change.action)
+    // 变更事件只带 id 与动作，列表要重新拉一次：本地拼不出准确的顺序，
+    // 也算不出保留策略会把哪一条挤掉。
+    log.push(t('history.title') + ' · ' + change.action)
     refreshHistory()
   })
 
