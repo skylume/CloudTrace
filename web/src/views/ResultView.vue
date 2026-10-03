@@ -120,6 +120,13 @@ function applyPreset(id: string): void {
             { value: 'speed', label: t('result.view.speed') },
           ]"
         />
+        <input
+          id="ct-result-search"
+          v-model="results.keyword"
+          class="ct-input search"
+          type="search"
+          :placeholder="t('common.search')"
+        />
         <span class="spacer" />
         <SegmentedControl :segments="presetSegments" :model-value="fields.presetId" @update:model-value="applyPreset" />
         <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
@@ -197,6 +204,10 @@ function applyPreset(id: string): void {
 
 .toolbar select {
   width: auto;
+}
+
+.search {
+  width: 180px;
 }
 
 .empty {

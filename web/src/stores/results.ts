@@ -82,6 +82,8 @@ export const useResultsStore = defineStore('results', () => {
   const sortKey = ref<SortKey>('loss')
   const sortDesc = ref(false)
   const groupBy = ref<GroupBy>('none')
+  /** 关键词：匹配地址、地区、运营商。Ctrl+F 聚焦到它的输入框。 */
+  const keyword = ref('')
 
   function touch(): void {
     version.value += 1
@@ -107,6 +109,7 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   function clear(): void {
+    keyword.value = ''
     records.value = new Map()
     selected.value = new Set()
     regionFilter.value = []
@@ -142,6 +145,16 @@ export const useResultsStore = defineStore('results', () => {
         const code = (record.colo || record.region_name || '').toUpperCase()
         // 地区未知的保守保留：误杀比多显示一行代价大得多。
         return code === '' || wanted.has(code)
+      })
+    }
+
+    const text = keyword.value.trim().toLowerCase()
+    if (text !== '') {
+      list = list.filter((record) => {
+        const haystack = [record.ip, record.region_name, record.colo, record.as_org, String(record.asn ?? '')]
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(text)
       })
     }
 
@@ -215,6 +228,7 @@ export const useResultsStore = defineStore('results', () => {
     visible,
     groups,
     groupBy,
+    keyword,
     total,
     stats,
     regionCounts,

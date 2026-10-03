@@ -5,7 +5,7 @@
  * 这个文件只做编排：连 store、组装请求、把区域分给组件。具体控件一律在
  * 子组件里——页面模板保持短，才能逼着结构被拆开。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import LogPanel from '@/components/scan/LogPanel.vue'
@@ -16,6 +16,7 @@ import Banner from '@/components/ui/Banner.vue'
 import RadarPulse from '@/components/ui/RadarPulse.vue'
 import { t } from '@/i18n'
 import { matchPreset, presetValues } from '@/i18n/params'
+import { useActionStore } from '@/stores/actions'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
 import { useResultsStore } from '@/stores/results'
@@ -27,6 +28,7 @@ const geo = useGeoStore()
 const log = useLogStore()
 const results = useResultsStore()
 const settings = useSettingsStore()
+const actions = useActionStore()
 
 /** 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。 */
 const params = ref<Record<string, number | boolean>>({ ...presetValues('fast') })
@@ -51,7 +53,16 @@ const WIRE_KEYS: Record<string, string> = {
   verifyNodes: 'verify_nodes',
 }
 
+/**
+ * 把「开始扫描」注册给动作注册表。
+ *
+ * 命令面板与 Ctrl+Enter 都从这里调用，走的是与按钮完全相同的路径——参数、
+ * 来源合并、日志都一致，不会出现「快捷键启动的任务少带了来源」这种偏差。
+ */
+let unregister: (() => void) | null = null
+
 onMounted(() => {
+  unregister = actions.register('startScan', start)
   // 配置到了就按配置初始化；没到时先用「快速」档，界面不会空着。
   const scan = settings.values?.scan as Record<string, unknown> | undefined
   if (!scan) return
@@ -63,6 +74,8 @@ onMounted(() => {
   params.value = next
   presetId.value = matchPreset(next)
 })
+
+onBeforeUnmount(() => unregister?.())
 
 /** 组装后端要的扫描参数。 */
 function buildRequest(): Record<string, unknown> {

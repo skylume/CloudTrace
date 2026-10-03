@@ -6,13 +6,19 @@
  * 而路由会带来 history 与打包拆分两处额外复杂度，对这个体量的应用不划算。
  * 当前页面记在本地，下次打开直接回到上次停留的地方。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import AppShell from '@/components/layout/AppShell.vue'
+import CommandPalette from '@/components/layout/CommandPalette.vue'
 import ToastStack from '@/components/ui/ToastStack.vue'
 import type { NavItem } from '@/components/layout/SideNav.vue'
+import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
+import { useActionStore } from '@/stores/actions'
+import { useResultsStore } from '@/stores/results'
+import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
+import { useHotkeys } from '@/utils/hotkeys'
 
 import HistoryView from '@/views/HistoryView.vue'
 import ResultView from '@/views/ResultView.vue'
@@ -20,6 +26,64 @@ import ScanView from '@/views/ScanView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 
 const ui = useUIStore()
+const task = useTaskStore()
+const results = useResultsStore()
+const actions = useActionStore()
+
+const paletteOpen = ref(false)
+
+/** 复制选中的节点，格式为 ip:port。 */
+async function copySelected(): Promise<void> {
+  const text = results.selectedRecords.map((record) => `${record.ip}:${record.port}`).join('\n')
+  if (text === '') return
+  try {
+    await navigator.clipboard.writeText(text)
+    ui.pushToast({ kind: 'ok', message: t('common.copied') })
+  } catch {
+    ui.pushToast({ kind: 'warn', message: t('common.copy') })
+  }
+}
+
+/**
+ * 全局快捷键。
+ *
+ * Esc 的优先级是「先关浮层、再停任务」：面板开着的时候按 Esc，用户想关的是
+ * 面板，而不是把正在跑的任务停掉。
+ */
+useHotkeys([
+  { key: 'k', ctrl: true, allowInInput: true, handler: () => (paletteOpen.value = !paletteOpen.value) },
+  {
+    key: 'enter',
+    ctrl: true,
+    allowInInput: true,
+    handler: () => {
+      if (paletteOpen.value) return
+      actions.runStartScan()
+    },
+  },
+  {
+    key: 'escape',
+    allowInInput: true,
+    handler: () => {
+      if (paletteOpen.value) {
+        paletteOpen.value = false
+        return
+      }
+      if (task.running) sendCommand('scan/stop')
+    },
+  },
+  {
+    key: 'f',
+    ctrl: true,
+    handler: () => {
+      if (ui.activeView !== 'result') ui.activeView = 'result'
+      // 搜索框在结果页工具栏里，用 id 定位比层层透传 ref 简单得多。
+      requestAnimationFrame(() => document.getElementById('ct-result-search')?.focus())
+    },
+  },
+  { key: 'a', ctrl: true, shift: true, handler: () => ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced') },
+  { key: 'c', ctrl: true, handler: () => void copySelected() },
+])
 
 const NAV: NavItem[] = [
   { id: 'scan', labelKey: 'nav.scan', descKey: 'nav.scan.desc' },
@@ -43,6 +107,7 @@ const title = computed(() => t(`nav.${activeId.value}` as never))
   <AppShell :items="NAV" :active="activeId" :title="title" @select="ui.activeView = $event">
     <component :is="activeComponent" />
   </AppShell>
-  <!-- 提示栈挂在外壳之外：它是全局的，不该被内容区的滚动或布局影响。 -->
+  <!-- 浮层挂在外壳之外：它们是全局的，不该被内容区的滚动或布局影响。 -->
+  <CommandPalette v-model="paletteOpen" />
   <ToastStack />
 </template>
