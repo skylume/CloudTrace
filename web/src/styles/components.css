@@ -168,3 +168,27 @@
   background: var(--color-primary-soft);
   color: var(--color-primary-text);
 }
+
+/*
+ * 窄屏下的触摸目标。
+ *
+ * 鼠标指针可以精确到一个像素，手指不行：44×44 是通行的下限。只在窄屏放大，
+ * 桌面端保持紧凑——桌面上一排 44px 高的按钮会白白吃掉纵向空间。
+ */
+@media (max-width: 768px) {
+  .ct-btn {
+    min-height: 44px;
+    padding: 0 var(--space-4);
+  }
+
+  .ct-check {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ct-link {
+    /* 文字按钮同样要有足够的可点区域。 */
+    min-height: 32px;
+    padding: 0 var(--space-1);
+  }
+}

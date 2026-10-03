@@ -7,14 +7,16 @@
  *   - 任务进度放顶栏而不是内容区：切到别的页面时进度不该消失；
  *   - 连接状态放侧栏底部而不是顶栏：它是个长期状态，不该和临时提示抢位置。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import SideNav, { type NavItem } from './SideNav.vue'
 import BrandMark from '@/components/ui/BrandMark.vue'
+import BottomTabs from './BottomTabs.vue'
 import { t } from '@/i18n'
 import { useGeoStore } from '@/stores/geo'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
+import { useNarrow } from '@/utils/useMediaQuery'
 
 const props = defineProps<{
   items: NavItem[]
@@ -28,25 +30,13 @@ const task = useTaskStore()
 const ui = useUIStore()
 const geo = useGeoStore()
 
-/** 窄屏时侧栏变成抽屉。桌面端由用户自己决定是否收起。 */
-const narrow = ref(false)
+/** 窄屏时侧栏变成抽屉、底部出现标签栏。桌面端由用户自己决定是否收起。 */
+const narrow = useNarrow()
 const drawerOpen = ref(false)
 
-const media = typeof matchMedia === 'function' ? matchMedia('(max-width: 900px)') : null
-
-function syncNarrow(matches: boolean): void {
-  narrow.value = matches
-  if (!matches) drawerOpen.value = false
-}
-
-onMounted(() => {
-  if (!media) return
-  syncNarrow(media.matches)
-  media.addEventListener('change', (event) => syncNarrow(event.matches))
-})
-
-onBeforeUnmount(() => {
-  if (media) media.removeEventListener('change', (event) => syncNarrow(event.matches))
+// 从窄屏切回宽屏时把抽屉收掉，否则它会以浮层形式留在宽屏上。
+watch(narrow, (isNarrow) => {
+  if (!isNarrow) drawerOpen.value = false
 })
 
 const collapsed = computed(() => !narrow.value && ui.navCollapsed)
@@ -156,6 +146,9 @@ function select(id: string): void {
       <div class="content">
         <slot />
       </div>
+
+      <!-- 窄屏下的主导航。抽屉保留下来装连接状态这类「看一眼就好」的信息。 -->
+      <BottomTabs v-if="narrow" :items="props.items" :active="props.active" @select="select" />
     </section>
   </div>
 </template>
@@ -394,7 +387,8 @@ function select(id: string): void {
 
 @media (max-width: 900px) {
   .content {
-    padding: var(--space-4) var(--space-4) var(--space-6);
+    /* 底部多留一截：Tab 栏是 sticky 的，不留白最后一行会被压在它下面。 */
+    padding: var(--space-4) var(--space-4) var(--space-7);
   }
 }
 </style>

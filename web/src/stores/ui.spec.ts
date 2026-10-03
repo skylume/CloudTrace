@@ -10,7 +10,9 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const sendCommand = vi.fn(() => true)
+// 声明成接收任意参数：下面的 mock 工厂要把它透传出去，
+// 零参数的 vi.fn 会让展开实参在类型上过不去。
+const sendCommand = vi.fn((..._args: unknown[]) => true)
 
 vi.mock('@/api/client', () => ({
   sendCommand: (...args: unknown[]) => sendCommand(...args),

@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
+import RecordCardList from '@/components/result/RecordCardList.vue'
 import RadarPulse from '@/components/ui/RadarPulse.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
@@ -16,12 +17,14 @@ import { useResultsStore } from '@/stores/results'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
 import { formatLatency, formatSpeed } from '@/utils/latency'
+import { useNarrow } from '@/utils/useMediaQuery'
 
 const results = useResultsStore()
 const fields = useFieldsStore()
 const task = useTaskStore()
 const ui = useUIStore()
 
+const narrow = useNarrow()
 const view = ref<'result' | 'speed'>('result')
 const expanded = ref<string[]>([])
 
@@ -132,7 +135,8 @@ function applyPreset(id: string): void {
         </button>
       </div>
 
-      <DataTable v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" @speed="onGroupSpeed" />
+      <RecordCardList v-if="narrow" :records="results.visible" />
+      <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" @speed="onGroupSpeed" />
       <p class="ct-subtle foot">{{ results.visible.length }} / {{ results.total }}</p>
     </template>
   </div>
