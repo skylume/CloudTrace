@@ -74,7 +74,13 @@ function formatSeconds(seconds: number): string {
 function cycleTheme(): void {
   const order = ['system', 'dark', 'light'] as const
   const index = order.indexOf(ui.theme)
-  ui.theme = order[(index + 1) % order.length] ?? 'system'
+  // 走 store 的 setter 而不是直接赋值：它会同时写回服务端，否则下次拉配置
+  // 就把这次切换覆盖掉了。
+  ui.setTheme(order[(index + 1) % order.length] ?? 'system')
+}
+
+function toggleLang(): void {
+  ui.setLang(ui.lang === 'zh' ? 'en' : 'zh')
 }
 
 function select(id: string): void {
@@ -142,7 +148,7 @@ function select(id: string): void {
             <circle cx="12" cy="12" r="3.5" />
           </svg>
         </button>
-        <button type="button" class="text-button" @click="ui.lang = ui.lang === 'zh' ? 'en' : 'zh'">
+        <button type="button" class="text-button" @click="toggleLang">
           {{ ui.lang === 'zh' ? 'EN' : '中' }}
         </button>
       </header>

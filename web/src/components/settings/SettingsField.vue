@@ -159,7 +159,15 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
   min-width: 0;
 }
 
-.control .ct-input {
+/* 下拉的选项文字比输入框长得多（如「GeoLite2（查询更快）」），
+   给一个下限宽度，别让它被后面的「恢复默认」挤到显示不全。 */
+.control select.ct-input {
+  flex: 0 1 auto;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.control input.ct-input {
   flex: 1;
   max-width: 280px;
 }

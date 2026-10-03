@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watchEffect } from 'vue'
 
+import { sendCommand } from '@/api/client'
 import type { UIConfig } from '@/api/types'
 import { setLocale, type Locale } from '@/i18n'
 
@@ -134,6 +135,33 @@ export const useUIStore = defineStore('ui', () => {
     density.value = next
   }
 
+  /**
+   * 把界面层的改动写回服务端。
+   *
+   * 必须写回，不能只改本地：服务端那份配置是唯一权威，而设置页每次进入都会
+   * 重新拉全量配置。只改本地的话，用户从顶栏切到深色、再点开设置页，就会被
+   * 服务端那份「跟随系统」覆盖回去——表现就是「切了没用」。
+   *
+   * 写回之后服务端会广播 settings，本地再以广播为准，两边始终一致。
+   */
+  function persist(patch: Record<string, unknown>): void {
+    const origins: Record<string, 'user'> = {}
+    for (const key of Object.keys(patch)) origins[`ui.${key}`] = 'user'
+    sendCommand('settings/update', { patch: { ui: patch }, origins })
+  }
+
+  /** setTheme 切换主题并写回服务端。 */
+  function setTheme(next: Theme): void {
+    theme.value = next
+    persist({ theme: next })
+  }
+
+  /** setLang 切换语言并写回服务端。 */
+  function setLang(next: Locale): void {
+    lang.value = next
+    persist({ lang: next })
+  }
+
   // 把状态贴到 DOM 与 localStorage。集中在一处，避免各组件各贴一部分。
   watchEffect(() => {
     const root = document.documentElement
@@ -182,5 +210,7 @@ export const useUIStore = defineStore('ui', () => {
     dismissToast,
     applyFromSettings,
     setDensity,
+    setTheme,
+    setLang,
   }
 })
