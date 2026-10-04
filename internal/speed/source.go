@@ -88,8 +88,13 @@ type SourceResolver struct {
 	// 照常工作。
 	asn geo.LookupFunc
 
-	mu     sync.Mutex
-	cached string
+	mu sync.Mutex
+	// cached 是上一次的完整判定，不只是选出的地址。
+	//
+	// 只缓存地址会丢掉「为什么选它」：缓存命中时说不出出口是不是移动宽带，
+	// 而那个判断同时是自适应降并发的唯一信号来源。缓存整份判定，命中也答得
+	// 上来。
+	cached SourceDecision
 	at     time.Time
 }
 
@@ -121,8 +126,6 @@ func (r *SourceResolver) SetASNLookup(fn geo.LookupFunc) { r.asn = fn }
 const (
 	// ReasonPinned 是用户明确指定了测速源。
 	ReasonPinned = "pinned"
-	// ReasonCached 是沿用本次运行已有的判断，没有重新探测。
-	ReasonCached = "cached"
 	// ReasonMobile 是探测到出口属于中国移动，因而用移动测速源。
 	ReasonMobile = "mobile"
 	// ReasonNotMobile 是出口不属于中国移动，用官方源。
@@ -172,8 +175,8 @@ func (r *SourceResolver) Decide(ctx context.Context, mode, customURL string) (So
 
 // decideAuto 探测出口 ISP 并据此选源，结果在 TTL 内复用。
 func (r *SourceResolver) decideAuto(ctx context.Context) SourceDecision {
-	if cached, ok := r.cachedValue(); ok {
-		return SourceDecision{URL: cached, Code: ReasonCached}
+	if cached, ok := r.cachedDecision(); ok {
+		return cached
 	}
 
 	info, err := r.probe(ctx)
@@ -192,7 +195,7 @@ func (r *SourceResolver) decideAuto(ctx context.Context) SourceDecision {
 		decision.Detail = describeISP(info)
 	}
 
-	r.store(decision.URL)
+	r.store(decision)
 	return decision
 }
 
@@ -232,20 +235,32 @@ func (r *SourceResolver) fillASN(info ISPInfo) ISPInfo {
 	return ISPInfo{IP: info.IP, ASN: int(got.ASN), Org: got.Org}
 }
 
-func (r *SourceResolver) cachedValue() (string, bool) {
+func (r *SourceResolver) cachedDecision() (SourceDecision, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cached == "" || r.now().Sub(r.at) >= r.ttl {
-		return "", false
+	if r.cached.URL == "" || r.now().Sub(r.at) >= r.ttl {
+		return SourceDecision{}, false
 	}
 	return r.cached, true
 }
 
-func (r *SourceResolver) store(value string) {
+func (r *SourceResolver) store(decision SourceDecision) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cached = value
+	r.cached = decision
 	r.at = r.now()
+}
+
+/**
+ * MobileExit 判断出口是否属于移动宽带。
+ *
+ * 「智能推荐」要按网络环境给建议，而出口运营商只有这里知道。走 Decide 的自动
+ * 分支，因此与选速测源共用同一份十分钟缓存：重复点不会反复发探测请求。
+ *
+ * 探测失败不算错误：拿不到结论时按「不是移动宽带」处理，也就是不给建议。
+ */
+func (r *SourceResolver) MobileExit(ctx context.Context) bool {
+	return r.decideAuto(ctx).Code == ReasonMobile
 }
 
 // note 记录一次选源决策；日志函数未注入时静默跳过。

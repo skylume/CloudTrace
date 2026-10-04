@@ -60,6 +60,22 @@ type server struct {
 // 面板版把它交给 http.ListenAndServe；桌面版把它同时交给 Wails 的
 // AssetServer 与一个本地监听，从而保证两个发行版行为完全一致。
 func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, error) {
+	s, err := newServer(cfg, svc, listenPort)
+	if err != nil {
+		return nil, err
+	}
+	return s.routes(), nil
+}
+
+/**
+ * newServer 构造命令处理器本身，不做路由包装。
+ *
+ * 与 New 分开是为了让用例拿得到 `*server`：New 返回的是包好的 handler，测试里
+ * 只能通过 WebSocket 说话，而有些内部逻辑（如注入假探测、直接读状态）必须拿到
+ * 实例。为了可测而把这些逻辑抽成包级函数会把状态拆得到处都是，不如在这里留一
+ * 个入口。
+ */
+func newServer(cfg *config.Store, svc *app.Services, listenPort int) (*server, error) {
 	if cfg == nil {
 		return nil, errors.New("server: 配置不能为空")
 	}
@@ -108,7 +124,7 @@ func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, er
 		}
 	}
 
-	return s.routes(), nil
+	return s, nil
 }
 
 // onStateChanged 把状态快照广播给所有连接。

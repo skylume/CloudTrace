@@ -42,10 +42,11 @@ var phases = []string{model.PhaseScan, model.PhaseSpeed}
 // taskHandlers 返回任务相关的命令表。
 func (s *server) taskHandlers() map[string]commandHandler {
 	return map[string]commandHandler{
-		cmdScanStart:  s.handleScanStart,
-		cmdScanStop:   s.handleScanStop,
-		cmdSpeedStart: s.handleSpeedStart,
-		cmdSpeedStop:  s.handleSpeedStop,
+		cmdScanStart:         s.handleScanStart,
+		cmdScanStop:          s.handleScanStop,
+		cmdSpeedStart:        s.handleSpeedStart,
+		cmdSpeedStop:         s.handleSpeedStop,
+		cmdAdaptiveRecommend: s.handleAdaptiveRecommend,
 	}
 }
 
@@ -320,7 +321,7 @@ func (s *server) resolveSpeedSource(ctx context.Context, mode, customURL string)
 	})
 	// 选源顺带知道了出口运营商，这是「移动宽带」这个自适应信号唯一的来源。
 	if decision.Code == speed.ReasonMobile {
-		s.applyAdaptive(adaptive.SignalMobileISP)
+		s.applyAdaptive(adaptive.SignalMobileISP, false)
 	}
 	return decision.URL, nil
 }
@@ -333,7 +334,7 @@ func (s *server) resolveSpeedSource(ctx context.Context, mode, customURL string)
 //
 // 被调整的值一律留痕：发事件、写日志。规格里明确写了「不允许静默改动」，
 // 而「静默」指的是用户看不见——事件驱动界面上的徽标与还原按钮，日志留给事后查。
-func (s *server) applyAdaptive(signal adaptive.Signal) {
+func (s *server) applyAdaptive(signal adaptive.Signal, explicit bool) bool {
 	cfg := s.cfg.Get()
 	options := adaptive.Options{
 		Enabled:     cfg.UI.AdaptiveEnabled,
@@ -348,14 +349,21 @@ func (s *server) applyAdaptive(signal adaptive.Signal) {
 		{"speed.concurrency", cfg.Speed.Concurrency},
 	}
 
+	applied := false
 	for _, target := range targets {
-		decision := adaptive.Evaluate(adaptive.Request{
+		req := adaptive.Request{
 			Key:     target.key,
 			Current: target.current,
 			Origin:  cfg.Origins[target.key],
 			Signal:  signal,
 			Options: options,
-		})
+		}
+		var decision adaptive.Decision
+		if explicit {
+			decision = adaptive.EvaluateExplicit(req)
+		} else {
+			decision = adaptive.Evaluate(req)
+		}
 		if decision.Action == adaptive.ActionNone {
 			continue
 		}
@@ -373,6 +381,7 @@ func (s *server) applyAdaptive(signal adaptive.Signal) {
 				s.logger.Warn("自适应调整参数失败", "key", decision.Key, "err", err)
 				continue
 			}
+			applied = true
 			s.logger.Info("已按网络环境自动调整参数", "key", decision.Key, "from", decision.From, "to", decision.To, "reason", decision.Reason)
 			s.hub.broadcast(eventAdaptiveApplied, payload)
 			continue
@@ -381,6 +390,36 @@ func (s *server) applyAdaptive(signal adaptive.Signal) {
 		s.logger.Info("自适应只给出建议，未改动参数", "key", decision.Key, "from", decision.From, "to", decision.To, "reason", decision.Reason)
 		s.hub.broadcast(eventAdaptiveSuggestion, payload)
 	}
+	return applied
+}
+
+// cmdAdaptiveRecommend 是「智能推荐」命令。
+const cmdAdaptiveRecommend = "adaptive/recommend"
+
+// adaptiveRecommendTimeout 是一次出口探测的上限。
+const adaptiveRecommendTimeout = 20 * time.Second
+
+/**
+ * handleAdaptiveRecommend 按当前网络环境给一组调整并直接应用。
+ *
+ * 与自动自适应的区别只有一处：**不受来源限制**。用户点了这个按钮就是明确授权，
+ * 包括改他手填过的值——这正是「显式操作，不受限制」的意思。改动照样走
+ * adaptive/applied 事件，因此徽标与「还原」都还在，撤销路径与自动调整完全一样。
+ *
+ * 没有触发条件时返回一个明确的错误，而不是静默成功：按钮点下去什么都不发生，
+ * 用户只会怀疑它坏了。
+ */
+func (s *server) handleAdaptiveRecommend(_ *wsConn, _ json.RawMessage) error {
+	ctx, cancel := context.WithTimeout(context.Background(), adaptiveRecommendTimeout)
+	defer cancel()
+
+	if !s.speedSource.MobileExit(ctx) {
+		return fail(CodeInvalidParam, "当前网络环境没有可推荐的调整")
+	}
+	if !s.applyAdaptive(adaptive.SignalMobileISP, true) {
+		return fail(CodeInvalidParam, "当前参数已经在推荐范围内")
+	}
+	return nil
 }
 
 // adaptivePayload 是自适应事件的载荷。

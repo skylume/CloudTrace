@@ -50,11 +50,44 @@ func TestDefaultOriginIsAdjusted(t *testing.T) {
 		if got.Action != ActionAdjust {
 			t.Errorf("%s 来源的动作 = %q，期望 %q", origin, got.Action, ActionAdjust)
 		}
-		patch := got.Patch()
-		if patch == nil || patch["scan.workers"] != 80 {
+		if patch := got.Patch(); inner(patch)["workers"] != 80 {
 			t.Errorf("%s 来源的改动 = %v，期望 scan.workers=80", origin, patch)
 		}
 	}
+}
+
+/**
+ * 补丁必须是嵌套对象，不是点号扁平键。
+ *
+ * 配置存储收的是嵌套结构；把 `scan.workers` 当顶层键塞进去会被静默丢掉——
+ * 值一个字节没变，事件却已经发出去了，界面上于是出现「徽标显示已调整、实际
+ * 没改」的假象。这个错误真实存在过，而且看起来一切正常。
+ */
+func TestPatchIsNested(t *testing.T) {
+	got := EvaluateExplicit(Request{
+		Key:     "scan.workers",
+		Current: 300,
+		Signal:  SignalMobileISP,
+		Options: allOn(),
+	})
+
+	patch := got.Patch()
+	inner, ok := patch["scan"].(map[string]any)
+	if !ok {
+		t.Fatalf("补丁不是嵌套结构：%v", patch)
+	}
+	if inner["workers"] != 80 {
+		t.Errorf("scan.workers = %v，期望 80", inner["workers"])
+	}
+	if _, flat := patch["scan.workers"]; flat {
+		t.Error("补丁里不该出现点号扁平键：那样写不进配置")
+	}
+}
+
+// inner 取出补丁里的分组，顺带把「不是嵌套结构」这件事在断言里写清楚。
+func inner(patch map[string]any) map[string]any {
+	group, _ := patch["scan"].(map[string]any)
+	return group
 }
 
 // 关掉自适应之后只提示不动手。
@@ -189,5 +222,77 @@ func TestEmptyOriginBehavesLikeDefault(t *testing.T) {
 
 	if got.Action != ActionAdjust {
 		t.Fatalf("动作 = %q，期望 %q", got.Action, ActionAdjust)
+	}
+}
+
+/**
+ * EvaluateExplicit 是唯一能改「用户手填过的值」的入口。
+ *
+ * 它对应界面上的「智能推荐」按钮：用户主动点了就是明确授权。这里把它的边界
+ * 钉死——只放宽来源与开关，规则本身（什么信号该改哪个键、改成多少）与自动
+ * 路径完全一致，不会因为「显式」就多改一项。
+ */
+func TestEvaluateExplicitOverridesUserOrigin(t *testing.T) {
+	req := Request{
+		Key:     "scan.workers",
+		Current: 300,
+		Origin:  model.OriginUser,
+		Signal:  SignalMobileISP,
+		Options: allOn(),
+	}
+
+	// 自动路径：只建议，拿不到可写入的内容。
+	if got := Evaluate(req); got.Action != ActionSuggest || got.Patch() != nil {
+		t.Fatalf("自动路径 = %q patch=%v，期望只建议", got.Action, got.Patch())
+	}
+
+	// 显式路径：放行，且拿得到写入内容。
+	got := EvaluateExplicit(req)
+	if got.Action != ActionAdjust {
+		t.Fatalf("显式路径动作 = %q，期望 %q", got.Action, ActionAdjust)
+	}
+	if got.To != 80 {
+		t.Errorf("显式路径调后 = %d，期望 80", got.To)
+	}
+	if patch := got.Patch(); inner(patch)["workers"] != 80 {
+		t.Errorf("显式路径没给出可写入的内容：%v", patch)
+	}
+}
+
+// 全局开关关掉之后，显式操作照样放行——用户点按钮就是授权。
+func TestEvaluateExplicitIgnoresGlobalSwitch(t *testing.T) {
+	got := EvaluateExplicit(Request{
+		Key:     "scan.workers",
+		Current: 200,
+		Origin:  model.OriginPreset,
+		Signal:  SignalMobileISP,
+		Options: Options{Enabled: false, AllowPreset: false},
+	})
+
+	if got.Action != ActionAdjust {
+		t.Fatalf("动作 = %q，期望 %q", got.Action, ActionAdjust)
+	}
+}
+
+// 规则之外的东西一样不动：显式不等于「什么都能改」。
+func TestEvaluateExplicitStillRespectsRules(t *testing.T) {
+	cases := []struct {
+		name string
+		req  Request
+	}{
+		{"没有匹配的规则", Request{Key: "ui.page_size", Current: 100, Signal: SignalMobileISP, Options: allOn()}},
+		{"信号没有对应规则", Request{Key: "scan.workers", Current: 300, Signal: Signal("unknown"), Options: allOn()}},
+		{"已经在范围内", Request{Key: "scan.workers", Current: 80, Signal: SignalMobileISP, Options: allOn()}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EvaluateExplicit(tt.req)
+			if got.Action != ActionNone {
+				t.Errorf("动作 = %q，期望 %q", got.Action, ActionNone)
+			}
+			if got.Patch() != nil {
+				t.Errorf("不该给出可写入的内容：%v", got.Patch())
+			}
+		})
 	}
 }

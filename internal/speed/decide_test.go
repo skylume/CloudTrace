@@ -111,7 +111,13 @@ func TestDecideAutoMobileCarriesISPDetail(t *testing.T) {
 	}
 }
 
-// TTL 内复用上一次的判断，理由要如实说是「沿用」，不能让用户以为又探测了一次。
+/**
+ * TTL 内复用上一次的判断，且**理由原样保留**。
+ *
+ * 缓存里存的是整份判定而不是选出的地址：只存地址的话，第二次说不出「为什么
+ * 选它」，而那个判断同时是自适应降并发的唯一信号来源——缓存一命中，信号就
+ * 丢了。
+ */
 func TestDecideAutoSecondCallIsCached(t *testing.T) {
 	probe := &countingProbe{info: ISPInfo{IP: "100.64.0.1", ASN: 9808, Org: "CHINA MOBILE"}}
 	r := NewSourceResolver(probe.probe, newFakeClock().get, DefaultSourceTTL)
@@ -122,8 +128,8 @@ func TestDecideAutoSecondCallIsCached(t *testing.T) {
 	}
 
 	second, _ := r.Decide(context.Background(), URLModeAuto, "")
-	if second.Code != ReasonCached {
-		t.Errorf("第二次理由 = %q，期望 %q", second.Code, ReasonCached)
+	if second.Code != ReasonMobile {
+		t.Errorf("第二次理由 = %q，期望沿用 %q", second.Code, ReasonMobile)
 	}
 	if second.URL != first.URL {
 		t.Errorf("第二次选中 %q，与首次 %q 不一致", second.URL, first.URL)
@@ -143,5 +149,42 @@ func TestDescribeISPSkipsEmptyInfo(t *testing.T) {
 	}
 	if got := describeISP(ISPInfo{Org: "CHINA MOBILE"}); got != "CHINA MOBILE" {
 		t.Errorf("只有组织名时 = %q", got)
+	}
+}
+
+/**
+ * MobileExit 与选源共用同一份缓存。
+ *
+ * 「智能推荐」要按网络环境给建议，问的就是同一件事（出口是谁）。各探一次的话，
+ * 用户每点一次按钮就发一轮探测请求。
+ */
+func TestMobileExitSharesCacheWithDecide(t *testing.T) {
+	probe := &countingProbe{info: ISPInfo{IP: "100.64.0.1", ASN: 9808, Org: "CHINA MOBILE"}}
+	r := NewSourceResolver(probe.probe, newFakeClock().get, DefaultSourceTTL)
+
+	if !r.MobileExit(context.Background()) {
+		t.Fatal("中国移动出口应判定为移动宽带")
+	}
+	if n := probe.count(); n != 1 {
+		t.Fatalf("探测次数 = %d，期望 1", n)
+	}
+
+	// 选源与再问一次都该命中同一份缓存。
+	if _, err := r.Decide(context.Background(), URLModeAuto, ""); err != nil {
+		t.Fatalf("选源失败：%v", err)
+	}
+	_ = r.MobileExit(context.Background())
+	if n := probe.count(); n != 1 {
+		t.Errorf("又探测了一次，共 %d 次", n)
+	}
+}
+
+// 非移动出口返回 false——也就是「没有可推荐的调整」。
+func TestMobileExitFalseForOtherISPs(t *testing.T) {
+	probe := &countingProbe{info: ISPInfo{IP: "1.1.1.1", ASN: 13335, Org: "CLOUDFLARENET"}}
+	r := NewSourceResolver(probe.probe, newFakeClock().get, DefaultSourceTTL)
+
+	if r.MobileExit(context.Background()) {
+		t.Error("非移动出口不该判定为移动宽带")
 	}
 }

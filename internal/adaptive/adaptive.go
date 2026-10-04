@@ -9,6 +9,7 @@ package adaptive
 
 import (
 	"fmt"
+	"strings"
 
 	"cloudtrace/internal/model"
 )
@@ -112,6 +113,26 @@ var rules = []rule{
 
 // Evaluate 判定一个参数该怎么处理。
 func Evaluate(req Request) Decision {
+	return evaluate(req, false)
+}
+
+/**
+ * EvaluateExplicit 判定一次「用户主动要求的」调整。
+ *
+ * 与 Evaluate 的唯一区别是不受来源与全局开关限制：用户点了「智能推荐」，就是
+ * 明确授权这一次改动，包括改他手填过的值。
+ *
+ * 单独一个函数而不是给 Evaluate 加个 bool 开关：它绕过的是「自动逻辑绝不覆盖
+ * 用户的显式选择」那条红线，而那条红线的结构性保证正是靠 Evaluate 拿不到写入
+ * 内容来兜底的。一个布尔值可能被顺手打开，一个叫 EvaluateExplicit 的调用点
+ * 不会。
+ */
+func EvaluateExplicit(req Request) Decision {
+	return evaluate(req, true)
+}
+
+// evaluate 是两者的共同实现。
+func evaluate(req Request, explicit bool) Decision {
 	base := Decision{Action: ActionNone, Key: req.Key, From: req.Current, To: req.Current}
 
 	var matched *rule
@@ -132,6 +153,12 @@ func Evaluate(req Request) Decision {
 	}
 	base.To = to
 	base.Reason = matched.reason
+
+	if explicit {
+		// 用户主动点的，一路放行。
+		base.Action = ActionAdjust
+		return base
+	}
 
 	// 红线：用户显式设过的值，只建议、不改。
 	if req.Origin == model.OriginUser {
@@ -155,16 +182,40 @@ func Evaluate(req Request) Decision {
 	return base
 }
 
-// Patch 返回要写入配置的改动。
-//
-// **唯一能拿到写入内容的入口**：非调整动作一律返回空。调用方就算把建议当成
-// 调整来处理，也拿不到可以写入的东西——「不覆盖用户的值」因此是结构性保证，
-// 而不是靠每个调用点记得判断。
+/**
+ * Patch 返回要写入配置的改动，形状与设置补丁一致（嵌套对象）。
+ *
+ * **唯一能拿到写入内容的入口**：非调整动作一律返回空。调用方就算把建议当成
+ * 调整来处理，也拿不到可以写入的东西——「不覆盖用户的值」因此是结构性保证，
+ * 而不是靠每个调用点记得判断。
+ *
+ * Key 是配置里的点号路径，必须在这里拆成嵌套结构：配置存储收的是嵌套对象，
+ * 把 `scan.workers` 当顶层键塞进去会被静默丢掉——值一个字节没变，事件却已经
+ * 发出去了，界面上于是出现「徽标显示已调整、实际没改」的假象。
+ */
 func (d Decision) Patch() map[string]any {
 	if d.Action != ActionAdjust || d.Key == "" {
 		return nil
 	}
-	return map[string]any{d.Key: d.To}
+
+	parts := strings.Split(d.Key, ".")
+	out := map[string]any{}
+	cur := out
+	for i, part := range parts {
+		if part == "" {
+			// 路径里有空段说明键写错了，宁可什么都不返回，也不要写进一个
+			// 谁也认不出来的键。
+			return nil
+		}
+		if i == len(parts)-1 {
+			cur[part] = d.To
+			break
+		}
+		next := map[string]any{}
+		cur[part] = next
+		cur = next
+	}
+	return out
 }
 
 // String 便于日志与调试。

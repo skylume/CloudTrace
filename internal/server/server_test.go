@@ -31,6 +31,9 @@ type testStack struct {
 	ts    *httptest.Server
 	store *config.Store
 	svc   *app.Services
+	// srv 是命令处理器本身。多数用例走 WebSocket 就够了，需要注入假探测或直接
+	// 读内部状态的用例才用它。
+	srv *server
 }
 
 // newTestStack 装配一套真实的服务端（配置 → 服务容器 → handler → httptest）。
@@ -67,18 +70,18 @@ func newTestStack(t *testing.T, mutate func(*config.Config)) *testStack {
 
 	// 传入配置里的端口：体检要拿它把「自己占着自己的端口」排除掉，
 	// 重启提示也要拿它判断端口是否被改过。
-	handler, err := New(store, svc, store.Get().Server.Port)
+	srv, err := newServer(store, svc, store.Get().Server.Port)
 	if err != nil {
 		t.Fatalf("构造 handler 失败：%v", err)
 	}
 
-	ts := httptest.NewServer(handler)
+	ts := httptest.NewServer(srv.routes())
 	t.Cleanup(func() {
 		ts.Close()
 		_ = svc.Shutdown(context.Background())
 	})
 
-	return &testStack{ts: ts, store: store, svc: svc}
+	return &testStack{ts: ts, store: store, svc: svc, srv: srv}
 }
 
 // wsURL 把 httptest 的 http 地址转换成 WebSocket 地址。
