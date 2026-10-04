@@ -148,6 +148,17 @@ export function paramNameOf(path: string): string | undefined {
   return PATH_TO_PARAM[path]
 }
 
+/**
+ * 界面参数名 → 任务载荷里的字段名。
+ *
+ * 配置里是点号路径（`scan.sample_max`），任务载荷里是配置路径的最后一段
+ * （`sample_max`）。从 PARAM_PATHS 推出来而不是另维护一张表：两张表一旦不同步，
+ * 就会出现「界面上改了、发出去的请求里还是旧值」这种只看结果查不出来的问题。
+ */
+export const PARAM_WIRE_KEYS: Record<string, string> = Object.fromEntries(
+  Object.entries(PARAM_PATHS).map(([name, path]) => [name, path.split('.').pop() ?? name]),
+)
+
 /** 自定义档位的 id。用户手改任一参数后落到这里。 */
 export const CUSTOM_PRESET = 'custom'
 

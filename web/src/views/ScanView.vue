@@ -15,7 +15,7 @@ import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, matchPreset, presetValues } from '@/i18n/params'
+import { CUSTOM_PRESET, PARAM_WIRE_KEYS, matchPreset, presetValues } from '@/i18n/params'
 import { useActionStore } from '@/stores/actions'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
@@ -23,6 +23,7 @@ import { usePresetsStore } from '@/stores/presets'
 import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/task'
+import { diffScanParams, isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
 
 const task = useTaskStore()
 const geo = useGeoStore()
@@ -46,19 +47,6 @@ const officialCount = ref(0)
 
 const running = computed(() => task.running)
 const showEmpty = computed(() => !running.value && results.total === 0)
-
-/** 配置里的 scan 组是下划线命名，映射成界面用的驼峰。 */
-const WIRE_KEYS: Record<string, string> = {
-  sampleMax: 'sample_max',
-  workers: 'workers',
-  latencyThreshold: 'latency_threshold',
-  pingTimes: 'ping_times',
-  port: 'port',
-  timeoutMs: 'timeout_ms',
-  retry: 'retry',
-  twoPhase: 'two_phase',
-  verifyNodes: 'verify_nodes',
-}
 
 /**
  * 把「开始扫描」注册给动作注册表。
@@ -97,27 +85,58 @@ watch(() => source.value.remote, schedulePersistSource, { deep: true })
 watch(() => source.value.customText, schedulePersistSource)
 
 /**
- * 按配置与档位列表初始化面板。
+ * 上一次与服务端对齐过的参数。
  *
- * 参数优先取配置：那是用户上次用过的那组值。配置里一个扫描参数都没有时（首次
- * 运行）退到启动档位，界面不会空着。
+ * 用它做差分，而不是每次把整组参数写回去：整组写会把用户没碰过的项也标成
+ * `user`，自适应从此再也不能动它们——而用户只是改了其中一个。
+ */
+const synced = ref<Record<string, number | boolean>>({})
+
+let persistParamsTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 把用户改过的参数写回配置，带防抖。 */
+function schedulePersistParams(): void {
+  if (persistParamsTimer !== null) clearTimeout(persistParamsTimer)
+  persistParamsTimer = setTimeout(flushParams, 400)
+}
+
+function flushParams(): void {
+  persistParamsTimer = null
+  const { patch, origins } = diffScanParams(params.value, synced.value)
+  if (Object.keys(patch).length === 0) return
+  sendCommand('settings/update', { patch: { scan: patch }, origins })
+}
+
+watch(() => params.value, schedulePersistParams, { deep: true })
+
+/**
+ * 配置一变就以它为准。
+ *
+ * 面板与服务端因此只差「用户还没写完的那几个键」。这也让「应用档位」不必在
+ * 前端填一遍值：服务端写完配置，广播回来就填上了，两边不会各写一次。
+ */
+watch(
+  () => settings.values,
+  () => {
+    const scan = settings.values?.scan as Record<string, unknown> | undefined
+    const filled = scanParamsFromConfig(scan)
+    if (Object.keys(filled).length === 0) return
+    synced.value = filled
+    params.value = { ...params.value, ...filled }
+  },
+)
+
+/**
+ * 按配置与档位列表初始化面板。
  *
  * 档位列表是异步来的，所以这里既要能在挂载时跑，也要在列表到达后再跑一次——
  * 否则首次进入会一直显示「自定义」，只因为档位还没到。
+ *
+ * 返回是否已经定下参数：定不下来（档位还没到）时留给下一次调用，而不是拿一份
+ * 空参数当结果。
  */
-function syncFromSettings(): void {
+function syncFromSettings(): boolean {
   const scan = settings.values?.scan as Record<string, unknown> | undefined
-  const next: Record<string, number | boolean> = {}
-  for (const [camel, wire] of Object.entries(WIRE_KEYS)) {
-    const value = scan?.[wire]
-    if (typeof value === 'number' || typeof value === 'boolean') next[camel] = value
-  }
-
-  const filled = Object.keys(next).length > 0 ? next : presetValues(presets.byID(presets.defaultID))
-  if (Object.keys(filled).length === 0) return
-
-  params.value = { ...params.value, ...filled }
-  presetId.value = matchPreset(params.value, presets.list)
 
   // 来源也从配置恢复：用户上次加过的远端地址与写过的文本不该每次重填。
   const src = settings.values?.source as Record<string, unknown> | undefined
@@ -129,6 +148,30 @@ function syncFromSettings(): void {
   if (typeof custom === 'string' && custom !== '') {
     source.value = { ...source.value, customText: custom }
   }
+
+  if (isUntouchedScan(settings.origins)) {
+    // 首次运行：从启动档位开始，并把它真的写进配置。
+    //
+    // 只填界面不写配置是不够的：配置里那份参数来源表是自适应逻辑的唯一依据，
+    // 不写的话自适应会把档位填的值当成「用户从未碰过的默认值」，一识别到移动
+    // 宽带就把并发降下去——而那正是用户刚选的档位。
+    const preset = presets.byID(presets.defaultID)
+    if (!preset) return false
+    const values = presetValues(preset)
+    params.value = { ...params.value, ...values }
+    // 这次填值不算用户改动，因此先把对齐基线推上去，别被差分当成手改写回去。
+    synced.value = values
+    presetId.value = preset.id
+    presets.use(preset.id)
+    return true
+  }
+
+  const filled = scanParamsFromConfig(scan)
+  if (Object.keys(filled).length === 0) return false
+  synced.value = filled
+  params.value = { ...params.value, ...filled }
+  presetId.value = matchPreset(params.value, presets.list)
+  return true
 }
 
 onMounted(() => {
@@ -136,8 +179,8 @@ onMounted(() => {
   syncFromSettings()
 })
 
-// 档位列表到达后重新判定一次档位。只在这里补判定，不重填参数——用户可能已经
-// 在改了，把参数覆盖回去比显示「自定义」更糟。
+// 档位列表到达后补一次初始化。已经定下参数时只补判定档位，不重填参数——用户
+// 可能已经在改了，把参数覆盖回去比显示「自定义」更糟。
 watch(() => presets.loaded, () => {
   if (!presets.loaded) return
   if (Object.keys(params.value).length === 0) syncFromSettings()
@@ -146,13 +189,17 @@ watch(() => presets.loaded, () => {
 
 onBeforeUnmount(() => {
   unregister?.()
+  // 离开页面时把还没落盘的改动补写一次：防抖窗口里离开的话，那点改动就丢了，
+  // 而用户会以为它已经保存。
   if (persistTimer !== null) clearTimeout(persistTimer)
+  if (persistParamsTimer !== null) clearTimeout(persistParamsTimer)
+  flushParams()
 })
 
 /** 组装后端要的扫描参数。 */
 function buildRequest(): Record<string, unknown> {
   const payload: Record<string, unknown> = { ip_version: 4 }
-  for (const [camel, wire] of Object.entries(WIRE_KEYS)) {
+  for (const [camel, wire] of Object.entries(PARAM_WIRE_KEYS)) {
     payload[wire] = params.value[camel]
   }
   // 来源模式由四块来源的开关共同决定，不让用户再选一次——多一次选择就多一处会选错的地方。

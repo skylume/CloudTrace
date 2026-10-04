@@ -13,7 +13,7 @@ import { computed, ref } from 'vue'
 import Banner from '@/components/ui/Banner.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, SCAN_PARAMS, matchPreset, paramPaths, presetValues } from '@/i18n/params'
+import { CUSTOM_PRESET, SCAN_PARAMS, matchPreset, paramPaths } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
 import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
@@ -84,16 +84,13 @@ const deviatedFrom = computed(() => {
 /**
  * 换档位。
  *
- * 两件事一起做：把值填进面板（用户立刻看到变化），并让服务端把值写进配置。
- * 后者不能省——配置里那份参数来源表是自适应逻辑的唯一依据，只在本地填值的话
- * 自适应会把档位填的值当成「用户从未碰过的默认值」。
+ * 只发命令，不在本地填值：服务端写完配置会广播回来，面板跟着填。两边各写
+ * 一次看着更快，但两次写的来源标记不一样（档位填的标 preset、面板写回的标
+ * user），谁后到谁说了算——结果是自适应能不能动这组值变得不确定。
  */
 function applyPreset(id: string): void {
   presetId.value = id
   if (id === CUSTOM_PRESET) return
-  const preset = presets.byID(id)
-  if (!preset) return
-  params.value = { ...params.value, ...presetValues(preset) }
   presets.use(id)
 }
 
