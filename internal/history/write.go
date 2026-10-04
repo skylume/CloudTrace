@@ -97,12 +97,16 @@ func (s *Store) dedupLocked(rec HistoryRecord) error {
 		return nil
 	}
 
+	// 只清理**比新记录更早**的那份：去重的意思是「同一组参数连着跑了两遍，
+	// 留新的那份」。差值为负表示已有记录反而更新，那说明这份是补录进来的
+	// （导入旧数据、或补一份历史），删掉它等于把用户更想要的那份弄丢。
 	var stale []HistoryIndexEntry
 	for _, e := range s.index.Entries {
 		if e.ParamsHash != hash || e.Starred || e.Type != rec.Type || e.IPVersion != rec.IPVersion {
 			continue
 		}
-		if rec.CreatedAt.Sub(e.CreatedAt) > dedupWindow {
+		gap := rec.CreatedAt.Sub(e.CreatedAt)
+		if gap <= 0 || gap > dedupWindow {
 			continue
 		}
 		stale = append(stale, e)

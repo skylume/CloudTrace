@@ -335,6 +335,44 @@ func TestDedupKeepsRecordsOutsideWindow(t *testing.T) {
 	}
 }
 
+/**
+ * 补录一份更早的记录，不该把之后的记录删掉。
+ *
+ * 去重的意思是「同一组参数连着跑了两遍，留新的那份」。差值为负表示已有记录反而
+ * 更新——那是补录（导入旧数据、补一份历史），删掉它等于把用户更想要的那份弄丢。
+ */
+func TestDedupKeepsNewerRecordWhenImportingOlder(t *testing.T) {
+	h := newHarness(t)
+	params := scanParams(150)
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("序列化参数失败：%v", err)
+	}
+
+	newer := h.saveScan(4, params, recordsOf(2, 20))
+
+	// 补录一份十秒前的记录，参数完全相同——落在去重窗口之内。
+	older := HistoryRecord{
+		ID:        "20260927_120000_aaaa0001",
+		Type:      TypeScan,
+		IPVersion: 4,
+		CreatedAt: newer.CreatedAt.Add(-10 * time.Second),
+		Params:    raw,
+		Results:   recordsOf(2, 20),
+	}
+	if _, err := h.store.Save(older); err != nil {
+		t.Fatalf("补录失败：%v", err)
+	}
+
+	entries, _ := h.store.List(Filter{})
+	if len(entries) != 2 {
+		t.Fatalf("条目数 = %d，期望两条都在", len(entries))
+	}
+	if _, err := h.store.Load(newer.ID); err != nil {
+		t.Fatalf("较新的那份被补录的记录挤掉了：%v", err)
+	}
+}
+
 func TestDedupDisabledKeepsEverything(t *testing.T) {
 	h := newHarness(t, func(c *config.HistoryConfig) { c.AutoDedup = false })
 	params := scanParams(150)
