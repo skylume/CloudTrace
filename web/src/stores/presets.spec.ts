@@ -64,6 +64,18 @@ describe('reorderPlan', () => {
     expect(plan.map((step) => step.id)).not.toContain('d')
   })
 
+  // 置顶就是「往上移到底」：delta 取当前位置的负值即可，不必另写一条路径。
+  it('置顶：把末尾那个一次挪到最前', () => {
+    const items = [preset('a', 0), preset('b', 1), preset('c', 2), preset('d', 3)]
+    const plan = reorderPlan(items, 'd', -3)
+    expect(asMap(plan)).toEqual({ d: 0, a: 1, b: 2, c: 3 })
+  })
+
+  it('已经在最前时置顶是空操作', () => {
+    const items = [preset('a', 0), preset('b', 1)]
+    expect(reorderPlan(items, 'a', -0)).toEqual([])
+  })
+
   it('单个档位时任何方向都是空操作', () => {
     expect(reorderPlan([preset('a', 0)], 'a', -1)).toEqual([])
     expect(reorderPlan([preset('a', 0)], 'a', 1)).toEqual([])

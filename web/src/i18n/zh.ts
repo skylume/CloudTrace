@@ -165,6 +165,8 @@ export const zh = {
   'preset.saved': '已存为「{name}」',
   'preset.saveFailed': '档位没存下来：名字不能为空，且至少要有一个参数',
   'preset.mine': '我的档位',
+  'preset.builtinGroup': '内置档位',
+  'preset.moveTop': '置顶',
   'scan.details': '详细设置',
   'geo.downloading': '正在下载归属地库…',
   'geo.downloadingPercent': '正在下载归属地库 {percent}%',

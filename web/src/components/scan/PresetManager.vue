@@ -92,6 +92,15 @@ async function doImport(event: Event): Promise<void> {
             {{ item.name }}
             <span v-if="item.id === presets.defaultID" class="badge">{{ t('preset.defaultBadge') }}</span>
           </span>
+          <!-- 置顶就是「往上移到底」：常用档位排前面，一次点到位比连点几次省事。 -->
+          <button
+            type="button"
+            class="ct-link"
+            :disabled="index === 0"
+            @click="presets.move(item.id, -index)"
+          >
+            {{ t('preset.moveTop') }}
+          </button>
           <button
             type="button"
             class="ct-link"

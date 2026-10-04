@@ -7,7 +7,6 @@
  */
 import { computed, watch } from 'vue'
 
-import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import { CUSTOM_PRESET, matchPreset } from '@/i18n/params'
 import { usePresetsStore } from '@/stores/presets'
@@ -16,17 +15,6 @@ const params = defineModel<Record<string, number | boolean>>('params', { require
 const presetId = defineModel<string>('presetId', { required: true })
 
 const presets = usePresetsStore()
-
-/**
- * 下拉的选项。
- *
- * 列表来自后端，顺序也由后端定（内置在前、各自按 Order 排）。前端不重排：
- * 两处都排序，用户看到的顺序与后端认定的顺序迟早会不一样。
- */
-const segments = computed(() => [
-  ...presets.list.map((preset) => ({ value: preset.id, label: preset.name })),
-  { value: CUSTOM_PRESET, label: t('preset.custom') },
-])
 
 /** 偏离档位时的提示：告诉用户「你已经不在原来的档位上了」。 */
 const deviatedFrom = computed(() => {
@@ -63,16 +51,27 @@ function apply(id: string): void {
   if (id === CUSTOM_PRESET) return
   presets.use(id)
 }
+
+function onPick(event: Event): void {
+  apply((event.target as HTMLSelectElement).value)
+}
 </script>
 
 <template>
   <div class="picker">
-    <SegmentedControl
-      :segments="segments"
-      :model-value="presetId"
-      :label="t('preset.summary')"
-      @update:model-value="apply"
-    />
+    <!--
+      用原生下拉而不是一排胶囊：内置三档加自定义档位会越来越长，一排胶囊在
+      窄屏上会换行成两三行。分组也让「内置」与「我的」一眼分得开。
+    -->
+    <select class="ct-input preset-select" :value="presetId" :aria-label="t('preset.summary')" @change="onPick">
+      <optgroup :label="t('preset.builtinGroup')">
+        <option v-for="preset in presets.builtin" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+      </optgroup>
+      <optgroup v-if="presets.custom.length > 0" :label="t('preset.mine')">
+        <option v-for="preset in presets.custom" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+      </optgroup>
+      <option :value="CUSTOM_PRESET">{{ t('preset.custom') }}</option>
+    </select>
     <span v-if="deviatedFrom" class="deviated" :title="t('preset.appliesNextRun')">{{ deviatedFrom }}</span>
   </div>
 </template>
@@ -84,6 +83,11 @@ function apply(id: string): void {
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+
+.preset-select {
+  min-width: 160px;
+  max-width: 240px;
 }
 
 .deviated {
