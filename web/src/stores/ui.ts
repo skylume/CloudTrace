@@ -45,14 +45,20 @@ const DEFAULTS: PersistedUI = {
   activeView: 'scan',
 }
 
-function load(): PersistedUI {
+/**
+ * load 读回上次的界面状态。
+ *
+ * 第二个返回值表示「本地确实存过」——它与「存过但值恰好等于默认值」是两回事：
+ * 没存过时要落到配置里的启动页，存过时（且允许记忆）才回到上次那一页。
+ */
+function load(): { state: PersistedUI; stored: boolean } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULTS }
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<PersistedUI>) }
+    if (!raw) return { state: { ...DEFAULTS }, stored: false }
+    return { state: { ...DEFAULTS, ...(JSON.parse(raw) as Partial<PersistedUI>) }, stored: true }
   } catch {
     // 读不出来就用默认值：这份记忆只是加速首屏，坏了不该让界面起不来。
-    return { ...DEFAULTS }
+    return { state: { ...DEFAULTS }, stored: false }
   }
 }
 
@@ -69,7 +75,7 @@ export interface Toast {
 let toastSeq = 0
 
 export const useUIStore = defineStore('ui', () => {
-  const saved = load()
+  const { state: saved, stored } = load()
 
   const theme = ref<Theme>(saved.theme)
   const fontScale = ref<FontScale>(saved.fontScale)
@@ -80,6 +86,16 @@ export const useUIStore = defineStore('ui', () => {
   const lang = ref<Locale>(saved.lang)
   const navCollapsed = ref(saved.navCollapsed)
   const activeView = ref(saved.activeView)
+
+  /**
+   * 服务端那份 `ui.remember_state`。
+   *
+   * 本地先按上次的值渲染（首屏不闪），配置一到就以它为准决定「要不要继续按
+   * 上次的来」。
+   */
+  const rememberState = ref(true)
+  /** 是否已经按 remember_state 定过初始状态。 */
+  const stateSettled = ref(false)
 
   /** 系统当前是不是深色。跟随系统时用它决定实际主题。 */
   const systemDark = ref(true)
@@ -129,6 +145,34 @@ export const useUIStore = defineStore('ui', () => {
     animation.value = ui.animation
     contrast.value = ui.contrast
     lang.value = ui.lang
+
+    rememberState.value = ui.remember_state
+    settleInitialView(ui)
+  }
+
+  /**
+   * settleInitialView 定下「这次打开落在哪一页、参数展开到什么程度」。
+   *
+   * 只在第一份配置到达时做一次：这个函数挂在每次配置广播上，而广播会因为改个
+   * 主题、调个参数随时到来——每次都重置，用户刚点的导航就被抹掉了。
+   *
+   * 两条规则：
+   *   - 允许记住且本地确实存过 → 留在上次那一页；
+   *   - 否则（关掉了记忆，或第一次打开）→ 落到配置里的启动页。
+   */
+  function settleInitialView(ui: UIConfig): void {
+    if (stateSettled.value) return
+    stateSettled.value = true
+
+    const landing = ui.start_page !== '' ? ui.start_page : DEFAULTS.activeView
+    if (!ui.remember_state || !stored) {
+      activeView.value = landing
+    }
+    if (!ui.remember_state) {
+      // 关掉记忆之后连「展开过高级参数」也不该被带走。
+      density.value = 'auto'
+      navCollapsed.value = false
+    }
   }
 
   /** setDensity 由「用户展开过高级参数」这类行为调用，并永久记住。 */
@@ -184,16 +228,18 @@ export const useUIStore = defineStore('ui', () => {
     root.dataset.contrast = contrast.value ? 'high' : 'normal'
     setLocale(lang.value)
 
+    // 关掉「记住界面状态」时，本地存的是「下次打开会用的值」，而不是用户刚
+    // 停留的地方。这样再把它打开时不会突然跳回一个很久以前的页面。
     const payload: PersistedUI = {
       theme: theme.value,
       fontScale: fontScale.value,
       tableDensity: tableDensity.value,
-      density: density.value,
+      density: rememberState.value ? density.value : DEFAULTS.density,
       animation: animation.value,
       contrast: contrast.value,
       lang: lang.value,
-      navCollapsed: navCollapsed.value,
-      activeView: activeView.value,
+      navCollapsed: rememberState.value ? navCollapsed.value : DEFAULTS.navCollapsed,
+      activeView: rememberState.value ? activeView.value : DEFAULTS.activeView,
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -215,6 +261,7 @@ export const useUIStore = defineStore('ui', () => {
     lang,
     navCollapsed,
     activeView,
+    rememberState,
     resolvedTheme,
     showAdvanced,
     toasts,

@@ -18,6 +18,8 @@ vi.mock('@/api/client', () => ({
   sendCommand: (...args: unknown[]) => sendCommand(...args),
 }))
 
+import type { UIConfig } from '@/api/types'
+
 const { useUIStore } = await import('./ui')
 
 beforeEach(() => {
@@ -57,6 +59,76 @@ describe('主题与语言', () => {
     ui.setTheme('system')
 
     expect(['dark', 'light']).toContain(ui.resolvedTheme)
+  })
+})
+
+describe('记住界面状态与启动页', () => {
+  /** 一份完整的界面配置，只覆盖关心的那两项。 */
+  function config(overrides: Partial<UIConfig>): UIConfig {
+    return {
+      theme: 'dark',
+      lang: 'zh',
+      font_scale: 'medium',
+      density: 'advanced',
+      table_density: 'normal',
+      page_size: 50,
+      time_format: 'local',
+      start_page: 'scan',
+      animation: true,
+      contrast: false,
+      remember_state: true,
+      adaptive_enabled: true,
+      adaptive_allow_preset: true,
+      ...overrides,
+    }
+  }
+
+  /**
+   * 关掉记忆时每次从启动页面开始。
+   *
+   * 这个开关以前没有任何代码读它——改它什么都不会发生，而界面上它看起来是个
+   * 正常的开关。
+   */
+  it('关掉记忆时从启动页面开始，并回到默认密度', () => {
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ remember_state: false, start_page: 'history' }))
+
+    expect(ui.activeView).toBe('history')
+    expect(ui.density).toBe('auto')
+  })
+
+  it('没有存过状态时落到启动页面', () => {
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ remember_state: true, start_page: 'result' }))
+
+    expect(ui.activeView).toBe('result')
+  })
+
+  it('允许记忆且存过时留在上次那一页', () => {
+    localStorage.setItem('cloudtrace.ui', JSON.stringify({ activeView: 'settings' }))
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ remember_state: true, start_page: 'scan' }))
+
+    expect(ui.activeView).toBe('settings')
+  })
+
+  /**
+   * 只定一次。
+   *
+   * 这个判定挂在每次配置广播上，而广播会因为改个主题、调个参数随时到来——
+   * 每次都重置的话，用户刚点的导航就被抹掉了。
+   */
+  it('之后的配置广播不把用户刚做的导航抹掉', () => {
+    const ui = useUIStore()
+    ui.applyFromSettings(config({ remember_state: false, start_page: 'scan' }))
+
+    ui.activeView = 'history'
+    ui.applyFromSettings(config({ remember_state: false, start_page: 'scan' }))
+
+    expect(ui.activeView).toBe('history')
   })
 })
 

@@ -201,7 +201,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行' },
     'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
     'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
-    'ui.remember_state': { label: '记住界面状态', hint: '下次打开回到上次停留的页面与设置' },
+    'ui.remember_state': {
+      label: '记住界面状态',
+      hint: '下次打开回到上次停留的页面，并记住参数面板是否展开。关掉之后每次都从启动页面开始；参数值本身存在配置里，与这一项无关',
+    },
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
 
@@ -254,7 +257,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
     'ui.density': { label: '参数密度', hint: '简单模式下参数默认折叠；一旦展开过高级模式就会永久记住' },
-    'ui.start_page': { label: '启动页面', hint: '下次打开直接落在哪一页' },
+    'ui.start_page': {
+      label: '启动页面',
+      hint: '下次打开直接落在哪一页。关掉「记住界面状态」时每次都从这里开始',
+    },
     'ui.time_format': { label: '时间显示', hint: '本地时间或 UTC' },
 
     'scan.source_mode': { label: '来源模式', hint: '官方网段、自定义来源，或两者合并。扫描页会自动设置它' },
@@ -303,7 +309,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.page_size': { label: 'Rows per page', hint: 'How many rows the result table shows per page' },
     'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
     'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },
-    'ui.remember_state': { label: 'Remember UI state', hint: 'Reopen on the last page with the last settings' },
+    'ui.remember_state': {
+      label: 'Remember UI state',
+      hint: 'Reopen on the last page you were on and keep the parameter panel as you left it. Turned off, every launch starts on the start page; parameter values live in the config and are unaffected',
+    },
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
 
@@ -356,7 +365,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
     'ui.density': { label: 'Parameter density', hint: 'Simple hides parameters by default; expanding once is remembered' },
-    'ui.start_page': { label: 'Start page', hint: 'Which page to open on next launch' },
+    'ui.start_page': {
+      label: 'Start page',
+      hint: 'Which page to open on next launch. Every launch starts here when "Remember UI state" is off',
+    },
     'ui.time_format': { label: 'Time display', hint: 'Local time or UTC' },
 
     'scan.source_mode': { label: 'Source mode', hint: 'Official ranges, custom sources, or both. The scan page sets this for you' },
