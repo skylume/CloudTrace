@@ -166,6 +166,8 @@ export const zh = {
   'preset.saveFailed': '档位没存下来：名字不能为空，且至少要有一个参数',
   'preset.mine': '我的档位',
   'scan.details': '详细设置',
+  'geo.downloading': '正在下载归属地库…',
+  'geo.downloadingPercent': '正在下载归属地库 {percent}%',
   'preset.defaultBadge': '启动',
   'preset.setDefault': '设为启动档位',
   'preset.moveUp': '上移',

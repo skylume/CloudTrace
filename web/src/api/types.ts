@@ -259,6 +259,12 @@ export interface ASNStatus {
   updated_at: string
   loaded: boolean
   error?: string
+  /** 正在下载库文件。 */
+  downloading: boolean
+  /** 已读取的字节数。 */
+  download_read: number
+  /** 总字节数；0 表示服务端没给长度，此时只显示「进行中」。 */
+  download_total: number
 }
 
 export interface GeoWarning {

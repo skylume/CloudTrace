@@ -45,7 +45,7 @@ type fakeFetcher struct {
 	reply func(url string) ([]byte, error)
 }
 
-func (f *fakeFetcher) fetch(_ context.Context, url string) ([]byte, error) {
+func (f *fakeFetcher) fetch(_ context.Context, url string, onProgress func(read, total int64)) ([]byte, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, url)
 	f.mu.Unlock()
@@ -596,7 +596,7 @@ func TestHTTPFetcher(t *testing.T) {
 
 	fetch := httpFetcher(10 * time.Second)
 
-	data, err := fetch(context.Background(), ts.URL+"/ok")
+	data, err := fetch(context.Background(), ts.URL+"/ok", nil)
 	if err != nil {
 		t.Fatalf("正常拉取失败：%v", err)
 	}
@@ -604,19 +604,19 @@ func TestHTTPFetcher(t *testing.T) {
 		t.Fatalf("内容 = %q", data)
 	}
 
-	if _, err := fetch(context.Background(), ts.URL+"/missing"); err == nil {
+	if _, err := fetch(context.Background(), ts.URL+"/missing", nil); err == nil {
 		t.Error("非 200 应当报错")
 	}
 
 	// 超限的内容必须被拒绝，而不是截断成一个坏文件。
-	if _, err := fetch(context.Background(), ts.URL+"/big"); err == nil {
+	if _, err := fetch(context.Background(), ts.URL+"/big", nil); err == nil {
 		t.Error("超过上限的响应应当报错")
 	}
 
 	// 上下文取消时立刻返回，不再等下载完。
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := fetch(ctx, ts.URL+"/ok"); err == nil {
+	if _, err := fetch(ctx, ts.URL+"/ok", nil); err == nil {
 		t.Error("已取消的上下文应当报错")
 	}
 }
@@ -789,5 +789,86 @@ func TestManagerErrorIsPreserved(t *testing.T) {
 	got := m.Status().Error
 	if !strings.Contains(got, iptoASNv4URL) {
 		t.Fatalf("状态里的原因被加工过：%q", got)
+	}
+}
+
+/**
+ * 下载期间要能报告进度，下载结束后要归零。
+ *
+ * 「下载完了」这一步不能漏：漏了的话界面上的进度条会一直挂在那里，用户以为
+ * 还在下，而实际上早就结束了。
+ */
+func TestManagerReportsDownloadProgress(t *testing.T) {
+	var mu sync.Mutex
+	var seen []Status
+
+	// 分块回报，模拟真实下载。
+	fetch := Fetcher(func(_ context.Context, _ string, onProgress func(read, total int64)) ([]byte, error) {
+		onProgress(1024, 4096)
+		onProgress(4096, 4096)
+		return gzBytes(t, v4Fixture), nil
+	})
+
+	cfg := config.Default().Geo
+	cfg.ASNSource = SourceIPToASN
+	m := NewManager(Options{
+		Config:  func() config.GeoConfig { return cfg },
+		DataDir: t.TempDir(),
+		Fetch:   fetch,
+		OnProgress: func(st Status) {
+			mu.Lock()
+			seen = append(seen, st)
+			mu.Unlock()
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(func() { _ = m.Close() })
+
+	if err := m.Update(context.Background()); err != nil {
+		t.Fatalf("更新失败：%v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(seen) == 0 {
+		t.Fatal("下载过程中没有任何进度回调")
+	}
+	// 第一次必须是「开始下载」：进度条要能从头开始动。
+	if first := seen[0]; !first.Downloading || first.DownloadRead != 0 {
+		t.Errorf("首次回调 = %+v，期望正在下载且计数为 0", first)
+	}
+	// 中途要能看到已读字节数，否则进度条不会动。
+	sawMid := false
+	for _, st := range seen {
+		if st.Downloading && st.DownloadRead > 0 {
+			sawMid = true
+		}
+	}
+	if !sawMid {
+		t.Error("中途没有报告已读字节数")
+	}
+	// 最后一次必须已经收尾。
+	if last := seen[len(seen)-1]; last.Downloading || last.DownloadRead != 0 {
+		t.Errorf("最后一次回调 = %+v，期望不在下载且计数归零", last)
+	}
+	if st := m.Status(); st.Downloading {
+		t.Errorf("更新结束后状态仍停在下载中：%+v", st)
+	}
+	if !m.Status().Loaded {
+		t.Error("下载完成后库应可用")
+	}
+}
+
+// 没接进度回调时下载照常进行，不能因为没人听就出问题。
+func TestManagerWorksWithoutProgressHook(t *testing.T) {
+	fetch := &fakeFetcher{reply: func(string) ([]byte, error) { return gzBytes(t, v4Fixture), nil }}
+	m, _ := managerFixture(t, fetch.fetch, nil, nil)
+
+	if err := m.Update(context.Background()); err != nil {
+		t.Fatalf("更新失败：%v", err)
+	}
+	if m.Status().Downloading {
+		t.Error("没有回调时状态仍不该停在下载中")
 	}
 }

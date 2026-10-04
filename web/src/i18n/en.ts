@@ -174,6 +174,8 @@ export const en: Record<keyof typeof zh, string> = {
   'preset.saveFailed': 'Not saved: the name cannot be empty and there must be at least one parameter',
   'preset.mine': 'My presets',
   'scan.details': 'More settings',
+  'geo.downloading': 'Downloading the geolocation database…',
+  'geo.downloadingPercent': 'Downloading the geolocation database {percent}%',
   'preset.defaultBadge': 'startup',
   'preset.setDefault': 'Use on startup',
   'preset.moveUp': 'Move up',

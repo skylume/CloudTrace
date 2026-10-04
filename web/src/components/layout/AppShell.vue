@@ -41,6 +41,27 @@ watch(narrow, (isNarrow) => {
 
 const collapsed = computed(() => !narrow.value && ui.navCollapsed)
 
+/** 后台正在下载库文件。 */
+const downloading = computed(() => geo.status?.status.downloading === true)
+
+/**
+ * 下载进度百分比；服务端没给总长度时返回 null。
+ *
+ * 拿不到总长度就不能编一个百分比出来——那种进度条走到一半突然跳完，比一条
+ * 「进行中」的动画更让人不信任。
+ */
+const downloadPercent = computed<number | null>(() => {
+  const status = geo.status?.status
+  if (!status?.downloading || status.download_total <= 0) return null
+  return Math.min(100, Math.round((status.download_read / status.download_total) * 100))
+})
+
+const downloadLabel = computed(() =>
+  downloadPercent.value === null
+    ? t('geo.downloading')
+    : t('geo.downloadingPercent', { percent: downloadPercent.value }),
+)
+
 const connectionLabel = computed(() => {
   switch (task.connection) {
     case 'open':
@@ -131,7 +152,8 @@ function select(id: string): void {
 
         <span class="spacer" />
 
-        <span v-if="geo.status?.status.loaded" class="hint">{{ t('geo.title') }} 就绪</span>
+        <span v-if="downloading" class="hint" :title="downloadLabel">{{ downloadLabel }}</span>
+        <span v-else-if="geo.status?.status.loaded" class="hint">{{ t('geo.title') }} 就绪</span>
         <button type="button" class="icon-button" :aria-label="t('theme.label')" @click="cycleTheme">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
@@ -141,6 +163,20 @@ function select(id: string): void {
         <button type="button" class="text-button" @click="toggleLang">
           {{ ui.lang === 'zh' ? 'EN' : '中' }}
         </button>
+        <!--
+          后台下载库文件：一条贴着顶栏下沿的细进度条。不占位置、不弹窗，也不
+          阻断任何操作——它只是让用户知道「它在做事」，而不是以为程序卡住了。
+        -->
+        <div
+          v-if="downloading"
+          class="download-bar"
+          :class="{ indeterminate: downloadPercent === null }"
+          role="progressbar"
+          :aria-label="downloadLabel"
+          :aria-valuenow="downloadPercent ?? undefined"
+        >
+          <span class="fill" :style="downloadPercent === null ? undefined : { width: downloadPercent + '%' }" />
+        </div>
       </header>
 
       <div class="content">
@@ -257,6 +293,37 @@ function select(id: string): void {
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
+}
+
+/* 细进度条贴在顶栏下沿：不占一行、不抢任务进度条的位置。 */
+.download-bar {
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--color-surface-hover);
+}
+
+.download-bar .fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--duration-fast) linear;
+}
+
+/* 服务端没给总长度时改走「来回滑动」，表示「在动，但不知道还有多久」。 */
+.download-bar.indeterminate .fill {
+  width: 30%;
+  animation: download-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes download-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
 }
 
 .title {

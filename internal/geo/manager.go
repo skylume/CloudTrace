@@ -32,6 +32,14 @@ type Status struct {
 	// 失败只记在这里，不向外抛：ASN 查询是锦上添花，任何情况下都不该让
 	// 扫描或测速停下来。
 	Error string `json:"error,omitempty"`
+
+	// Downloading 表示正在下载库文件。
+	Downloading bool `json:"downloading"`
+	// DownloadRead 是本次下载已读取的字节数。
+	DownloadRead int64 `json:"download_read"`
+	// DownloadTotal 是本次下载的总字节数；0 表示服务端没给长度，
+	// 此时界面只显示「进行中」，不显示百分比。
+	DownloadTotal int64 `json:"download_total"`
 }
 
 // Options 是 Manager 的构造参数。
@@ -52,9 +60,26 @@ type Options struct {
 	// 由调用方持有：它记录的是扫描过程中顺手学到的地区，与 ASN 库的加载
 	// 生命周期无关，关掉 ASN 查询也照样有用。
 	Cache *InfoCache
+	// OnProgress 在下载过程中被调用，用来把进度推给界面。
+	//
+	// 取回调而不是让调用方轮询：下载是后台发生的，轮询要么太密（浪费）要么
+	// 太疏（进度一跳一跳）。
+	OnProgress func(Status)
 	// Logger 为 nil 时用 slog.Default()。
 	Logger *slog.Logger
 }
+
+// 进度上报的步长。
+//
+// 库文件是几兆到十几兆，按 256KB 上报大约是几十次——足够让进度条动起来，又
+// 不会把事件总线刷满。
+const progressStep = 256 << 10
+
+// TopicProgress 是下载进度变化时发布的事件 topic。
+//
+// 只带「状态变了」这个信号，载荷是当时的 Status；订阅方拿它当触发条件，而不是
+// 权威数据源——状态以 Status() 为准，那里才是加了锁的一致快照。
+const TopicProgress = "geo/progress"
 
 // Manager 管理 ASN 库的加载、下载与更新。
 type Manager struct {
@@ -65,9 +90,13 @@ type Manager struct {
 	cache   *InfoCache
 	logger  *slog.Logger
 
+	onProgress func(Status)
+
 	mu     sync.RWMutex
 	lookup ASNLookup
 	status Status
+	// reported 是上一次上报进度时的已读字节数，用来按步长节流。
+	reported int64
 
 	// 本机出口地区的探测结论，只探一次。
 	exitLoc     string
@@ -80,12 +109,13 @@ type Manager struct {
 // 起不来是本末倒置。失败原因记在 Status 里。
 func NewManager(opts Options) *Manager {
 	m := &Manager{
-		cfg:     opts.Config,
-		dataDir: opts.DataDir,
-		now:     opts.Now,
-		fetch:   opts.Fetch,
-		cache:   opts.Cache,
-		logger:  opts.Logger,
+		cfg:        opts.Config,
+		dataDir:    opts.DataDir,
+		now:        opts.Now,
+		fetch:      opts.Fetch,
+		cache:      opts.Cache,
+		onProgress: opts.OnProgress,
+		logger:     opts.Logger,
 	}
 	if m.cfg == nil {
 		m.cfg = func() config.GeoConfig { return config.Default().Geo }
@@ -237,8 +267,14 @@ func (m *Manager) download(ctx context.Context, cfg config.GeoConfig) error {
 }
 
 // fetchTo 下载一个文件，校验通过后原子落盘。
+//
+// 下载期间状态里会带上下载进度，并在开始与结束时各通知一次——「正在下载」和
+// 「下载完了」都必须让界面知道，否则进度条会一直挂在那里。
 func (m *Manager) fetchTo(ctx context.Context, url, path string, validate func([]byte) error) error {
-	data, err := m.fetch(ctx, url)
+	m.beginDownload()
+	defer m.endDownload()
+
+	data, err := m.fetch(ctx, url, m.reportProgress)
 	if err != nil {
 		return err
 	}
@@ -246,6 +282,55 @@ func (m *Manager) fetchTo(ctx context.Context, url, path string, validate func([
 		return errors.New("下载到的内容不可用（" + err.Error() + "）")
 	}
 	return writeLibrary(path, data)
+}
+
+// beginDownload 把状态切到「正在下载」并通知一次。
+func (m *Manager) beginDownload() {
+	m.mu.Lock()
+	m.status.Downloading = true
+	m.status.DownloadRead = 0
+	m.status.DownloadTotal = 0
+	m.reported = 0
+	status := m.status
+	m.mu.Unlock()
+	m.notify(status)
+}
+
+// endDownload 把状态切回「不在下载」并通知一次。
+func (m *Manager) endDownload() {
+	m.mu.Lock()
+	m.status.Downloading = false
+	m.status.DownloadRead = 0
+	m.status.DownloadTotal = 0
+	status := m.status
+	m.mu.Unlock()
+	m.notify(status)
+}
+
+// reportProgress 按步长节流地上报下载进度。
+//
+// 节流是必须的：读取是分块的，每块都上报会把事件总线刷满，而进度条并不需要
+// 那么细的粒度。首个字节与最后一块一律上报，否则进度条会缺头少尾。
+func (m *Manager) reportProgress(read, total int64) {
+	m.mu.Lock()
+	step := read - m.reported
+	if step < progressStep && read != total {
+		m.mu.Unlock()
+		return
+	}
+	m.reported = read
+	m.status.DownloadRead = read
+	m.status.DownloadTotal = total
+	status := m.status
+	m.mu.Unlock()
+	m.notify(status)
+}
+
+// notify 把状态交给回调；没接回调时什么也不做。
+func (m *Manager) notify(status Status) {
+	if m.onProgress != nil {
+		m.onProgress(status)
+	}
 }
 
 // Lookup 查询一个地址；库不可用时返回 false。

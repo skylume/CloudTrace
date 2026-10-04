@@ -80,7 +80,7 @@ func New(cfg *config.Store, version string, logger *slog.Logger) (*Services, err
 		return nil, err
 	}
 
-	region, geoMgr := newGeo(cfg, logger)
+	region, geoMgr := newGeo(cfg, bus, logger)
 	presets := newPresets(cfg, logger)
 
 	return &Services{
@@ -124,22 +124,28 @@ func newPresets(cfg *config.Store, logger *slog.Logger) *config.PresetStore {
 //
 // 数据目录解析不出来时两者都退化成不可用：ASN 归属是锦上添花，不能因为它
 // 让整个程序起不来。缓存不落盘，但仍然能在本次运行里省下重复查询。
-func newGeo(cfg *config.Store, logger *slog.Logger) (*geo.InfoCache, *geo.Manager) {
+func newGeo(cfg *config.Store, bus *event.Bus, logger *slog.Logger) (*geo.InfoCache, *geo.Manager) {
+	// 库文件的下载发生在后台，界面只能靠这条推送知道「正在下载、下了多少」。
+	// 载荷带上当时的快照：订阅方现在只拿它当触发条件，但事件本身该是自解释的。
+	onProgress := func(status geo.Status) { bus.Publish(geo.TopicProgress, status) }
+
 	dataDir, err := cfg.DataDir()
 	if err != nil {
 		logger.Warn("解析数据目录失败，ASN 查询与归属地缓存本次不可用", "err", err)
 		return geo.NewInfoCache("", 0), geo.NewManager(geo.Options{
-			Config: func() config.GeoConfig { return cfg.Get().Geo },
-			Logger: logger,
+			Config:     func() config.GeoConfig { return cfg.Get().Geo },
+			OnProgress: onProgress,
+			Logger:     logger,
 		})
 	}
 
 	cache := geo.NewInfoCache(filepath.Join(config.CacheDir(dataDir), "ipinfo.json"), 0)
 	return cache, geo.NewManager(geo.Options{
-		Config:  func() config.GeoConfig { return cfg.Get().Geo },
-		DataDir: dataDir,
-		Cache:   cache,
-		Logger:  logger,
+		Config:     func() config.GeoConfig { return cfg.Get().Geo },
+		DataDir:    dataDir,
+		Cache:      cache,
+		OnProgress: onProgress,
+		Logger:     logger,
 	})
 }
 

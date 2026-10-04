@@ -10,6 +10,7 @@ import (
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/event"
+	"cloudtrace/internal/geo"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/scan"
@@ -64,6 +65,9 @@ func (s *server) taskSubscriptions() []subscription {
 		{topic: scan.TopicResult, fn: s.forward(scan.TopicResult)},
 		{topic: speed.TopicPartial, fn: s.forward(speed.TopicPartial)},
 		{topic: history.TopicChanged, fn: s.forward(history.TopicChanged)},
+		// 下载进度只用来触发一次重新读取：载荷是地理层的 Status，而前端要的
+		// 是带提示与快捷选项的完整状态，重新组装一遍比让载荷长成两种形状干净。
+		{topic: geo.TopicProgress, fn: func(any) { s.hub.broadcast(eventGeo, s.geoStatus()) }},
 		{topic: task.TopicError, fn: s.onTaskError},
 	}
 	for _, phase := range phases {

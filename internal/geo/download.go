@@ -36,14 +36,17 @@ const (
 
 // Fetcher 拉取一个地址的完整内容。
 //
+// onProgress 在读取过程中被反复调用：read 是已读字节数，total 为 0 表示服务端
+// 没给长度（这时界面只能显示「进行中」，不能显示百分比）。它可能为 nil。
+//
 // 单独抽成函数类型是为了让下载流程可测：测试里换成返回固定字节的假实现，
 // 不必碰网络。
-type Fetcher func(ctx context.Context, url string) ([]byte, error)
+type Fetcher func(ctx context.Context, url string, onProgress func(read, total int64)) ([]byte, error)
 
 // httpFetcher 是默认的 HTTP 拉取实现。
 func httpFetcher(timeout time.Duration) Fetcher {
 	client := &http.Client{Timeout: timeout}
-	return func(ctx context.Context, url string) ([]byte, error) {
+	return func(ctx context.Context, url string, onProgress func(read, total int64)) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
@@ -59,7 +62,11 @@ func httpFetcher(timeout time.Duration) Fetcher {
 		}
 		// 多读一个字节：读满了上限就说明还有更多内容，直接判为超限，
 		// 而不是静默截断成一个坏文件。
-		data, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadBytes+1))
+		body := io.LimitReader(resp.Body, maxDownloadBytes+1)
+		if onProgress != nil {
+			body = &progressReader{inner: body, total: resp.ContentLength, notify: onProgress}
+		}
+		data, err := io.ReadAll(body)
 		if err != nil {
 			return nil, err
 		}
@@ -68,6 +75,24 @@ func httpFetcher(timeout time.Duration) Fetcher {
 		}
 		return data, nil
 	}
+}
+
+// progressReader 在读取过程中回报进度。
+//
+// 包在 LimitReader 外面：上限是「防御」，进度说的是「已经拿回来多少」，两者
+// 语义不同。包在里面的话，进度会在上限处停住，看起来像卡死了。
+type progressReader struct {
+	inner  io.Reader
+	total  int64
+	read   int64
+	notify func(read, total int64)
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.inner.Read(p)
+	r.read += int64(n)
+	r.notify(r.read, r.total)
+	return n, err
 }
 
 // validateTSV 校验一份下载回来的 TSV。
