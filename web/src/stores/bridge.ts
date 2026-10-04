@@ -113,6 +113,8 @@ export function wireEvents(): void {
   onEvent(EVT.adaptiveApplied, (data) => {
     const notice = data as AdaptiveNotice
     adaptive.applyApplied(notice)
+    // 「智能推荐」的结果也是走这条事件回来的，收到就说明那一次结束了。
+    adaptive.recommendSettled()
     // 日志里也留一条：徽标会随参数变化消失，而「它什么时候改过」之后还得能查到。
     log.push(t('adaptive.appliedLog', { key: notice.key, from: notice.from, to: notice.to }))
   })
@@ -164,8 +166,9 @@ export function wireEvents(): void {
     const message = errorText(payload)
     ui.pushToast({ kind: 'bad', message })
     log.push(message, 'bad')
-    // 出错时也要解除导出按钮的等待态，否则它会一直转下去。
+    // 出错时也要解除等待态，否则按钮会一直转下去。
     exporter.fail()
+    adaptive.recommendSettled()
   })
 
   onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))

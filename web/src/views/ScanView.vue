@@ -18,6 +18,7 @@ import { t } from '@/i18n'
 import { CUSTOM_PRESET, PARAM_WIRE_KEYS, SCAN_PARAMS, matchPreset, presetValues } from '@/i18n/params'
 import PresetPicker from '@/components/scan/PresetPicker.vue'
 import { useActionStore } from '@/stores/actions'
+import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
 import { usePresetsStore } from '@/stores/presets'
@@ -35,6 +36,7 @@ const settings = useSettingsStore()
 const actions = useActionStore()
 const presets = usePresetsStore()
 const ui = useUIStore()
+const adaptive = useAdaptiveStore()
 
 /** 展开 / 收起详细设置。与参数面板的「全部参数」共用同一个状态，不会各说各话。 */
 function toggleDetails(): void {
@@ -258,6 +260,20 @@ function stop(): void {
         {{ t('scan.stop') }}
       </button>
       <PresetPicker v-model:params="params" v-model:preset-id="presetId" />
+      <!--
+        「智能推荐」是显式操作：点了才生效，且不受来源限制（可以改用户手填过的
+        值）。它是自动自适应的手动对应物——那条自动路径只在 default/preset 来源
+        上动手，手填过的值永远只给建议。
+      -->
+      <button
+        type="button"
+        class="ct-link"
+        :disabled="adaptive.recommending"
+        :title="t('adaptive.recommendHint')"
+        @click="adaptive.recommend()"
+      >
+        {{ adaptive.recommending ? t('adaptive.recommending') : t('adaptive.recommend') }}
+      </button>
       <span class="spacer" />
       <button type="button" class="ct-link" :aria-expanded="ui.showAdvanced" @click="toggleDetails">
         {{ ui.showAdvanced ? t('preset.collapse') : t('scan.details') }}

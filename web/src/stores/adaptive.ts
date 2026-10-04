@@ -31,6 +31,8 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
   const suggestions = ref<AdaptiveNotice[]>([])
   /** 用户点过「不再提示」的建议原因。 */
   const muted = ref<string[]>([])
+  /** 正在探测网络环境（智能推荐要先探一次出口运营商）。 */
+  const recommending = ref(false)
 
   const visibleSuggestions = computed(() =>
     suggestions.value.filter((item) => !muted.value.includes(item.reason)),
@@ -93,16 +95,39 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
     return translated === key ? reason : translated
   }
 
+  /**
+   * 智能推荐：按当前网络环境给一组调整。
+   *
+   * 与自动自适应的区别是它不受来源限制——用户点了按钮就是明确授权，包括改他
+   * 手填过的值。改动照样走 adaptive/applied 事件回来，因此徽标与「还原」都还在。
+   *
+   * 服务端要先探一次出口运营商（有十分钟缓存），所以给一个进行中的状态：不
+   * 给的话按钮点下去几秒钟没反应，用户会以为它坏了。
+   */
+  function recommend(): void {
+    if (recommending.value) return
+    recommending.value = true
+    if (!sendCommand('adaptive/recommend')) recommending.value = false
+  }
+
+  /** 推荐流程结束：无论成败都要解除进行中，否则按钮会一直转。 */
+  function recommendSettled(): void {
+    recommending.value = false
+  }
+
   return {
     applied,
     suggestions,
     visibleSuggestions,
+    recommending,
     applyApplied,
     applySuggestion,
     revert,
     accept,
     dismiss,
     mute,
+    recommend,
+    recommendSettled,
     reasonText,
   }
 })
