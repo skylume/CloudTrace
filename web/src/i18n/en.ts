@@ -109,11 +109,15 @@ export const en: Record<keyof typeof zh, string> = {
   'history.tag': 'Tags',
   'history.note': 'Note',
   'history.paramDiff': 'This record was taken {minutes} minutes ago with different parameters',
-  'history.age': '{minutes} minutes ago',
+  'history.age.justNow': 'just now',
+  'history.age.minutes': '{value} minutes ago',
+  'history.age.hours': '{value} hours ago',
+  'history.age.days': '{value} days ago',
 
   'settings.title': 'Settings',
   'settings.search': 'Search settings',
   'settings.resetAll': 'Restore recommended settings',
+  'settings.pending': 'not active yet',
   'settings.restartRequired': 'These changes take effect after a restart: {keys}',
   'settings.resetItem': 'Reset to default',
 

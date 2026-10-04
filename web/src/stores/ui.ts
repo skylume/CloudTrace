@@ -15,6 +15,8 @@ export type Theme = 'dark' | 'light' | 'system'
 export type FontScale = 'small' | 'medium' | 'large'
 export type TableDensity = 'compact' | 'normal' | 'comfortable'
 export type Density = 'auto' | 'simple' | 'advanced'
+/** 准确时间按哪个时区显示。跨时区对照日志时 UTC 省事。 */
+export type TimeFormat = 'local' | 'utc'
 
 /** 本地记忆的键。index.html 里的首屏脚本读的是同一个键。 */
 const STORAGE_KEY = 'cloudtrace.ui'
@@ -96,6 +98,8 @@ export const useUIStore = defineStore('ui', () => {
   const rememberState = ref(true)
   /** 是否已经按 remember_state 定过初始状态。 */
   const stateSettled = ref(false)
+  /** 准确时间的显示时区。 */
+  const timeFormat = ref<TimeFormat>('local')
 
   /** 系统当前是不是深色。跟随系统时用它决定实际主题。 */
   const systemDark = ref(true)
@@ -146,6 +150,7 @@ export const useUIStore = defineStore('ui', () => {
     contrast.value = ui.contrast
     lang.value = ui.lang
 
+    timeFormat.value = ui.time_format
     rememberState.value = ui.remember_state
     settleInitialView(ui)
   }
@@ -262,6 +267,7 @@ export const useUIStore = defineStore('ui', () => {
     navCollapsed,
     activeView,
     rememberState,
+    timeFormat,
     resolvedTheme,
     showAdvanced,
     toasts,

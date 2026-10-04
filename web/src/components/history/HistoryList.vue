@@ -14,6 +14,7 @@ import type { HistoryIndexEntry } from '@/api/types'
 import { useHistoryStore } from '@/stores/history'
 import { useUIStore } from '@/stores/ui'
 import { formatLatency, formatSpeed } from '@/utils/latency'
+import { ageOf, formatAbsolute, hasAge } from '@/utils/timeText'
 
 const props = defineProps<{
   entries: HistoryIndexEntry[]
@@ -43,16 +44,21 @@ function removeEntry(id: string): void {
   })
 }
 
-/** 相对时间比绝对时间更有用：「12 分钟前」比「14:05」更能说明新旧。 */
+/**
+ * 相对时间比绝对时间更有用：「12 分钟前」比「14:05」更能说明新旧。
+ *
+ * 文案在界面层拼，工具只给单位与数值——单位那几档以前是硬编码的中文，英文
+ * 界面下会露出中文。
+ */
 function relativeTime(createdAt: string): string {
-  const at = new Date(createdAt).getTime()
-  if (!Number.isFinite(at)) return createdAt
-  const minutes = Math.round((Date.now() - at) / 60000)
-  if (minutes < 1) return t('history.age', { minutes: 1 })
-  if (minutes < 60) return t('history.age', { minutes })
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  return `${Math.round(hours / 24)} 天前`
+  if (!hasAge(createdAt)) return createdAt
+  const age = ageOf(createdAt, Date.now())
+  return t(('history.age.' + age.unit) as never, { value: age.value })
+}
+
+/** 悬停时给出准确时间，按配置里的时区偏好显示。 */
+function exactTime(createdAt: string): string {
+  return formatAbsolute(createdAt, ui.timeFormat)
 }
 
 const sorted = computed(() =>
@@ -72,7 +78,7 @@ const sorted = computed(() =>
         >
           {{ entry.starred ? '★' : '☆' }}
         </button>
-        <span class="when">{{ relativeTime(entry.created_at) }}</span>
+        <span class="when" :title="exactTime(entry.created_at)">{{ relativeTime(entry.created_at) }}</span>
         <span v-if="entry.preset" class="chip">{{ entry.preset }}</span>
         <span class="ct-subtle">IPv{{ entry.ip_version }}</span>
         <span class="spacer" />

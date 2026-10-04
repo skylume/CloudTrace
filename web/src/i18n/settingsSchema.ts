@@ -23,6 +23,13 @@ export interface SettingField {
   options?: string[]
   /** 该组里排在前面、值得优先展示的项。 */
   primary?: boolean
+  /**
+   * 配置项在、但还没有任何代码读它。
+   *
+   * 标出来并禁用，而不是照常显示：一个改了什么都不会发生的开关，比没有这个
+   * 开关更伤信任——用户会以为是自己没配对。等对应功能落地时去掉这个标记。
+   */
+  pending?: boolean
 }
 
 export interface SettingGroup {
@@ -48,7 +55,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'ui.time_format', kind: 'enum', options: ['local', 'utc'] },
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
       { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
-      { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
+      // 结果表目前一次渲染全部结果，还没有翻页。
+      { path: 'ui.page_size', kind: 'int', min: 20, max: 500, pending: true },
       { path: 'ui.animation', kind: 'bool', primary: true },
       { path: 'ui.contrast', kind: 'bool', primary: true },
       { path: 'ui.remember_state', kind: 'bool' },
@@ -93,7 +101,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       // 未设置并补成 1.2 秒。与其让 0 静默变成别的数，不如不给这个选项——
       // 想要「几乎不等」填 1 即可，那个值会被原样采纳。
       { path: 'speed.interval_ms', kind: 'int', min: 1, max: 5000 },
-      { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 },
+      { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 , pending: true },
       { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 100 },
       { path: 'speed.weight_speed', kind: 'float', min: 0, max: 10, step: 0.1 },
       { path: 'speed.weight_latency', kind: 'float', min: 0, max: 10, step: 0.1 },
@@ -103,23 +111,23 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'source',
     fields: [
-      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
+      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] , pending: true },
       { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000 },
       { path: 'source.retry', kind: 'int', min: 0, max: 10 },
-      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 },
+      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 , pending: true },
     ],
   },
   {
     id: 'net',
     fields: [
-      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
+      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true , pending: true },
       { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
       { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
-      { path: 'net.max_workers', kind: 'int', min: 1, max: 2000, primary: true },
+      { path: 'net.max_workers', kind: 'int', min: 1, max: 2000, primary: true , pending: true },
       { path: 'net.proxy', kind: 'text' },
       { path: 'net.force_direct', kind: 'bool' },
-      { path: 'net.custom_dns', kind: 'list' },
-      { path: 'net.dns_fallback', kind: 'bool' },
+      { path: 'net.custom_dns', kind: 'list' , pending: true },
+      { path: 'net.dns_fallback', kind: 'bool' , pending: true },
       { path: 'net.user_agent', kind: 'text' },
     ],
   },
@@ -163,25 +171,26 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'server.token', kind: 'text' },
       { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
       { path: 'server.open_browser', kind: 'bool', primary: true },
-      { path: 'server.autostart', kind: 'bool' },
+      { path: 'server.autostart', kind: 'bool', pending: true },
     ],
   },
   {
     id: 'notify',
     fields: [
-      { path: 'notify.on_done', kind: 'bool', primary: true },
-      { path: 'notify.on_fail', kind: 'bool', primary: true },
-      { path: 'notify.web', kind: 'bool' },
-      { path: 'notify.tray', kind: 'bool' },
-      { path: 'notify.sound', kind: 'bool' },
+      { path: 'notify.on_done', kind: 'bool', primary: true, pending: true },
+      { path: 'notify.on_fail', kind: 'bool', primary: true, pending: true },
+      { path: 'notify.web', kind: 'bool', pending: true },
+      { path: 'notify.tray', kind: 'bool', pending: true },
+      { path: 'notify.sound', kind: 'bool', pending: true },
     ],
   },
   {
     id: 'advanced',
     fields: [
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
-      { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
-      { path: 'advanced.check_update', kind: 'bool' },
+      // 日志目前只写控制台，没有落盘的文件可清理。
+      { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365, pending: true },
+      { path: 'advanced.check_update', kind: 'bool', pending: true },
     ],
   },
 ]
@@ -198,7 +207,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.lang': { label: '界面语言', hint: '中英文切换' },
     'ui.font_scale': { label: '字号', hint: '小 / 中 / 大三档，整体缩放而不破坏布局' },
     'ui.table_density': { label: '表格密度', hint: '只改行高，不动字号——两者互不干扰' },
-    'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行' },
+    'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行。结果表还没有翻页，这一项暂时不生效' },
     'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
     'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
     'ui.remember_state': {
@@ -306,7 +315,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.lang': { label: 'Language', hint: 'Switch between Chinese and English' },
     'ui.font_scale': { label: 'Font size', hint: 'Small / medium / large, scaled globally without breaking layout' },
     'ui.table_density': { label: 'Table density', hint: 'Changes row height only, never the font size' },
-    'ui.page_size': { label: 'Rows per page', hint: 'How many rows the result table shows per page' },
+    'ui.page_size': {
+      label: 'Rows per page',
+      hint: 'How many rows the result table shows per page. The table does not paginate yet, so this has no effect',
+    },
     'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
     'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },
     'ui.remember_state': {

@@ -101,11 +101,15 @@ export const zh = {
   'history.tag': '标签',
   'history.note': '备注',
   'history.paramDiff': '这份记录是 {minutes} 分钟前用别的参数跑的',
-  'history.age': '{minutes} 分钟前',
+  'history.age.justNow': '刚刚',
+  'history.age.minutes': '{value} 分钟前',
+  'history.age.hours': '{value} 小时前',
+  'history.age.days': '{value} 天前',
 
   'settings.title': '设置',
   'settings.search': '搜索设置项',
   'settings.resetAll': '恢复推荐设置',
+  'settings.pending': '尚未生效',
   'settings.restartRequired': '以下改动需要重启后生效：{keys}',
   'settings.resetItem': '恢复默认',
 
