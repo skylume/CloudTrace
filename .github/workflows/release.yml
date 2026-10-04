@@ -116,7 +116,7 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
-  # 产物 2：桌面版（官方 Go + wails）
+  # 产物 2：桌面版（官方 Go）
   # ---------------------------------------------------------------------
   desktop-modern:
     name: 产物 2 · 桌面版 Win10+
@@ -133,9 +133,6 @@ jobs:
         with:
           name: web-dist
           path: web/dist
-
-      - name: 安装 wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: 构建并打包
         shell: pwsh
@@ -208,9 +205,6 @@ jobs:
         with:
           name: web-dist
           path: web/dist
-
-      - name: 安装 wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: 准备 Win7 工具链
         shell: pwsh

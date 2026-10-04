@@ -122,26 +122,22 @@ try {
             }
         }
         'desktop' {
-            # 桌面版必须经 wails CLI：它负责生成绑定代码、准备 WebView2 SDK。
-            if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
-                throw '未找到 wails CLI，请先安装：go install github.com/wailsapp/wails/v2/cmd/wails@latest'
+            # 直接用 go build，不经过 wails CLI。
+            #
+            # CLI 负责的是「生成绑定 + 构建前端 + 嵌入图标与 DPI 清单」，这三件事在
+            # 本项目的结构里都不需要：前端通过 WebSocket 说话（没有绑定）、前端产物
+            # 由 go:embed 打进 handler（不经过 CLI 的前端目录）、DPI 感知在启动时用
+            # 运行时接口设置（见 internal/platform/dpi_windows.go）。
+            #
+            # 少一个必须额外安装的工具，构建在别人机器上就少一类失败方式——而
+            # 「照文档装了却打不出来」是最劝退的一种。
+            #
+            # 代价：exe 没有自定义图标。图标要靠资源编译器嵌进 .syso，而 .syso 是
+            # 二进制、不该进仓库；想要图标的话自己跑一次 wails 的图标生成，或改用
+            # CLI 构建。
+            Invoke-Step "构建 desktop（$Toolchain）" {
+                & $goExe build -trimpath -tags desktop -ldflags $ldflags -o $outFile ./cmd/desktop
             }
-            $desktopDir = Join-Path $repoRoot 'cmd/desktop'
-            Push-Location $desktopDir
-            try {
-                Invoke-Step "构建 desktop（$Toolchain）" {
-                    wails build -tags desktop -trimpath -ldflags $ldflags
-                }
-            }
-            finally { Pop-Location }
-
-            # wails 的产物落在 cmd/desktop/build/bin，统一收敛到 dist/。
-            $built = Get-ChildItem -Path (Join-Path $desktopDir 'build/bin') -Filter '*.exe' -ErrorAction SilentlyContinue |
-                Select-Object -First 1
-            if (-not $built) {
-                throw "wails 构建完成但未在 cmd/desktop/build/bin 找到 exe"
-            }
-            Copy-Item -Path $built.FullName -Destination $outFile -Force
         }
     }
 
