@@ -61,16 +61,18 @@ function toggleExpanded(): void {
 
 const saving = ref(false)
 const draftName = ref('')
+const draftNote = ref('')
 
 function startSave(): void {
   draftName.value = ''
+  draftNote.value = ''
   saving.value = true
 }
 
 /** 存的是面板上当前这组值，不是档位里那组——用户要的是「把现在这些存下来」。 */
 function confirmSave(): void {
   const name = draftName.value.trim()
-  const ok = presets.save({ name, values: paramPaths(params.value) })
+  const ok = presets.save({ name, note: draftNote.value.trim(), values: paramPaths(params.value) })
   ui.pushToast(
     ok
       ? { kind: 'ok', message: t('preset.saved', { name }) }
@@ -79,6 +81,7 @@ function confirmSave(): void {
   if (ok) {
     saving.value = false
     draftName.value = ''
+    draftNote.value = ''
   }
 }
 
@@ -117,6 +120,14 @@ function warningText(item: ParamWarning): string {
         @keyup.enter="confirmSave"
         @keyup.esc="saving = false"
       />
+      <input
+        v-model="draftNote"
+        class="ct-input"
+        type="text"
+        :placeholder="t('preset.notePlaceholder')"
+        @keyup.enter="confirmSave"
+        @keyup.esc="saving = false"
+      />
       <button type="button" class="ct-btn ct-btn--primary" @click="confirmSave">{{ t('common.save') }}</button>
       <button type="button" class="ct-btn" @click="saving = false">{{ t('common.cancel') }}</button>
     </div>
@@ -149,7 +160,7 @@ function warningText(item: ParamWarning): string {
 
     <PresetParams v-model:params="params" :disabled="disabled" />
 
-    <PresetManager />
+    <PresetManager v-model:params="params" />
   </section>
 </template>
 

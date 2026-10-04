@@ -12,34 +12,72 @@
 import { computed, ref } from 'vue'
 
 import { t } from '@/i18n'
+import { paramPaths } from '@/i18n/params'
 import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
 import { exportPresets, parsePresets } from '@/utils/presetIO'
+
+/**
+ * 面板上当前这组参数。
+ *
+ * 「覆盖保存」与「存为副本」用的都是它，而不是档位里存着的那组：用户改完参数
+ * 再点这两个按钮，要的显然是「把现在这些存下来」。
+ */
+const params = defineModel<Record<string, number | boolean>>('params', { required: true })
 
 const presets = usePresetsStore()
 const ui = useUIStore()
 
 const open = ref(false)
-/** 正在重命名的档位标识；空表示没有在改。 */
-const renamingID = ref('')
-const draftName = ref('')
+/** 正在编辑的档位：改名或存副本，两者共用一个表单。 */
+const form = ref<{ mode: 'rename' | 'copy'; id: string; name: string; note: string } | null>(null)
 /** 等待确认删除的档位标识。删除不可恢复，先问一次。 */
 const deletingID = ref('')
 
 const rows = computed(() => presets.custom)
 const deletingName = computed(() => presets.byID(deletingID.value)?.name ?? '')
 
-function startRename(id: string, name: string): void {
-  renamingID.value = id
-  draftName.value = name
+function startRename(preset: { id: string; name: string; note?: string }): void {
+  form.value = { mode: 'rename', id: preset.id, name: preset.name, note: preset.note ?? '' }
   deletingID.value = ''
 }
 
-function confirmRename(): void {
-  if (presets.rename(renamingID.value, draftName.value)) {
-    renamingID.value = ''
-    draftName.value = ''
-  }
+/** 存副本：名字先填一个「原名 + 副本」，用户想改再改。 */
+function startCopy(preset: { id: string; name: string; note?: string }): void {
+  form.value = { mode: 'copy', id: preset.id, name: preset.name + ' 副本', note: preset.note ?? '' }
+  deletingID.value = ''
+}
+
+function confirmForm(): void {
+  const draft = form.value
+  if (!draft) return
+  const name = draft.name.trim()
+  if (name === '') return
+
+  const ok =
+    draft.mode === 'rename'
+      ? presets.rename(draft.id, name)
+      : presets.save({ name, note: draft.note.trim(), values: paramPaths(params.value) })
+
+  ui.pushToast(
+    ok ? { kind: 'ok', message: t('preset.saved', { name }) } : { kind: 'warn', message: t('preset.saveFailed') },
+  )
+  if (ok) form.value = null
+}
+
+/** 覆盖保存：把面板上现在这组值写回这个档位，名字与备注不动。 */
+function overwrite(preset: { id: string; name: string; note?: string }): void {
+  const ok = presets.save({
+    id: preset.id,
+    name: preset.name,
+    note: preset.note ?? '',
+    values: paramPaths(params.value),
+  })
+  ui.pushToast(
+    ok
+      ? { kind: 'ok', message: t('preset.overwritten', { name: preset.name }) }
+      : { kind: 'warn', message: t('preset.saveFailed') },
+  )
 }
 
 function confirmDelete(): void {
@@ -117,7 +155,10 @@ async function doImport(event: Event): Promise<void> {
           >
             {{ t('preset.moveDown') }}
           </button>
-          <button type="button" class="ct-link" @click="startRename(item.id, item.name)">
+          <!-- 覆盖保存：把面板上现在这组值写回这个档位。 -->
+          <button type="button" class="ct-link" @click="overwrite(item)">{{ t('preset.overwrite') }}</button>
+          <button type="button" class="ct-link" @click="startCopy(item)">{{ t('preset.copy') }}</button>
+          <button type="button" class="ct-link" @click="startRename(item)">
             {{ t('common.rename') }}
           </button>
           <button
@@ -134,17 +175,25 @@ async function doImport(event: Event): Promise<void> {
         </li>
       </ul>
 
-      <div v-if="renamingID !== ''" class="row-form">
+      <div v-if="form !== null" class="row-form">
         <input
-          v-model="draftName"
+          v-model="form.name"
           class="ct-input"
           type="text"
           :placeholder="t('preset.namePlaceholder')"
-          @keyup.enter="confirmRename"
-          @keyup.esc="renamingID = ''"
+          @keyup.enter="confirmForm"
+          @keyup.esc="form = null"
         />
-        <button type="button" class="ct-btn ct-btn--primary" @click="confirmRename">{{ t('common.save') }}</button>
-        <button type="button" class="ct-btn" @click="renamingID = ''">{{ t('common.cancel') }}</button>
+        <input
+          v-model="form.note"
+          class="ct-input note"
+          type="text"
+          :placeholder="t('preset.notePlaceholder')"
+          @keyup.enter="confirmForm"
+          @keyup.esc="form = null"
+        />
+        <button type="button" class="ct-btn ct-btn--primary" @click="confirmForm">{{ t('common.save') }}</button>
+        <button type="button" class="ct-btn" @click="form = null">{{ t('common.cancel') }}</button>
       </div>
 
       <div v-if="deletingID !== ''" class="row-form">
@@ -223,7 +272,12 @@ async function doImport(event: Event): Promise<void> {
 
 .row-form .ct-input {
   flex: 1;
-  min-width: 160px;
+  min-width: 140px;
+}
+
+/* 备注比名字长，给它多一点宽度。 */
+.row-form .ct-input.note {
+  flex: 1.4;
 }
 
 .danger-btn {
