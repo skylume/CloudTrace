@@ -115,7 +115,7 @@ func defaultNet() NetConfig {
 		ForceDirect:      true,
 		UseTLS:           "auto",
 		IPVersion:        "auto",
-		MaxWorkers:       MaxWorkersPreset,
+		MaxWorkers:       MaxWorkersDefault,
 	}
 }
 

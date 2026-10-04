@@ -17,6 +17,13 @@ export interface SettingField {
   /** 数值范围（kind 为 int / float 时有效）。 */
   min?: number
   max?: number
+  /**
+   * 上限跟随另一个配置项（点号路径）。
+   *
+   * 有的项本身没有固定上限，它的上限由用户自己定的另一项决定（如并发跟着全局
+   * 并发上限走）。不跟的话界面会允许填一个必定被拒的值，看起来像程序的错。
+   */
+  maxPath?: string
   /** 小数位（kind 为 float 时有效）。 */
   step?: number
   /** 枚举取值（kind 为 enum 时有效）。 */
@@ -67,7 +74,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'scan',
     fields: [
-      { path: 'scan.workers', kind: 'int', min: 1, max: 2000, primary: true },
+      // 上限跟着全局并发上限走：那个值用户可以自己调，写死一个数会让调它没意义。
+      { path: 'scan.workers', kind: 'int', min: 1, max: 2000, maxPath: 'net.max_workers', primary: true },
       { path: 'scan.sample_max', kind: 'int', min: 0, max: 5000, primary: true },
       { path: 'scan.latency_threshold', kind: 'int', min: 1, max: 5000, primary: true },
       { path: 'scan.ping_times', kind: 'int', min: 0, max: 20 },
@@ -120,10 +128,10 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'net',
     fields: [
-      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true , pending: true },
+      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true, pending: true },
       { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
       { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
-      { path: 'net.max_workers', kind: 'int', min: 1, max: 2000, primary: true , pending: true },
+      { path: 'net.max_workers', kind: 'int', min: 1, max: 10000, primary: true },
       { path: 'net.proxy', kind: 'text' },
       { path: 'net.force_direct', kind: 'bool' },
       { path: 'net.custom_dns', kind: 'list' , pending: true },
@@ -217,7 +225,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
 
-    'scan.workers': { label: '并发', hint: '同时测多少个地址。弱网或老路由建议 50–100，超过 300 会明显加重路由器负担' },
+    'scan.workers': {
+      label: '并发',
+      hint: '同时测多少个地址。弱网或老路由建议 50–100，超过 300 会明显加重路由器负担。上限由「并发上限」那一项决定',
+    },
     'scan.sample_max': { label: '采样上限', hint: '最多挑多少个地址来测。500 够用，5000 更全面但更慢' },
     'scan.latency_threshold': { label: '延迟阈值', hint: '超过这个延迟的节点直接淘汰' },
     'scan.ping_times': { label: '探测次数', hint: '每个地址测几次。0 表示自动' },
@@ -292,7 +303,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'net.connect_timeout_ms': { label: '连接超时', hint: '建立 TCP 连接等多久算失败' },
     'net.use_tls': { label: 'TLS 探测', hint: '自动时按端口推断：443 与 8443 走 TLS，其余不走' },
     'net.ip_version': { label: '地址族', hint: '只测 IPv4、只测 IPv6，或两者都测' },
-    'net.max_workers': { label: '并发硬上限', hint: '所有任务共享的上限，任何档位都不能突破它' },
+    'net.max_workers': {
+      label: '并发上限',
+      hint: '面板允许设到多大并发。默认 2000；调低它等于给自己加一道护栏，调高则放开。这是你自己定的上限，不是系统的限制',
+    },
     'net.proxy': { label: 'HTTP 代理', hint: '拉取官方网段与远端源时走这个代理。留空表示直连' },
     'net.force_direct': { label: '强制直连', hint: '忽略环境变量里的代理设置。节点探测始终直连，不受这里影响' },
     'net.custom_dns': { label: '自定义 DNS', hint: '解析域名时用这些 DNS 服务器，留空用系统默认' },
@@ -328,7 +342,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
 
-    'scan.workers': { label: 'Concurrency', hint: 'How many addresses at once. 50-100 on weak networks; above 300 strains the router' },
+    'scan.workers': {
+      label: 'Concurrency',
+      hint: 'How many addresses at once. 50-100 on weak networks; above 300 strains the router. The ceiling comes from "Concurrency ceiling"',
+    },
     'scan.sample_max': { label: 'Sample limit', hint: 'How many addresses to test. 500 is enough; 5000 is thorough but slower' },
     'scan.latency_threshold': { label: 'Latency limit', hint: 'Nodes above this latency are dropped' },
     'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 means automatic' },
@@ -403,7 +420,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'net.connect_timeout_ms': { label: 'Connect timeout', hint: 'How long establishing a TCP connection may take' },
     'net.use_tls': { label: 'TLS probing', hint: 'Auto infers from the port: 443 and 8443 use TLS, others do not' },
     'net.ip_version': { label: 'Address family', hint: 'IPv4 only, IPv6 only, or both' },
-    'net.max_workers': { label: 'Global concurrency cap', hint: 'Shared by every task; no preset can exceed it' },
+    'net.max_workers': {
+      label: 'Concurrency ceiling',
+      hint: 'The largest concurrency the panel will accept. 2000 by default; lower it to guard yourself, raise it to lift the ceiling. It is your own limit, not a system restriction',
+    },
     'net.proxy': { label: 'HTTP proxy', hint: 'Used for official ranges and remote sources. Empty means direct' },
     'net.force_direct': { label: 'Force direct', hint: 'Ignore proxy settings from the environment. Node probing is always direct' },
     'net.custom_dns': { label: 'Custom DNS', hint: 'Resolvers used for hostnames; empty uses the system ones' },

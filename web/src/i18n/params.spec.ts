@@ -7,7 +7,16 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { CUSTOM_PRESET, PARAM_PATHS, matchPreset, paramNameOf, paramPaths, presetValues } from './params'
+import {
+  CUSTOM_PRESET,
+  PARAM_PATHS,
+  SCAN_PARAMS,
+  effectiveMax,
+  matchPreset,
+  paramNameOf,
+  paramPaths,
+  presetValues,
+} from './params'
 
 /** 后端形状的档位：值是配置里的点号路径。 */
 const fast = {
@@ -107,6 +116,31 @@ describe('paramPaths', () => {
 
   it('布尔值也要带上', () => {
     expect(paramPaths({ twoPhase: false })).toEqual({ 'scan.two_phase': false })
+  })
+})
+
+describe('effectiveMax', () => {
+  it('没有联动时用声明里的上限', () => {
+    const spec = SCAN_PARAMS.find((item) => item.key === 'pingTimes')!
+    expect(effectiveMax(spec, {})).toBe(spec.max)
+  })
+
+  /**
+   * 并发那一项的上限跟着「并发上限」走。
+   *
+   * 面板上改的值会写回配置，所以上限必须跟着配置里那个值走——不跟的话面板能填
+   * 出一个必定被拒的值，而写回失败是静默的：用户改了、看起来生效了，其实没存。
+   */
+  it('并发上限跟着配置里的那一项', () => {
+    const spec = SCAN_PARAMS.find((item) => item.key === 'workers')!
+    expect(effectiveMax(spec, { net: { max_workers: 100 } })).toBe(100)
+    expect(effectiveMax(spec, { net: { max_workers: 8000 } })).toBe(8000)
+  })
+
+  it('配置里取不到时退回声明里的值，而不是变成没有上限', () => {
+    const spec = SCAN_PARAMS.find((item) => item.key === 'workers')!
+    expect(effectiveMax(spec, {})).toBe(spec.max)
+    expect(effectiveMax(spec, { net: { max_workers: '100' } })).toBe(spec.max)
   })
 })
 

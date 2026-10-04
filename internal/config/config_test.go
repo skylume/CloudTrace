@@ -131,13 +131,73 @@ func TestLoadFileCorruptedFallsBackAndBacksUp(t *testing.T) {
 	}
 }
 
+/**
+ * 并发上限由用户自己定，不是写死的。
+ *
+ * 网卡、路由器、运营商各不相同，能跑多少只有用户自己知道。这里的上限是
+ * 「面板允许设到多大」，默认值就是默认能填到的最大值——它刻意不取内置档位的
+ * 200，那会把一份本来合法的配置判成非法。
+ */
+func TestScanWorkersFollowsGlobalCeiling(t *testing.T) {
+	t.Run("调低上限后并发不能超过它", func(t *testing.T) {
+		cfg := Default()
+		cfg.Net.MaxWorkers = 100
+		cfg.Scan.Workers = 101
+
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("期望校验失败，实际通过")
+		}
+	})
+
+	t.Run("上限之内照常通过", func(t *testing.T) {
+		cfg := Default()
+		cfg.Net.MaxWorkers = 100
+		cfg.Scan.Workers = 100
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("上限之内的值不该被拒：%v", err)
+		}
+	})
+
+	t.Run("调高上限后能填到更大", func(t *testing.T) {
+		cfg := Default()
+		cfg.Net.MaxWorkers = 8000
+		cfg.Scan.Workers = 8000
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("调高上限之后不该被拒：%v", err)
+		}
+	})
+
+	t.Run("上限本身不能超过代码护栏", func(t *testing.T) {
+		cfg := Default()
+		cfg.Net.MaxWorkers = MaxWorkersCeiling + 1
+
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("期望校验失败，实际通过")
+		}
+	})
+}
+
+// 默认配置必须自洽：并发默认值不能超过默认的全局上限，整份配置也要能过校验。
+func TestDefaultConfigIsSelfConsistent(t *testing.T) {
+	cfg := Default()
+
+	if cfg.Scan.Workers > cfg.Net.MaxWorkers {
+		t.Fatalf("并发默认值 %d 超过了全局上限默认值 %d", cfg.Scan.Workers, cfg.Net.MaxWorkers)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("默认配置不合法：%v", err)
+	}
+}
+
 func TestValidateRejectsOutOfRange(t *testing.T) {
 	tests := []struct {
 		name    string
 		mutate  func(*Config)
 		wantKey string
 	}{
-		{"并发超硬上限", func(c *Config) { c.Scan.Workers = MaxWorkersHard + 1 }, "scan.workers"},
+		{"并发超过全局上限", func(c *Config) { c.Scan.Workers = c.Net.MaxWorkers + 1 }, "scan.workers"},
 		{"并发为 0", func(c *Config) { c.Scan.Workers = 0 }, "scan.workers"},
 		{"采样超上限", func(c *Config) { c.Scan.SampleMax = MaxSampleMax + 1 }, "scan.sample_max"},
 		{"延迟阈值为 0", func(c *Config) { c.Scan.LatencyThreshold = 0 }, "scan.latency_threshold"},

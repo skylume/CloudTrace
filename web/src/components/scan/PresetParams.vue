@@ -10,8 +10,9 @@
 import { computed } from 'vue'
 
 import { t } from '@/i18n'
-import { SCAN_PARAMS } from '@/i18n/params'
+import { SCAN_PARAMS, effectiveMax, type ParamSpec } from '@/i18n/params'
 import { useAdaptiveStore } from '@/stores/adaptive'
+import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
@@ -20,6 +21,9 @@ defineProps<{ disabled?: boolean }>()
 
 const ui = useUIStore()
 const adaptive = useAdaptiveStore()
+const settings = useSettingsStore()
+
+const maxOf = (spec: ParamSpec) => effectiveMax(spec, settings.values ?? {})
 
 /** 摘要里显示的参数；展开后显示全部。 */
 const visible = computed(() => (ui.showAdvanced ? SCAN_PARAMS : SCAN_PARAMS.filter((spec) => spec.summary)))
@@ -39,10 +43,10 @@ function outOfRange(spec: (typeof SCAN_PARAMS)[number]): boolean {
 }
 
 /** 越界的输入夹回范围内：宁可夹住，也不要让一个不可能的值得以发出去。 */
-function onNumber(key: string, raw: string, spec: { min?: number; max?: number }): void {
+function onNumber(key: string, raw: string, spec: ParamSpec): void {
   const value = Number(raw)
   if (!Number.isFinite(value)) return
-  const clamped = Math.min(Math.max(value, spec.min ?? 0), spec.max ?? Number.MAX_SAFE_INTEGER)
+  const clamped = Math.min(Math.max(value, spec.min ?? 0), maxOf(spec) ?? Number.MAX_SAFE_INTEGER)
   params.value = { ...params.value, [key]: clamped }
 }
 </script>
@@ -70,7 +74,7 @@ function onNumber(key: string, raw: string, spec: { min?: number; max?: number }
         type="number"
         :value="params[spec.key] ?? 0"
         :min="spec.min"
-        :max="spec.max"
+        :max="maxOf(spec)"
         :disabled="disabled"
         @input="onNumber(spec.key, ($event.target as HTMLInputElement).value, spec)"
       />

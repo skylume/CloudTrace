@@ -55,8 +55,13 @@ func (c Config) Validate() error {
 	if !oneOf(c.Scan.Mode, "tcping", "httping") {
 		add("scan.mode", c.Scan.Mode, "只能是 tcping 或 httping")
 	}
-	if c.Scan.Workers < 1 || c.Scan.Workers > MaxWorkersHard {
-		add("scan.workers", c.Scan.Workers, fmt.Sprintf("必须在 1–%d 之间", MaxWorkersHard))
+	// 上限跟着 net.max_workers 走，而不是写死一个数：那是用户自己能调的天花板，
+	// 写死的话调它就没有意义了。
+	if c.Scan.Workers < 1 {
+		add("scan.workers", c.Scan.Workers, "必须至少为 1")
+	} else if c.Scan.Workers > c.Net.MaxWorkers {
+		add("scan.workers", c.Scan.Workers,
+			fmt.Sprintf("超过了全局并发上限 %d，先把它调大或者把并发降下来", c.Net.MaxWorkers))
 	}
 	if c.Scan.SampleMax < 0 || c.Scan.SampleMax > MaxSampleMax {
 		add("scan.sample_max", c.Scan.SampleMax, fmt.Sprintf("必须在 0–%d 之间（0 = 不限制）", MaxSampleMax))
@@ -263,8 +268,8 @@ func (c Config) validateNet(add func(string, any, string)) {
 	if !oneOf(c.Net.IPVersion, "auto", "v4", "v6") {
 		add("net.ip_version", c.Net.IPVersion, "只能是 auto / v4 / v6")
 	}
-	if c.Net.MaxWorkers < 1 || c.Net.MaxWorkers > MaxWorkersHard {
-		add("net.max_workers", c.Net.MaxWorkers, fmt.Sprintf("必须在 1–%d 之间", MaxWorkersHard))
+	if c.Net.MaxWorkers < 1 || c.Net.MaxWorkers > MaxWorkersCeiling {
+		add("net.max_workers", c.Net.MaxWorkers, fmt.Sprintf("必须在 1–%d 之间", MaxWorkersCeiling))
 	}
 	// 代理地址写错了不会报错，只会让所有请求静默失败——这是最难自查的一类
 	// 配置错误，因此在保存时就拦下。

@@ -39,6 +39,14 @@ var frontendOnly = map[string]string{
 	"ui.remember_state": "前端决定要不要恢复上次的页面与密度",
 }
 
+// configOnly 是只被配置包自己读的配置项：它们约束别的项，或者只影响校验。
+//
+// 单独一类而不是混进 pending：这类项看着像死键，改它其实是有后果的——把它当成
+// 「还没生效」会误导人以为可以随便改。
+var configOnly = map[string]string{
+	"net.max_workers": "约束 scan.workers 能填到多大；本身没有别的消费方",
+}
+
 // pending 是还没有任何代码读的配置项，等对应功能落地时从这里删掉。
 //
 // 它们在设置页里带着「尚未生效」的标记并被禁用：一个改了什么都不会发生的开关，
@@ -60,7 +68,6 @@ var pending = map[string]string{
 	"net.connect_timeout_ms":   "探测超时由请求参数决定，配置项还没接上",
 	"net.custom_dns":           "探测目前走系统 DNS",
 	"net.dns_fallback":         "探测目前走系统 DNS",
-	"net.max_workers":          "并发上限目前由任务参数自己校验，没有读这一项",
 	"source.merge_strategy":    "多源合并目前固定取并集",
 	"source.retry_interval_ms": "来源拉取还没有重试",
 	"speed.max_download_mb":    "测速目前只按时长停止，没有按下载量",
@@ -155,6 +162,9 @@ func TestEveryConfigKeyHasAReader(t *testing.T) {
 		if _, ok := frontendOnly[field.jsonName]; ok {
 			continue
 		}
+		if _, ok := configOnly[field.jsonName]; ok {
+			continue
+		}
 		if _, ok := pending[field.jsonName]; ok {
 			continue
 		}
@@ -164,7 +174,7 @@ func TestEveryConfigKeyHasAReader(t *testing.T) {
 	}
 
 	if len(unaccounted) > 0 {
-		t.Errorf("这些配置项没有任何代码读它们：\n  %s\n要么接上，要么写进 frontendOnly / pending 并说明原因",
+		t.Errorf("这些配置项没有任何代码读它们：\n  %s\n要么接上，要么写进 frontendOnly / configOnly / pending 并说明原因",
 			strings.Join(unaccounted, "\n  "))
 	}
 }
@@ -175,7 +185,7 @@ func TestKeyListsHaveNoStaleEntries(t *testing.T) {
 	for _, field := range allConfigFields() {
 		known[field.jsonName] = true
 	}
-	for _, list := range []map[string]string{frontendOnly, pending} {
+	for _, list := range keyLists {
 		for key := range list {
 			if !known[key] {
 				t.Errorf("名单里有配置里已经不存在的项：%s", key)
@@ -184,11 +194,28 @@ func TestKeyListsHaveNoStaleEntries(t *testing.T) {
 	}
 }
 
-// 两条名单不该重叠：一个项要么「只有界面在读」，要么「还没生效」，不能都是。
+// keyLists 是三条名单，名字带进去便于报错时指认。
+var keyLists = map[string]map[string]string{
+	"frontendOnly": frontendOnly,
+	"configOnly":   configOnly,
+	"pending":      pending,
+}
+
+// 名单之间不该重叠：一个项只属于一类。
 func TestKeyListsDoNotOverlap(t *testing.T) {
-	for key := range frontendOnly {
-		if _, both := pending[key]; both {
-			t.Errorf("%s 同时出现在两条名单里", key)
+	names := make([]string, 0, len(keyLists))
+	for name := range keyLists {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, first := range names {
+		for _, second := range names[i+1:] {
+			for key := range keyLists[first] {
+				if _, both := keyLists[second][key]; both {
+					t.Errorf("%s 同时出现在 %s 与 %s 里", key, first, second)
+				}
+			}
 		}
 	}
 }

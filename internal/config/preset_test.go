@@ -176,7 +176,7 @@ func TestSaveRejectsBadValues(t *testing.T) {
 	}{
 		{"类型不对", map[string]any{"scan.workers": []int{1, 2}}},
 		{"类型不对（字符串当数字）", map[string]any{"scan.workers": "60"}},
-		{"超出硬上限", map[string]any{"scan.workers": MaxWorkersHard + 1}},
+		{"超出全局上限", map[string]any{"scan.workers": MaxWorkersDefault + 1}},
 		{"低于下限", map[string]any{"scan.latency_threshold": 0}},
 	}
 	for _, tt := range cases {

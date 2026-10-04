@@ -8,17 +8,27 @@ import (
 	"cloudtrace/internal/model"
 )
 
-// 并发与采样的上限口径，三层含义必须区分：
-//   - MaxWorkersHard 是**代码层硬上限**，Validate 会直接拒绝超出；
-//   - MaxWorkersPreset 是**内置档位上限**（「不再提供 400 档」的原意，
-//     而不是「代码上限 200」）；
+// 并发与采样的上限口径，四层含义必须区分：
+//
+//   - MaxWorkersCeiling 是 **net.max_workers 自身能取到的最大值**。它只是防手滑的
+//     护栏（填个天文数字会真的去开那么多协程），不是产品意义上的上限——真正决定
+//     能开多少并发的是 net.max_workers，而那个值用户自己可以调。
+//   - MaxWorkersDefault 是 **net.max_workers 的默认值**，同时就是默认能填到的
+//     最大并发。它不能取内置档位的 200：档位上限是「一键填充时最多给多少」，
+//     与「用户自己最多能填多少」是两件事，混在一起会让一份本来合法的配置
+//     被判成非法。
+//   - MaxWorkersPreset 是**内置档位上限**（「不再提供 400 档」的原意）。
 //   - WarnWorkers 是**警示阈值**：允许手填，但界面显示警示色、配置体检告警。
+//
+// 并发这件事刻意不设死上限：网卡、路由器、运营商各不相同，能跑多少只有用户
+// 自己知道。界面的职责是把他选的代价说清楚（警示色 + 后果说明），不是替他决定。
 const (
-	MaxWorkersHard   = 2000
-	MaxWorkersPreset = 200
-	WarnWorkers      = 300
-	MaxSampleMax     = 5000
-	WarnLatency      = 100
+	MaxWorkersCeiling = 10000
+	MaxWorkersDefault = 2000
+	MaxWorkersPreset  = 200
+	WarnWorkers       = 300
+	MaxSampleMax      = 5000
+	WarnLatency       = 100
 )
 
 // 默认值。

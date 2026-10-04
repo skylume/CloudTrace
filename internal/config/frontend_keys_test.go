@@ -44,6 +44,7 @@ func skipWithoutFrontend(t *testing.T) []byte {
 }
 
 var pathRE = regexp.MustCompile(`path:\s*'([^']+)'`)
+var maxPathRE = regexp.MustCompile(`path:\s*'([^']+)'[^\n]*maxPath:\s*'([^']+)'`)
 var rangeRE = regexp.MustCompile(`path:\s*'([^']+)'[^\n]*min:\s*(-?\d+),\s*max:\s*(-?\d+)`)
 var enumRE = regexp.MustCompile(`path:\s*'([^']+)',\s*kind:\s*'enum',\s*options:\s*\[([^\]]*)\]`)
 
@@ -201,6 +202,25 @@ func TestFrontendDeclaresOnlyKnownConfigKeys(t *testing.T) {
 	}
 }
 
+/**
+ * 「上限跟随某项」的联动目标必须真的存在。
+ *
+ * 指向一个不存在的键时，界面会静默退回声明里的静态上限——用户把联动项调小了，
+ * 并发那一栏却还允许填更大的值，看起来像联动没做。
+ */
+func TestFrontendMaxPathTargetsExist(t *testing.T) {
+	known := configKeys()
+	matches := maxPathRE.FindAllStringSubmatch(string(skipWithoutFrontend(t)), -1)
+	if len(matches) == 0 {
+		t.Fatal("一个 maxPath 都没解析出来，声明表的写法可能变了")
+	}
+	for _, m := range matches {
+		if !known[m[2]] {
+			t.Errorf("%s 的上限跟着 %q，而配置里没有这一项", m[1], m[2])
+		}
+	}
+}
+
 // hardLimits 是配置校验真正接受的边界，与 Validate 里的判断一一对应。
 //
 // 只登记「设置页曾经写错过」和「容易写错」的几项：全量登记等于把 validate.go
@@ -209,11 +229,13 @@ var hardLimits = map[string]frontendRange{
 	"speed.concurrency":      {min: 1, max: 16},
 	"speed.breaker_429":      {min: 1, max: 100},
 	"server.session_ttl_min": {min: 1, max: 10080},
-	"scan.workers":           {min: 1, max: MaxWorkersHard},
-	"net.max_workers":        {min: 1, max: MaxWorkersHard},
-	"history.keep_count":     {min: 1, max: 1000},
-	"ui.page_size":           {min: 1, max: 1000},
-	"scan.ping_times":        {min: 1, max: 100},
+	// 并发那一项的实际上限跟着 net.max_workers 走，声明里的 2000 只是默认值的
+	// 影子；这里比的是「不会超出 net.max_workers 自身能取到的最大值」。
+	"scan.workers":       {min: 1, max: MaxWorkersCeiling},
+	"net.max_workers":    {min: 1, max: MaxWorkersCeiling},
+	"history.keep_count": {min: 1, max: 1000},
+	"ui.page_size":       {min: 1, max: 1000},
+	"scan.ping_times":    {min: 1, max: 100},
 }
 
 /**

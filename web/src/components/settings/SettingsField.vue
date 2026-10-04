@@ -10,14 +10,29 @@
  */
 import { computed } from 'vue'
 
+
 import { t } from '@/i18n'
-import { fieldText, type SettingField } from '@/i18n/settingsSchema'
+import { fieldText, readPath, type SettingField } from '@/i18n/settingsSchema'
 
 const props = defineProps<{
   field: SettingField
   value: unknown
+  /** 全量配置：field.maxPath 要按它去解析联动的那一项。 */
+  values: Record<string, unknown>
   locale: 'zh' | 'en'
 }>()
+
+/**
+ * 数值上限。
+ *
+ * 优先取 maxPath 指向的那一项（如并发跟着「并发上限」走）。取不到就退回声明里
+ * 的静态值——宁可范围松一点，也不要让输入框因为联动项还没到而没有上限。
+ */
+const maxValue = computed(() => {
+  if (props.field.maxPath === undefined) return props.field.max
+  const linked = readPath(props.values, props.field.maxPath)
+  return typeof linked === 'number' ? linked : props.field.max
+})
 
 const emit = defineEmits<{
   (event: 'change', path: string, value: unknown): void
@@ -43,7 +58,7 @@ function optionLabel(option: string): string {
 function onNumber(raw: string): void {
   const value = Number(raw)
   if (!Number.isFinite(value)) return
-  const clamped = Math.min(Math.max(value, props.field.min ?? 0), props.field.max ?? Number.MAX_SAFE_INTEGER)
+  const clamped = Math.min(Math.max(value, props.field.min ?? 0), maxValue.value ?? Number.MAX_SAFE_INTEGER)
   emit('change', props.field.path, clamped)
 }
 
@@ -95,7 +110,7 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         class="ct-input tnum"
         :value="Number(value ?? 0)"
         :min="field.min"
-        :max="field.max"
+        :max="maxValue"
         :step="field.kind === 'float' ? (field.step ?? 0.1) : 1"
         :disabled="props.field.pending"
         @input="onNumber(($event.target as HTMLInputElement).value)"
@@ -121,7 +136,7 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
       />
 
       <span v-if="field.min !== undefined && field.kind !== 'float'" class="ct-subtle range tnum">
-        {{ field.min }}–{{ field.max }}
+        {{ field.min }}–{{ maxValue }}
       </span>
       <button type="button" class="ct-link reset" @click="emit('reset', field.path)">
         {{ t('settings.resetItem') }}

@@ -9,6 +9,7 @@
  * 份拷贝还在用旧值，而用户看到的正是前端那份。这里只负责把后端的档位值换算成
  * 界面用的形状。
  */
+import { readPath } from './settingsSchema'
 
 export interface ParamSpec {
   /** 对应 ScanParams 的字段名。 */
@@ -19,6 +20,14 @@ export interface ParamSpec {
   unit?: string
   min?: number
   max?: number
+  /**
+   * 上限跟随配置里的另一项（点号路径）。
+   *
+   * 面板上改的值会写回配置，所以上限必须跟着配置里那个值走——不跟的话面板能
+   * 填出一个必定被拒的值，而写回失败是静默的：用户改了、看起来生效了，其实
+   * 没存进去。
+   */
+  maxPath?: string
   /** 出现在档位参数摘要里；否则只在「全部参数」中显示。 */
   summary?: boolean
   /**
@@ -49,9 +58,11 @@ export const SCAN_PARAMS: ParamSpec[] = [
     hintKey: 'param.scan.workers.hint',
     kind: 'int',
     min: 1,
-    // 硬上限就是后端校验的上限。它比内置档位高得多是有意的：档位只到 200，
-    // 但手填是高级选项，用户有权设得更大——该做的是给警示色，不是拦住他。
-    max: 2000,
+    // 上限跟着「并发上限」那一项走。默认 2000，比内置档位的 200 高得多是有意的：
+    // 档位只到 200，但手填是高级选项，用户有权设得更大——该做的是给警示色，
+    // 不是拦住他。max 只是取不到配置时的兜底。
+    max: 10000,
+    maxPath: 'net.max_workers',
     summary: true,
     // 弱网与老路由上并发拉满会把自己的网络压垮，而结果反而更差。
     warnAbove: 300,
@@ -158,6 +169,19 @@ export function paramNameOf(path: string): string | undefined {
 export const PARAM_WIRE_KEYS: Record<string, string> = Object.fromEntries(
   Object.entries(PARAM_PATHS).map(([name, path]) => [name, path.split('.').pop() ?? name]),
 )
+
+/**
+ * 某一项的有效上限。
+ *
+ * 声明里给了 maxPath 时以配置里的那一项为准（如并发跟着「并发上限」走）。
+ * 取不到就退回静态值：宁可范围松一点，也不要让输入框因为配置还没到就没有上限，
+ * 那样用户会填出一个写回时被拒的值——而写回失败是静默的。
+ */
+export function effectiveMax(spec: ParamSpec, config: Record<string, unknown>): number | undefined {
+  if (spec.maxPath === undefined) return spec.max
+  const linked = readPath(config, spec.maxPath)
+  return typeof linked === 'number' ? linked : spec.max
+}
 
 /** 自定义档位的 id。用户手改任一参数后落到这里。 */
 export const CUSTOM_PRESET = 'custom'
