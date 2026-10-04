@@ -15,7 +15,8 @@ import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, PARAM_WIRE_KEYS, matchPreset, presetValues } from '@/i18n/params'
+import { CUSTOM_PRESET, PARAM_WIRE_KEYS, SCAN_PARAMS, matchPreset, presetValues } from '@/i18n/params'
+import PresetPicker from '@/components/scan/PresetPicker.vue'
 import { useActionStore } from '@/stores/actions'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
@@ -23,6 +24,7 @@ import { usePresetsStore } from '@/stores/presets'
 import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/task'
+import { useUIStore } from '@/stores/ui'
 import { diffScanParams, isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
 
 const task = useTaskStore()
@@ -32,6 +34,19 @@ const results = useResultsStore()
 const settings = useSettingsStore()
 const actions = useActionStore()
 const presets = usePresetsStore()
+const ui = useUIStore()
+
+/** 展开 / 收起详细设置。与参数面板的「全部参数」共用同一个状态，不会各说各话。 */
+function toggleDetails(): void {
+  ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced')
+}
+
+/** 简单模式下那一行「这次会用什么参数跑」。 */
+const summaryText = computed(() =>
+  SCAN_PARAMS.filter((spec) => spec.summary)
+    .map((spec) => t(spec.labelKey as never) + ' ' + String(params.value[spec.key] ?? '—') + (spec.unit ?? ''))
+    .join(' · '),
+)
 
 /**
  * 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。
@@ -230,20 +245,39 @@ function stop(): void {
   <div class="page">
     <Banner v-if="geo.warning" tone="warn" :message="geo.warning.message" @close="geo.dismissWarning()" />
 
+    <!--
+      首屏只有「选档位 + 开始扫描」：这两件事是同一个决定的两半。数据源、参数
+      明细、过程、日志全部收进「详细设置」，默认不展开——首次进来的用户不需要
+      先读懂六个面板才敢点按钮。
+    -->
+    <div class="actions">
+      <button v-if="!running" type="button" class="ct-btn ct-btn--primary ct-btn--lg" @click="start">
+        {{ t('scan.start') }}
+      </button>
+      <button v-else type="button" class="ct-btn ct-btn--lg" @click="stop">
+        {{ t('scan.stop') }}
+      </button>
+      <PresetPicker v-model:params="params" v-model:preset-id="presetId" />
+      <span class="spacer" />
+      <button type="button" class="ct-link" :aria-expanded="ui.showAdvanced" @click="toggleDetails">
+        {{ ui.showAdvanced ? t('preset.collapse') : t('scan.details') }}
+      </button>
+    </div>
+
     <div class="columns">
       <div class="main">
-        <SourcePanel v-model="source" :official-count="officialCount" />
-        <PresetPanel v-model:params="params" v-model:preset-id="presetId" :disabled="running" />
-
-        <div class="actions">
-          <button v-if="!running" type="button" class="ct-btn ct-btn--primary ct-btn--lg" @click="start">
-            {{ t('scan.start') }}
-          </button>
-          <button v-else type="button" class="ct-btn ct-btn--lg" @click="stop">
-            {{ t('scan.stop') }}
-          </button>
-          <span class="ct-subtle">Ctrl + Enter</span>
-        </div>
+        <template v-if="ui.showAdvanced">
+          <SourcePanel v-model="source" :official-count="officialCount" />
+          <PresetPanel v-model:params="params" :disabled="running" />
+        </template>
+        <!--
+          简单模式不留白：把「这次会用什么参数跑」写成一行。用户不用读六个面板
+          也该知道自己点下去会发生什么。
+        -->
+        <section v-else class="ct-card">
+          <h2 class="ct-card-title">{{ t('preset.summary') }}</h2>
+          <p class="ct-subtle">{{ summaryText }}</p>
+        </section>
       </div>
 
       <div class="side">
@@ -284,8 +318,13 @@ function stop(): void {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
+}
+
+.spacer {
+  flex: 1;
 }
 
 @media (max-width: 1024px) {

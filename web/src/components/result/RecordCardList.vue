@@ -95,6 +95,14 @@ async function copy(record: IPRecord): Promise<void> {
           @change="results.toggleSelect(recordKey(record))"
         />
         <span class="ip ct-mono">{{ record.ip }}:{{ record.port }}</span>
+        <!-- 前三名：克制的徽章，理由靠悬停说明，不靠涂色。 -->
+        <span
+          v-if="results.topKeys.has(recordKey(record))"
+          class="recommend"
+          :title="t(results.recommendReasonKey as never)"
+        >
+          {{ t('result.recommend') }}
+        </span>
         <span class="spacer" />
         <span class="ct-subtle">{{ expanded.includes(recordKey(record)) ? '▾' : '▸' }}</span>
       </div>
@@ -168,6 +176,17 @@ async function copy(record: IPRecord): Promise<void> {
 
 .ip {
   font-size: var(--font-size-sm);
+}
+
+/* 克制的徽章：细描边、不加底色，字号比正文小一档。 */
+.recommend {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  cursor: help;
 }
 
 .grid {

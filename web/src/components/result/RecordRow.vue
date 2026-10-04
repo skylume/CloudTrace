@@ -22,6 +22,8 @@ const props = defineProps<{
   /** 名次，从 1 开始。 */
   rank: number
   expanded: boolean
+  /** 是否渲染行尾的推荐列。排序维度不反映优劣时整列都不出现。 */
+  showRecommend?: boolean
 }>()
 
 const emit = defineEmits<{ (event: 'toggle'): void }>()
@@ -76,9 +78,23 @@ async function copyCell(key: string): Promise<void> {
         {{ formatField(column.key, valuesOf(props.record)[column.key], props.record) }}
       </span>
     </td>
+    <!--
+      前三名只放一个克制的徽章：不加底色、不加竖条、不用金银铜。结果表本身
+      已经有信号条与状态色，再加一层高亮会让「什么重要」失去焦点。
+      推荐的理由靠悬停说明，而不是靠涂色。
+    -->
+    <td v-if="props.showRecommend" class="ct-recommend-col">
+      <span
+        v-if="results.topKeys.has(recordKey(props.record))"
+        class="recommend"
+        :title="t(results.recommendReasonKey as never)"
+      >
+        {{ t('result.recommend') }}
+      </span>
+    </td>
   </tr>
   <tr v-if="props.expanded" class="detail-row">
-    <td :colspan="props.columns.length + 3">
+    <td :colspan="props.columns.length + 3 + (props.showRecommend ? 1 : 0)">
       <RecordDetail :record="props.record" :fields="fields.fields" />
     </td>
   </tr>
@@ -98,5 +114,16 @@ async function copyCell(key: string): Promise<void> {
   height: auto;
   padding: 0;
   background: var(--color-surface-sunken);
+}
+
+/* 克制的徽章：细描边、不加底色，字号比正文小一档。 */
+.recommend {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  cursor: help;
 }
 </style>

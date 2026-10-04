@@ -8,21 +8,19 @@
  *
  * 参数的中文标签、范围、说明都来自 i18n 映射表，组件里不硬编码。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import PresetManager from '@/components/scan/PresetManager.vue'
 import PresetParams from '@/components/scan/PresetParams.vue'
 import Banner from '@/components/ui/Banner.vue'
-import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, matchPreset, paramPaths } from '@/i18n/params'
+import { paramPaths } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
 import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
 import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
-const presetId = defineModel<string>('presetId', { required: true })
 
 defineProps<{ disabled?: boolean }>()
 
@@ -57,53 +55,6 @@ const expanded = computed(() => ui.showAdvanced)
  */
 function toggleExpanded(): void {
   ui.setDensity(expanded.value ? 'simple' : 'advanced')
-}
-
-/**
- * 档位下拉的选项。
- *
- * 档位列表来自后端，顺序也由后端定（内置在前、各自按 Order 排）。前端不重排：
- * 两处都排序，用户看到的顺序与后端认定的顺序迟早会不一样。
- */
-const segments = computed(() => [
-  ...presets.list.map((preset) => ({ value: preset.id, label: preset.name })),
-  { value: CUSTOM_PRESET, label: t('preset.custom') },
-])
-
-/**
- * 参数一变就重新判定档位。
- *
- * 档位由参数**推**出来，而不是另外记一个状态：改回原值就该自动回到那个档位，
- * 而不是一直挂着「自定义」。换档位时反过来——服务端写完配置广播回来，参数变
- * 了，这里跟着判定成新档位。
- */
-watch(
-  params,
-  () => {
-    presetId.value = matchPreset(params.value, presets.list)
-  },
-  { deep: true },
-)
-
-/** 偏离档位时的提示：告诉用户「你已经不在原来的档位上了」。 */
-const deviatedFrom = computed(() => {
-  if (presetId.value === CUSTOM_PRESET) return ''
-  if (matchPreset(params.value, presets.list) !== CUSTOM_PRESET) return ''
-  const source = presets.byID(presetId.value)
-  return source ? t('preset.deviated', { name: source.name }) : ''
-})
-
-/**
- * 换档位。
- *
- * 只发命令，不在本地填值：服务端写完配置会广播回来，面板跟着填。两边各写
- * 一次看着更快，但两次写的来源标记不一样（档位填的标 preset、面板写回的标
- * user），谁后到谁说了算——结果是自适应能不能动这组值变得不确定。
- */
-function applyPreset(id: string): void {
-  presetId.value = id
-  if (id === CUSTOM_PRESET) return
-  presets.use(id)
 }
 
 // ---- 另存为我的档位 ----
@@ -149,7 +100,6 @@ function warningText(item: ParamWarning): string {
   <section class="ct-card">
     <h2 class="ct-card-title">
       <span>{{ t('preset.summary') }}</span>
-      <span v-if="deviatedFrom" class="deviated">{{ deviatedFrom }}</span>
       <span class="spacer" />
       <button type="button" class="ct-link" @click="startSave">{{ t('preset.saveAs') }}</button>
       <button type="button" class="ct-link" @click="toggleExpanded">
@@ -170,13 +120,6 @@ function warningText(item: ParamWarning): string {
       <button type="button" class="ct-btn ct-btn--primary" @click="confirmSave">{{ t('common.save') }}</button>
       <button type="button" class="ct-btn" @click="saving = false">{{ t('common.cancel') }}</button>
     </div>
-
-    <SegmentedControl
-      :segments="segments"
-      :model-value="presetId"
-      :label="t('preset.summary')"
-      @update:model-value="applyPreset"
-    />
 
     <div v-if="adaptive.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
       <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
@@ -203,8 +146,6 @@ function warningText(item: ParamWarning): string {
         :closable="false"
       />
     </div>
-
-    <p v-if="deviatedFrom" class="notice ct-subtle">{{ t('preset.appliesNextRun') }}</p>
 
     <PresetParams v-model:params="params" :disabled="disabled" />
 

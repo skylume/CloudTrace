@@ -25,6 +25,21 @@ export interface RecordGroup {
 export type SortKey = 'latency' | 'latency_avg' | 'loss' | 'jitter' | 'score' | 'speed_mbps' | 'region'
 
 /** 排序维度与后端的取值一致，方向取该维度的自然方向。 */
+/**
+ * 能反映「好不好」的排序维度 → 推荐理由的文案键。
+ *
+ * 地区不在其中：按地区排出来的前三名只是字母序，推荐它们没有依据。宁可少标
+ * 一个徽章，也不要给一个用户一查就发现站不住的理由。
+ */
+const RECOMMEND_REASONS: Partial<Record<SortKey, string>> = {
+  latency: 'result.recommend.latency',
+  latency_avg: 'result.recommend.latency',
+  loss: 'result.recommend.loss',
+  jitter: 'result.recommend.jitter',
+  score: 'result.recommend.score',
+  speed_mbps: 'result.recommend.speed',
+}
+
 const NATURAL_DESC: Record<SortKey, boolean> = {
   latency: false,
   latency_avg: false,
@@ -176,6 +191,19 @@ export const useResultsStore = defineStore('results', () => {
   })
 
   /**
+   * 前三名，以及它们为什么被推荐。
+   *
+   * 只在排序维度反映「好不好」时给出：按地区排列时靠前的三个只是字母序，
+   * 给它们标「推荐」等于在骗人。
+   */
+  const recommendReasonKey = computed(() => RECOMMEND_REASONS[sortKey.value] ?? '')
+
+  const topKeys = computed<Set<string>>(() => {
+    if (recommendReasonKey.value === '') return new Set()
+    return new Set(visible.value.slice(0, 3).map(recordKey))
+  })
+
+  /**
    * stats 从结果集现算。
    *
    * 不直接用后端摘要：扫描过程中结果是一条条推过来的，用现算的统计才能跟着
@@ -241,6 +269,8 @@ export const useResultsStore = defineStore('results', () => {
     sourceId,
     total,
     stats,
+    topKeys,
+    recommendReasonKey,
     regionCounts,
     selected,
     selectedRecords,

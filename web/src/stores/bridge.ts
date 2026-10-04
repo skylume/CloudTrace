@@ -94,6 +94,13 @@ export function wireEvents(): void {
     if (next.phase !== previous.phase || next.status !== previous.status) {
       log.push(t('task.' + next.status) + ' · ' + t('task.phase.' + next.phase))
     }
+    if (previous.status === 'running') {
+      // 跑完就呈现结果：停在扫描页的话，用户得自己想到「结果在另一个页面」，
+      // 而这一步本来就是他要做的事。
+      if (next.status === 'done') ui.activeView = 'result'
+      // 中途停止但已经扫出了东西时也跳：那批结果同样是可用的。
+      else if (next.status === 'aborted' && results.total > 0) ui.activeView = 'result'
+    }
     task.applyState(next)
   })
   onEvent(EVT.progress, (data) => task.applyProgress(data as ProgressPayload))
