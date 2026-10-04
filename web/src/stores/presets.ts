@@ -14,10 +14,36 @@ import { computed, ref } from 'vue'
 import { CMD } from '@/api/protocol'
 import { sendCommand } from '@/api/client'
 import type { Preset, PresetsPayload } from '@/api/types'
+import { uniquePresetID } from '@/utils/presetIO'
 
 /** 自定义档位的标识前缀由后端生成，前端只负责拼接一个不会撞车的值。 */
 function newPresetID(): string {
   return `my-${Date.now().toString(36)}`
+}
+
+/**
+ * 算出上移 / 下移之后各档位的排序号。
+ *
+ * 只返回顺序真的变了的那些：每个都要走一次保存，没动的不用重发。
+ *
+ * 按「位置」而不是「交换两个 Order 值」来算：两个档位的 Order 可能相同（都
+ * 是新存的，默认 0），交换一个不变的值等于没动。
+ */
+export function reorderPlan(items: Preset[], id: string, delta: number): { id: string; order: number }[] {
+  const from = items.findIndex((item) => item.id === id)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= items.length) return []
+
+  const next = items.slice()
+  const [moved] = next.splice(from, 1)
+  if (moved === undefined) return []
+  next.splice(to, 0, moved)
+
+  const plan: { id: string; order: number }[] = []
+  next.forEach((item, index) => {
+    if (item.order !== index) plan.push({ id: item.id, order: index })
+  })
+  return plan
 }
 
 export const usePresetsStore = defineStore('presets', () => {
@@ -76,5 +102,55 @@ export const usePresetsStore = defineStore('presets', () => {
     sendCommand(CMD.presetsSetDefault, { id })
   }
 
-  return { list, defaultID, loaded, builtin, custom, byID, refresh, apply, use, save, remove, setDefault }
+  /** 改个名字。覆盖保存同一个标识即可，不必另设命令。 */
+  function rename(id: string, name: string): boolean {
+    const preset = byID(id)
+    const trimmed = name.trim()
+    if (!preset || trimmed === '') return false
+    return sendCommand(CMD.presetsSave, { ...preset, name: trimmed })
+  }
+
+  /** 在「我的档位」里上移 / 下移。 */
+  function move(id: string, delta: number): void {
+    const items = custom.value
+    for (const step of reorderPlan(items, id, delta)) {
+      const preset = byID(step.id)
+      if (preset) sendCommand(CMD.presetsSave, { ...preset, order: step.order })
+    }
+  }
+
+  /**
+   * 导入一批档位，返回实际发出的保存数。
+   *
+   * 每个都换一个新标识：文件是从别人那儿来的，沿用原标识会把本机同标识的
+   * 档位顶掉——而用户导入的预期是「多几个档位」，不是「替换掉现在这个」。
+   */
+  function importMany(incoming: Preset[]): number {
+    const taken = new Set(list.value.map((item) => item.id))
+    let count = 0
+    for (const item of incoming) {
+      const id = uniquePresetID(item.id, taken)
+      taken.add(id)
+      if (sendCommand(CMD.presetsSave, { ...item, id })) count += 1
+    }
+    return count
+  }
+
+  return {
+    list,
+    defaultID,
+    loaded,
+    builtin,
+    custom,
+    byID,
+    refresh,
+    apply,
+    use,
+    save,
+    remove,
+    setDefault,
+    rename,
+    move,
+    importMany,
+  }
 })

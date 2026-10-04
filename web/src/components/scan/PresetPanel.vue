@@ -8,12 +8,14 @@
  *
  * 参数的中文标签、范围、说明都来自 i18n 映射表，组件里不硬编码。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
+import PresetManager from '@/components/scan/PresetManager.vue'
+import PresetParams from '@/components/scan/PresetParams.vue'
 import Banner from '@/components/ui/Banner.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, SCAN_PARAMS, matchPreset, paramPaths } from '@/i18n/params'
+import { CUSTOM_PRESET, matchPreset, paramPaths } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
 import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
@@ -68,9 +70,19 @@ const segments = computed(() => [
   { value: CUSTOM_PRESET, label: t('preset.custom') },
 ])
 
-/** 摘要里显示的参数；展开后显示全部。 */
-const visibleParams = computed(() =>
-  expanded.value ? SCAN_PARAMS : SCAN_PARAMS.filter((spec) => spec.summary),
+/**
+ * 参数一变就重新判定档位。
+ *
+ * 档位由参数**推**出来，而不是另外记一个状态：改回原值就该自动回到那个档位，
+ * 而不是一直挂着「自定义」。换档位时反过来——服务端写完配置广播回来，参数变
+ * 了，这里跟着判定成新档位。
+ */
+watch(
+  params,
+  () => {
+    presetId.value = matchPreset(params.value, presets.list)
+  },
+  { deep: true },
 )
 
 /** 偏离档位时的提示：告诉用户「你已经不在原来的档位上了」。 */
@@ -92,17 +104,6 @@ function applyPreset(id: string): void {
   presetId.value = id
   if (id === CUSTOM_PRESET) return
   presets.use(id)
-}
-
-/**
- * 改一个参数。
- *
- * 改完重新判定档位：改回原值就该自动回到那个档位，而不是一直挂着「自定义」。
- */
-function updateParam(key: string, value: number | boolean): void {
-  const next = { ...params.value, [key]: value }
-  params.value = next
-  presetId.value = matchPreset(next, presets.list)
 }
 
 // ---- 另存为我的档位 ----
@@ -128,27 +129,6 @@ function confirmSave(): void {
     saving.value = false
     draftName.value = ''
   }
-}
-
-/**
- * 是否超出建议区间。
- *
- * 只看有值的情况：0 在探测次数里表示「自动」，不是「太小」。
- */
-function outOfRange(spec: (typeof SCAN_PARAMS)[number]): boolean {
-  const value = Number(params.value[spec.key] ?? 0)
-  if (!Number.isFinite(value)) return false
-  if (value === 0 && spec.kind === 'int') return false
-  if (spec.warnBelow !== undefined && value < spec.warnBelow) return true
-  if (spec.warnAbove !== undefined && value > spec.warnAbove) return true
-  return false
-}
-
-function onNumber(key: string, raw: string, spec: { min?: number; max?: number }): void {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return
-  const clamped = Math.min(Math.max(value, spec.min ?? 0), spec.max ?? Number.MAX_SAFE_INTEGER)
-  updateParam(key, clamped)
 }
 
 /**
@@ -226,43 +206,9 @@ function warningText(item: ParamWarning): string {
 
     <p v-if="deviatedFrom" class="notice ct-subtle">{{ t('preset.appliesNextRun') }}</p>
 
-    <div class="grid">
-      <label v-for="spec in visibleParams" :key="spec.key" class="field">
-        <span class="label" :title="t(spec.hintKey as never)">
-          {{ t(spec.labelKey as never) }}
-          <!-- 被自动调整过的值必须留痕：徽标 + 悬停说明 + 一键还原。 -->
-          <button
-            v-if="adaptive.applied[spec.key]"
-            type="button"
-            class="badge"
-            :title="adaptive.reasonText(adaptive.applied[spec.key]!.reason)"
-            @click="adaptive.revert(spec.key)"
-          >
-            {{ t('adaptive.badge') }}
-          </button>
-        </span>
-        <input
-          v-if="spec.kind === 'int'"
-          class="ct-input tnum"
-          :class="{ warn: outOfRange(spec) }"
-          type="number"
-          :value="params[spec.key] ?? 0"
-          :min="spec.min"
-          :max="spec.max"
-          :disabled="disabled"
-          @input="onNumber(spec.key, ($event.target as HTMLInputElement).value, spec)"
-        />
-        <input
-          v-else
-          class="ct-check"
-          type="checkbox"
-          :checked="Boolean(params[spec.key])"
-          :disabled="disabled"
-          @change="updateParam(spec.key, ($event.target as HTMLInputElement).checked)"
-        />
-        <span v-if="spec.unit" class="unit">{{ spec.unit }}</span>
-      </label>
-    </div>
+    <PresetParams v-model:params="params" :disabled="disabled" />
+
+    <PresetManager />
   </section>
 </template>
 
@@ -294,58 +240,9 @@ function warningText(item: ParamWarning): string {
   min-width: 0;
 }
 
-/* 自适应徽标：小、克制，但一眼能看出这个值不是自己设的。点一下还原。 */
-.badge {
-  margin-left: var(--space-1);
-  padding: 1px var(--space-2);
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-info-bg);
-  color: var(--color-info);
-  font-size: 10px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-/* 超出建议区间只标色不拦截：用户有权这么设，但该知道代价。 */
-.field .ct-input.warn {
-  border-color: var(--color-warn);
-  color: var(--color-warn);
-}
-
 .deviated {
   color: var(--color-warn);
   font-size: var(--font-size-xs);
   font-weight: 400;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.field {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.label {
-  flex: 0 0 62px;
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-xs);
-}
-
-.field .ct-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.unit {
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-xs);
 }
 </style>
