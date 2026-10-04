@@ -125,7 +125,9 @@ func (c Config) Validate() error {
 	if !oneOf(c.UI.TimeFormat, "local", "utc") {
 		add("ui.time_format", c.UI.TimeFormat, "只能是 local 或 utc")
 	}
-	if !oneOf(c.UI.StartPage, "scan", "result", "speed", "history", "settings") {
+	// 测速不在其中：它是结果页的一个视图，不是独立页面。列进合法取值会让用户
+	// 以为它是一个页面，而界面上一旦选不到，就会变成一个只能手改配置项的值。
+	if !oneOf(c.UI.StartPage, "scan", "result", "history", "settings") {
 		add("ui.start_page", c.UI.StartPage, "不是有效的页面名")
 	}
 	if c.UI.PageSize < 1 || c.UI.PageSize > 1000 {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -44,6 +45,32 @@ func skipWithoutFrontend(t *testing.T) []byte {
 
 var pathRE = regexp.MustCompile(`path:\s*'([^']+)'`)
 var rangeRE = regexp.MustCompile(`path:\s*'([^']+)'[^\n]*min:\s*(-?\d+),\s*max:\s*(-?\d+)`)
+var enumRE = regexp.MustCompile(`path:\s*'([^']+)',\s*kind:\s*'enum',\s*options:\s*\[([^\]]*)\]`)
+
+/** frontendEnumOption 是设置页给某个枚举项列出的一个可选值。 */
+type frontendEnumOption struct {
+	path   string
+	option string
+}
+
+/** frontendEnumOptions 解析出声明表里全部枚举项的取值。 */
+func frontendEnumOptions(t *testing.T) []frontendEnumOption {
+	t.Helper()
+	matches := enumRE.FindAllStringSubmatch(string(skipWithoutFrontend(t)), -1)
+	if len(matches) < 10 {
+		t.Fatalf("只解析出 %d 个枚举项，声明表的写法可能变了", len(matches))
+	}
+	out := make([]frontendEnumOption, 0, len(matches))
+	for _, m := range matches {
+		for _, raw := range strings.Split(m[2], ",") {
+			option := strings.Trim(strings.TrimSpace(raw), "'\"")
+			if option != "" {
+				out = append(out, frontendEnumOption{path: m[1], option: option})
+			}
+		}
+	}
+	return out
+}
 
 /** frontendPaths 解析出声明表里出现的全部路径。 */
 func frontendPaths(t *testing.T) []string {
@@ -109,6 +136,59 @@ func configKeys() map[string]bool {
 		}
 	}
 	return out
+}
+
+/**
+ * 设置页列为可选的枚举值，配置校验必须真的接受。
+ *
+ * 用 Validate 本身当权威而不是另抄一份清单：抄来的那份一样会与校验走散，而
+ * 走散的表现是「界面允许选、保存时被拒」，看起来像程序的错。
+ *
+ * 反方向（后端接受但界面没列出）不在这里管：界面刻意少给几个选项是合理的
+ * 取舍，没法自动判断。
+ */
+func TestFrontendEnumOptionsAreAccepted(t *testing.T) {
+	for _, item := range frontendEnumOptions(t) {
+		obj, err := toObject(Default())
+		if err != nil {
+			t.Fatalf("转对象失败：%v", err)
+		}
+		path := splitKey(item.path)
+		if _, ok := lookupPath(obj, path); !ok {
+			t.Errorf("设置页声明了配置里没有的枚举项 %q", item.path)
+			continue
+		}
+		setPath(obj, path, item.option)
+
+		next, err := fromObject(obj)
+		if err != nil {
+			t.Errorf("%s 设成 %q 后配置解析不了：%v", item.path, item.option, err)
+			continue
+		}
+		err = next.Validate()
+		if err == nil || !complainsAbout(err, item.path) {
+			// 报的是别的键（如选了自定义来源就必须填自定义地址）属于跨字段约束，
+			// 不是这个取值本身不被接受，这里不管。
+			continue
+		}
+		t.Errorf("设置页把 %s 的 %q 列为可选，配置校验却拒绝：%v", item.path, item.option, err)
+	}
+}
+
+// complainsAbout 判断校验失败里有没有指向这个键的。
+//
+// 认不出形状的失败一律算相关：宁可误报一条，也不要放过真正的取值问题。
+func complainsAbout(err error, key string) bool {
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		return true
+	}
+	for _, field := range ve.Fields {
+		if field.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func TestFrontendDeclaresOnlyKnownConfigKeys(t *testing.T) {
