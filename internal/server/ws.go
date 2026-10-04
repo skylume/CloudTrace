@@ -350,6 +350,7 @@ func (s *server) commands() map[string]commandHandler {
 		s.historyHandlers(),
 		s.settingsHandlers(),
 		s.presetsHandlers(),
+		s.migrateHandlers(),
 		s.healthHandlers(),
 		s.geoHandlers(),
 		{cmdExport: s.handleExport},

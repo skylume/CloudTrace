@@ -148,6 +148,36 @@ export interface PresetsPayload {
   default: string
 }
 
+/** 一次旧版数据迁移的结果。 */
+export interface MigrateReport {
+  /** 备份目录；出问题能翻回去。 */
+  backup_dir?: string
+  /** 配置是否已写入。 */
+  settings: boolean
+  /** 导入的历史份数与失败数。 */
+  imported: number
+  failed: number
+  /** 要告诉用户的调整。 */
+  notes?: string[]
+  /** 没能搬过来的项及原因。 */
+  skipped?: string[]
+}
+
+/** 旧版数据迁移的状态。 */
+export interface MigrateStatus {
+  /** 是否检测到旧版数据。 */
+  found: boolean
+  /** 旧数据所在目录。 */
+  dir?: string
+  /** 旧数据的构成。 */
+  settings: boolean
+  histories: number
+  /** 这份旧数据是否已经迁移过。 */
+  migrated: boolean
+  /** 最近一次迁移的结果。 */
+  report?: MigrateReport
+}
+
 export interface HistoryRecord {
   id: string
   type: 'scan' | 'speed'

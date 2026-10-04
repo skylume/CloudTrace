@@ -32,6 +32,9 @@ export const CMD = {
   presetsDelete: 'presets/delete',
   presetsSetDefault: 'presets/set_default',
 
+  migrateStatus: 'migrate/status',
+  migrateRun: 'migrate/run',
+
   export: 'export',
   healthCheck: 'health/check',
   geoStatus: 'geo/status',
@@ -72,6 +75,8 @@ export const EVT = {
   settings: 'settings',
   /** 档位列表：既是一次读取的结果，也是任何一次档位变更的广播。 */
   presets: 'presets',
+  /** 旧版数据迁移：同样读与变更共用一个事件名。 */
+  migrate: 'migrate',
   export: 'export',
   health: 'health',
   geo: 'geo',

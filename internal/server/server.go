@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
+	"cloudtrace/internal/migrate"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/speed"
 )
@@ -45,6 +47,18 @@ type server struct {
 	listenPort int
 	// startup 是启动时的配置快照，用于判断哪些改动要重启才生效。
 	startup config.Config
+
+	// legacyRoot 返回旧版数据可能在的目录；为 nil 时用程序目录。
+	//
+	// 留一个可替换的入口是为了能测：用例没法把文件放进测试二进制所在目录，
+	// 那会污染构建产物。
+	legacyRoot func() string
+
+	// mu 保护下面这个运行期记录字段。命令在各自连接的 goroutine 上执行，
+	// 而广播会从任意 goroutine 读到它。
+	mu sync.Mutex
+	// lastMigrate 是最近一次旧数据迁移的结果，供状态读取时回放。
+	lastMigrate *migrate.Report
 
 	// 体检用的可注入探测函数，为 nil 时由 health 包做真实探测。
 	portInUse       func(int) bool

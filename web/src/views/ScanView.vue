@@ -21,6 +21,7 @@ import { useActionStore } from '@/stores/actions'
 import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
+import { useMigrateStore } from '@/stores/migrate'
 import { usePresetsStore } from '@/stores/presets'
 import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
@@ -37,6 +38,34 @@ const actions = useActionStore()
 const presets = usePresetsStore()
 const ui = useUIStore()
 const adaptive = useAdaptiveStore()
+const migrate = useMigrateStore()
+
+/**
+ * 旧版数据那条提示的文案。
+ *
+ * 在脚本里拼好而不是写进模板：模板里的模板字面量容易被工具链吞掉（这个仓库
+ * 已经被坑过几次）。
+ */
+const migrateOffer = computed(() => {
+  const s = migrate.status
+  if (!s) return ''
+  const parts: string[] = []
+  if (s.settings) parts.push(t('migrate.part.settings'))
+  if (s.histories > 0) parts.push(t('migrate.part.histories', { count: s.histories }))
+  return t('migrate.offer', { parts: parts.join('、') })
+})
+
+const migrateResult = computed(() => {
+  const r = migrate.justRanReport
+  if (!r) return ''
+  const parts: string[] = []
+  if (r.settings) parts.push(t('migrate.part.settings'))
+  if (r.imported > 0) parts.push(t('migrate.part.histories', { count: r.imported }))
+  let text = t('migrate.done', { parts: parts.join('、') })
+  if (r.backup_dir) text += t('migrate.doneBackup', { dir: r.backup_dir })
+  if (r.skipped && r.skipped.length > 0) text += t('migrate.doneSkipped', { count: r.skipped.length })
+  return text
+})
 
 /** 展开 / 收起详细设置。与参数面板的「全部参数」共用同一个状态，不会各说各话。 */
 function toggleDetails(): void {
@@ -239,6 +268,25 @@ function stop(): void {
 <template>
   <div class="page">
     <Banner v-if="geo.warning" tone="warn" :message="geo.warning.message" @close="geo.dismissWarning()" />
+
+    <!--
+      旧版数据：只提示，用户点了才动数据。悄悄搬东西比不搬更糟——用户会发现
+      自己的旧配置在不知情的时候变了，而那时他已经记不清原来是什么样。
+    -->
+    <Banner
+      v-if="migrate.shouldOffer"
+      tone="info"
+      :message="migrateOffer"
+      :action-label="migrate.running ? t('migrate.running') : t('migrate.import')"
+      @action="migrate.run()"
+      @close="migrate.dismiss()"
+    />
+    <Banner
+      v-else-if="migrateResult !== ''"
+      tone="ok"
+      :message="migrateResult"
+      @close="migrate.dismiss()"
+    />
 
     <!--
       首屏只有「选档位 + 开始扫描」：这两件事是同一个决定的两半。数据源、参数

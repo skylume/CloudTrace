@@ -13,6 +13,7 @@ import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
 import { useLogStore } from './log'
+import { useMigrateStore } from './migrate'
 import { usePresetsStore } from './presets'
 import { useResultsStore } from './results'
 import { useSettingsStore } from './settings'
@@ -26,6 +27,7 @@ import type {
   GeoStatus,
   HealthReport,
   IPRecord,
+  MigrateStatus,
   PresetsPayload,
   SettingsPayload,
   TaskState,
@@ -45,6 +47,11 @@ export function refreshHistory(filter?: HistoryFilter): void {
 
 export function refreshGeo(): void {
   sendCommand('geo/status')
+}
+
+/** refreshMigrate 拉一次旧版数据的迁移状态。 */
+export function refreshMigrate(): void {
+  useMigrateStore().refresh()
 }
 
 /** refreshPresets 拉一次档位列表。 */
@@ -70,6 +77,7 @@ export function wireEvents(): void {
   const exporter = useExportStore()
   const adaptive = useAdaptiveStore()
   const presets = usePresetsStore()
+  const migrate = useMigrateStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -84,6 +92,7 @@ export function wireEvents(): void {
     // 首连与每次重连都会走到这里。
     refreshSettings()
     refreshPresets()
+    refreshMigrate()
     refreshHistory()
     refreshGeo()
   })
@@ -131,6 +140,7 @@ export function wireEvents(): void {
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
   onEvent(EVT.presets, (data) => presets.apply(data as PresetsPayload))
+  onEvent(EVT.migrate, (data) => migrate.apply(data as MigrateStatus))
   onEvent(EVT.geo, (data) => {
     const next = data as GeoStatus
     const before = geo.status?.status.records ?? 0
@@ -169,6 +179,7 @@ export function wireEvents(): void {
     // 出错时也要解除等待态，否则按钮会一直转下去。
     exporter.fail()
     adaptive.recommendSettled()
+    migrate.fail()
   })
 
   onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))
