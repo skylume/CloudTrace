@@ -62,6 +62,37 @@ describe('主题与语言', () => {
   })
 })
 
+describe('披露程度', () => {
+  /**
+   * 展开过一次高级参数之后要「永久记住并直达」。
+   *
+   * 只改本地是记不住的：配置一到就被服务端那份覆盖回去，刷新一次又变回简单。
+   */
+  it('切密度要写回服务端', () => {
+    const ui = useUIStore()
+
+    ui.setDensity('advanced')
+
+    expect(ui.density).toBe('advanced')
+    expect(sendCommand).toHaveBeenCalledWith('settings/update', {
+      patch: { ui: { density: 'advanced' } },
+      origins: { 'ui.density': 'user' },
+    })
+  })
+
+  it('展开与收起各记一次', () => {
+    const ui = useUIStore()
+
+    ui.setDensity('advanced')
+    ui.setDensity('simple')
+
+    expect(sendCommand).toHaveBeenLastCalledWith('settings/update', {
+      patch: { ui: { density: 'simple' } },
+      origins: { 'ui.density': 'user' },
+    })
+  })
+})
+
 describe('记住界面状态与启动页', () => {
   /** 一份完整的界面配置，只覆盖关心的那两项。 */
   function config(overrides: Partial<UIConfig>): UIConfig {

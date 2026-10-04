@@ -40,6 +40,21 @@ describe('设置项声明', () => {
     }
   })
 
+  /**
+   * 每组至少有一个常用项。
+   *
+   * 简单模式只显示标了 primary 的项，一组里一个都没有的话整组会消失——那一组
+   * 的设置就再也点不到了，而界面上看不出少了什么。
+   */
+  it('每组至少有一个常用项', () => {
+    for (const group of SETTING_GROUPS) {
+      expect(
+        group.fields.some((field) => field.primary),
+        `${group.id} 组没有常用项，简单模式下整组会消失`,
+      ).toBe(true)
+    }
+  })
+
   it('分组 id 也不重复', () => {
     const ids = SETTING_GROUPS.map((group) => group.id)
     expect(new Set(ids).size).toBe(ids.length)

@@ -118,6 +118,10 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.search': 'Search settings',
   'settings.resetAll': 'Restore recommended settings',
   'settings.pending': 'not active yet',
+  'settings.coreHint': 'Showing the essentials',
+  'settings.allHint': 'Showing every setting',
+  'settings.showAll': 'Show all',
+  'settings.showCore': 'Essentials only',
   'settings.restartRequired': 'These changes take effect after a restart: {keys}',
   'settings.resetItem': 'Reset to default',
 

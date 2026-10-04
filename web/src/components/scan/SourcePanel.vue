@@ -12,6 +12,7 @@
 import { computed, ref } from 'vue'
 
 import { t } from '@/i18n'
+import { useUIStore } from '@/stores/ui'
 import { parseSourceText } from '@/utils/sourceText'
 
 export interface RemoteSource {
@@ -25,6 +26,8 @@ export interface ScanSource {
   remote: RemoteSource[]
   customText: string
 }
+
+const ui = useUIStore()
 
 const source = defineModel<ScanSource>({ required: true })
 
@@ -93,6 +96,12 @@ async function onDrop(event: DragEvent): Promise<void> {
       <span class="ct-subtle tnum">{{ t('source.official.count', { count: officialCount }) }}</span>
     </label>
 
+    <!--
+      远端地址、自定义文本、本地文件三块收进「详细设置」：
+      简单模式下只留「官方网段」这一个开关——它覆盖绝大多数场景，而这三块
+      是给有特定来源的人用的。
+    -->
+    <template v-if="ui.showAdvanced">
     <!-- ② 远端地址 -->
     <div class="block">
       <div class="block-head">
@@ -177,6 +186,7 @@ async function onDrop(event: DragEvent): Promise<void> {
         />
       </div>
     </div>
+    </template>
   </section>
 </template>
 

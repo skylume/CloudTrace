@@ -180,9 +180,16 @@ export const useUIStore = defineStore('ui', () => {
     }
   }
 
-  /** setDensity 由「用户展开过高级参数」这类行为调用，并永久记住。 */
+  /**
+   * setDensity 由「用户展开过高级参数」这类行为调用，并永久记住。
+   *
+   * 必须写回服务端，不能只改本地：配置一到就会被服务端那份覆盖，于是「展开过
+   * 一次高级参数」这个偏好刷新一次就没了——而这条规则的全部意义就是「记住并
+   * 直达，不必再点一次」。
+   */
   function setDensity(next: Density): void {
     density.value = next
+    persist({ density: next })
   }
 
   /**

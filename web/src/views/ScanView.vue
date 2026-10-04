@@ -15,7 +15,7 @@ import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, PARAM_WIRE_KEYS, SCAN_PARAMS, matchPreset, presetValues } from '@/i18n/params'
+import { CUSTOM_PRESET, PARAM_WIRE_KEYS, matchPreset, presetValues } from '@/i18n/params'
 import PresetPicker from '@/components/scan/PresetPicker.vue'
 import { useActionStore } from '@/stores/actions'
 import { useAdaptiveStore } from '@/stores/adaptive'
@@ -42,13 +42,6 @@ const adaptive = useAdaptiveStore()
 function toggleDetails(): void {
   ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced')
 }
-
-/** 简单模式下那一行「这次会用什么参数跑」。 */
-const summaryText = computed(() =>
-  SCAN_PARAMS.filter((spec) => spec.summary)
-    .map((spec) => t(spec.labelKey as never) + ' ' + String(params.value[spec.key] ?? '—') + (spec.unit ?? ''))
-    .join(' · '),
-)
 
 /**
  * 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。
@@ -282,18 +275,12 @@ function stop(): void {
 
     <div class="columns">
       <div class="main">
-        <template v-if="ui.showAdvanced">
-          <SourcePanel v-model="source" :official-count="officialCount" />
-          <PresetPanel v-model:params="params" :disabled="running" />
-        </template>
         <!--
-          简单模式不留白：把「这次会用什么参数跑」写成一行。用户不用读六个面板
-          也该知道自己点下去会发生什么。
+          简单模式不是「什么都看不到」，而是「只看到最要紧的几项」：来源、端口、
+          并发、阈值、测速数量、测速源。其余项与数据源的详细块收进「详细设置」。
         -->
-        <section v-else class="ct-card">
-          <h2 class="ct-card-title">{{ t('preset.summary') }}</h2>
-          <p class="ct-subtle">{{ summaryText }}</p>
-        </section>
+        <SourcePanel v-model="source" :official-count="officialCount" />
+        <PresetPanel v-model:params="params" :disabled="running" />
       </div>
 
       <div class="side">

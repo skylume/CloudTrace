@@ -120,8 +120,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: 'source',
     fields: [
       { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] , pending: true },
-      { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000 },
-      { path: 'source.retry', kind: 'int', min: 0, max: 10 },
+      { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
+      { path: 'source.retry', kind: 'int', min: 0, max: 10, primary: true },
       { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 , pending: true },
     ],
   },

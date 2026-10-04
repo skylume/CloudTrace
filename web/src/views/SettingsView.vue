@@ -38,9 +38,31 @@ function toggleGroup(id: string): void {
     : [...openGroups.value, id]
 }
 
+/**
+ * 每一组在当前模式下实际会渲染的字段。
+ *
+ * 简单模式只留标了 primary 的项——一份六十多项的配置表一次全铺开，用户找一项
+ * 得先读完十一组。一组里一个常用项都没有就不显示这一组，免得点进去是空的。
+ */
+const groupsWithFields = computed(() =>
+  SETTING_GROUPS.map((group) => ({
+    ...group,
+    fields: ui.showAdvanced ? group.fields : group.fields.filter((field) => field.primary),
+  })).filter((group) => group.fields.length > 0),
+)
+
+/** 当前选中的组。切到简单模式后原选中的组可能已经不在列表里，退回第一组。 */
+const activeGroupSafe = computed(() =>
+  groupsWithFields.value.some((item) => item.id === activeGroup.value)
+    ? activeGroup.value
+    : (groupsWithFields.value[0]?.id ?? ''),
+)
+
 /** 窄屏渲染全部分组，宽屏只渲染当前选中的那一组。 */
 const visibleGroups = computed(() =>
-  narrow.value ? SETTING_GROUPS : SETTING_GROUPS.filter((item) => item.id === activeGroup.value),
+  narrow.value
+    ? groupsWithFields.value
+    : groupsWithFields.value.filter((item) => item.id === activeGroupSafe.value),
 )
 
 function isOpen(id: string): boolean {
@@ -122,13 +144,27 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       />
     </div>
 
+    <!-- 披露程度：简单模式只显示常用项，与扫描页的「详细设置」共用同一个开关。 -->
+    <div class="mode-row">
+      <span class="ct-subtle">{{ ui.showAdvanced ? t('settings.allHint') : t('settings.coreHint') }}</span>
+      <span class="spacer" />
+      <button
+        type="button"
+        class="ct-link"
+        :aria-expanded="ui.showAdvanced"
+        @click="ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced')"
+      >
+        {{ ui.showAdvanced ? t('settings.showCore') : t('settings.showAll') }}
+      </button>
+    </div>
+
     <nav v-if="!narrow" class="groups" aria-label="设置分组">
       <button
-        v-for="item in SETTING_GROUPS"
+        v-for="item in groupsWithFields"
         :key="item.id"
         type="button"
         class="group-tab"
-        :class="{ on: activeGroup === item.id }"
+        :class="{ on: activeGroupSafe === item.id }"
         @click="activeGroup = item.id"
       >
         {{ groupLabel(item.id) }}
@@ -234,6 +270,13 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.mode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
 }
 
 .groups {
