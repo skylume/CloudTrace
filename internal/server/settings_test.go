@@ -50,6 +50,55 @@ func TestWSSettingsGet(t *testing.T) {
 	}
 }
 
+/**
+ * 配置告警随设置一起下发。
+ *
+ * 「值合法但可能带来麻烦」的项（并发过高、阈值过低）要在改的那一刻就说清楚，
+ * 而不是等用户自己想起来去点「配置体检」——那时他早就把这件事忘了。
+ */
+func TestWSSettingsCarriesWarnings(t *testing.T) {
+	st := newTestStack(t, func(c *config.Config) { c.Scan.Workers = 800 })
+
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"settings/get"}`)
+	m := readUntil(t, conn, eventSettings, 3*time.Second)
+
+	var resp settingsPayload
+	decode(t, m, &resp)
+
+	var found bool
+	for _, w := range resp.Warnings {
+		if w.Key == "scan.workers" {
+			found = true
+			if w.Reason == "" {
+				t.Error("告警没有说明原因，界面上只会显示一个没有解释的警示色")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("并发 800 应当带一条 scan.workers 的告警，实际 %+v", resp.Warnings)
+	}
+}
+
+// 值都在合理范围内时不该报警告：满屏警示色等于没有警示。
+func TestWSSettingsHasNoWarningsByDefault(t *testing.T) {
+	st := newTestStack(t, nil)
+
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"settings/get"}`)
+	m := readUntil(t, conn, eventSettings, 3*time.Second)
+
+	var resp settingsPayload
+	decode(t, m, &resp)
+	if len(resp.Warnings) != 0 {
+		t.Errorf("默认配置不该有告警，实际 %+v", resp.Warnings)
+	}
+}
+
 // 写设置成功时靠广播回执，而不是单独再回一次。
 func TestWSSettingsUpdateBroadcasts(t *testing.T) {
 	st := newTestStack(t, nil)

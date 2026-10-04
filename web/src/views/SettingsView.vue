@@ -195,6 +195,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
               :field="field"
               :value="readPath(values, field.path)"
               :values="values"
+              :warning="settings.warningOf(field.path)"
               :locale="ui.lang"
               @change="change"
               @reset="resetField"

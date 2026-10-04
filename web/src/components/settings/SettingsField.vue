@@ -19,6 +19,13 @@ const props = defineProps<{
   value: unknown
   /** 全量配置：field.maxPath 要按它去解析联动的那一项。 */
   values: Record<string, unknown>
+  /**
+   * 这一项的告警：值合法，但可能带来麻烦（并发过高、阈值过低）。
+   *
+   * 只标色不拦截——用户有权这么设，但该知道代价。拦下来是另一回事：那会让
+   * 「网卡够好、路由够强」的人没法用。
+   */
+  warning?: { reason: string }
   locale: 'zh' | 'en'
 }>()
 
@@ -74,8 +81,8 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
 </script>
 
 <template>
-  <div class="field" :class="{ pending: props.field.pending }">
-    <label class="label" :title="hint">
+  <div class="field" :class="{ pending: props.field.pending, warned: props.warning !== undefined }">
+    <label class="label" :title="props.warning ? props.warning.reason : hint">
       <span>{{ text.label }}</span>
       <span class="info" aria-hidden="true">?</span>
       <!-- 还没有任何代码读这一项时明说，而不是让它看起来是个正常开关。 -->
@@ -135,7 +142,10 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         @change="emit('change', field.path, ($event.target as HTMLInputElement).value)"
       />
 
-      <span v-if="field.min !== undefined && field.kind !== 'float'" class="ct-subtle range tnum">
+      <span v-if="props.warning" class="warn-note" :title="props.warning.reason">
+        {{ t('settings.warned') }}
+      </span>
+      <span v-else-if="field.min !== undefined && field.kind !== 'float'" class="ct-subtle range tnum">
         {{ field.min }}–{{ maxValue }}
       </span>
       <button type="button" class="ct-link reset" @click="emit('reset', field.path)">
@@ -185,6 +195,19 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
 /* 还没生效的项整体压暗一档，但保持可读：用户该看得见有这么一项。 */
 .field.pending .control {
   opacity: 0.6;
+}
+
+/* 有代价的值：输入框描边转警示色，并在原「范围」的位置写一句为什么。 */
+.field.warned .ct-input,
+.field.warned .ct-check {
+  border-color: var(--color-warn);
+}
+
+.warn-note {
+  color: var(--color-warn);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  cursor: help;
 }
 
 .pending-tag {

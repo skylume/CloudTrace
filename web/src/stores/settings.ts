@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { HealthReport, ParamOrigins, Settings, SettingsPayload, UIConfig } from '@/api/types'
+import type { FieldIssue, HealthReport, ParamOrigins, Settings, SettingsPayload, UIConfig } from '@/api/types'
 import { useUIStore } from './ui'
 
 /** 改设置时带上的参数来源标记。用户手改的一律是 user。 */
@@ -17,12 +17,22 @@ export type Origin = 'default' | 'preset' | 'user'
 export const useSettingsStore = defineStore('settings', () => {
   const values = ref<Settings | null>(null)
   const restartRequired = ref<string[]>([])
+  const warnings = ref<FieldIssue[]>([])
   const loaded = ref(false)
   /** 最近一次体检结果。 */
   const health = ref<HealthReport | null>(null)
 
   const ui = computed<UIConfig | null>(() => values.value?.ui ?? null)
   const origins = computed<ParamOrigins>(() => values.value?.origins ?? {})
+
+  /**
+   * 按路径查一条告警。
+   *
+   * 界面逐项渲染时用它就地标警示色——代价要在改的那一刻说清楚，而不是等用户
+   * 自己想起来去点「配置体检」。
+   */
+  const warningOf = (path: string): FieldIssue | undefined =>
+    warnings.value.find((item) => item.key === path)
 
   /**
    * apply 全量替换本地设置，并顺带把界面相关的几项贴到 DOM 上。
@@ -33,6 +43,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function apply(payload: SettingsPayload): void {
     values.value = payload.values
     restartRequired.value = payload.restart_required ?? []
+    warnings.value = payload.warnings ?? []
     loaded.value = true
     if (payload.values.ui) {
       useUIStore().applyFromSettings(payload.values.ui)
@@ -59,5 +70,18 @@ export const useSettingsStore = defineStore('settings', () => {
     return { keys: keys ?? [] }
   }
 
-  return { values, ui, origins, restartRequired, loaded, health, apply, applyHealth, patchEnvelope, resetEnvelope }
+  return {
+    values,
+    ui,
+    origins,
+    restartRequired,
+    warnings,
+    warningOf,
+    loaded,
+    health,
+    apply,
+    applyHealth,
+    patchEnvelope,
+    resetEnvelope,
+  }
 })

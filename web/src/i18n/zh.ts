@@ -110,6 +110,7 @@ export const zh = {
   'settings.search': '搜索设置项',
   'settings.resetAll': '恢复推荐设置',
   'settings.pending': '尚未生效',
+  'settings.warned': '注意代价',
   'settings.coreHint': '只显示常用项',
   'settings.allHint': '显示全部配置项',
   'settings.showAll': '显示全部',

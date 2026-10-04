@@ -57,6 +57,11 @@ type settingsPayload struct {
 	Values config.Config `json:"values"`
 	// RestartRequired 列出本次与启动时相比、改了要重启才生效的配置项。
 	RestartRequired []string `json:"restart_required,omitempty"`
+	// Warnings 是「值合法但可能带来麻烦」的项，如并发过高、阈值过低。
+	//
+	// 随配置一起下发，而不是等用户点「配置体检」：这类值的代价要在改的那一刻
+	// 就说清楚，而不是让人过一会儿自己想起来去查。
+	Warnings []config.FieldError `json:"warnings,omitempty"`
 }
 
 // handleSettingsGet 下发全量配置。
@@ -101,6 +106,7 @@ func (s *server) settingsPayload() settingsPayload {
 	return settingsPayload{
 		Values:          cur,
 		RestartRequired: s.restartRequired(cur),
+		Warnings:        cur.Warnings(),
 	}
 }
 

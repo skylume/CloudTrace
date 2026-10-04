@@ -321,4 +321,18 @@ export interface Settings {
 export interface SettingsPayload {
   values: Settings
   restart_required?: string[]
+  /**
+   * 值合法但可能带来麻烦的项（并发过高、阈值过低之类）。
+   *
+   * 随配置一起下发，界面就地标警示色——代价要在改的那一刻说清楚，而不是等
+   * 用户自己想起来去点「配置体检」。
+   */
+  warnings?: FieldIssue[]
+}
+
+/** 一条针对具体配置项的提示。 */
+export interface FieldIssue {
+  key: string
+  value?: unknown
+  reason: string
 }
