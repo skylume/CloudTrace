@@ -68,6 +68,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'ui.contrast', kind: 'bool', primary: true },
       { path: 'ui.remember_state', kind: 'bool' },
       { path: 'ui.adaptive_enabled', kind: 'bool' },
+      { path: 'ui.close_to_tray', kind: 'bool' },
       { path: 'ui.adaptive_allow_preset', kind: 'bool' },
     ],
   },
@@ -223,6 +224,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
       hint: '下次打开回到上次停留的页面，并记住参数面板是否展开。关掉之后每次都从启动页面开始；参数值本身存在配置里，与这一项无关',
     },
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
+    'ui.close_to_tray': { label: '关闭窗口时收进托盘', hint: '关掉窗口后继续在后台跑；真要退出请用托盘菜单里的「退出」。只对桌面版有效' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
 
     'scan.workers': {
@@ -340,6 +342,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
       hint: 'Reopen on the last page you were on and keep the parameter panel as you left it. Turned off, every launch starts on the start page; parameter values live in the config and are unaffected',
     },
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
+    'ui.close_to_tray': { label: 'Minimise to tray on close', hint: 'Closing the window keeps it running in the background; use "Quit" in the tray menu to exit. Desktop build only' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
 
     'scan.workers': {

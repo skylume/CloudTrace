@@ -110,6 +110,11 @@ type UIConfig struct {
 	RememberState       bool   `json:"remember_state"`        // 状态记忆
 	AdaptiveEnabled     bool   `json:"adaptive_enabled"`      // 自适应总开关
 	AdaptiveAllowPreset bool   `json:"adaptive_allow_preset"` // 是否允许调整内置档位填入的值
+	// CloseToTray 决定关掉窗口是收进托盘还是退出。
+	//
+	// 默认收进托盘：扫描要跑几分钟，用户关窗口多半是想让它去后台跑，而不是
+	// 把跑到一半的任务掐掉。真要退出，托盘菜单里有「退出」。
+	CloseToTray bool `json:"close_to_tray"`
 }
 
 // ServerConfig 是服务面板相关配置（前缀 server.）。
@@ -181,6 +186,7 @@ func Default() Config {
 			StartPage:           "scan",
 			Animation:           true,
 			RememberState:       true,
+			CloseToTray:         true,
 			AdaptiveEnabled:     true,
 			AdaptiveAllowPreset: true,
 		},
