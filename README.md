@@ -2,11 +2,12 @@
 
 # ☁️ CloudTrace 云迹
 
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **CloudTrace 云迹** 是一款带有现代化图形界面的 Cloudflare IP 扫描与测速工具，  
-同时提供 **桌面版（PySide6）** 与 **纯 HTTP 管理面板** 两种形态，二者共享同一任务状态。  
+同时提供 **桌面版（原生窗口）** 与 **纯 HTTP 管理面板** 两种形态：两者共用同一份
+handler 与同一份数据，桌面版开着的时候浏览器也能访问同一个面板。  
 融合了 [XIU2/CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) 的高效测速逻辑与 [xiaolin-007/CloudFlareScan](https://github.com/xiaolin-007/CloudFlareScan) 的美观 UI 设计理念。
 
 [👉 点此前往下载页面](https://github.com/zrf-code/CloudTrace/releases/latest)
@@ -18,7 +19,7 @@
 ## ✨ 功能特性
 
 ### 🚀 智能高效扫描
-- **全异步高并发**：基于 `asyncio` + `aiohttp` 实现，支持自定义并发数（最高 500+），极速完成海量 IP 筛选。
+- **全异步高并发**：Go 协程池实现，并发数由你定（默认 200，可调到上万），极速完成海量 IP 筛选。
 - **智能随机采样**：从 Cloudflare 官方 CIDR 段智能拆分 /24 子网并随机生成 IP，自动去重并支持采样上限，避免无意义遍历。
 - **双延迟模式**：TCPing（TCP 握手延迟，基准）与 HTTPing（TTFB，阈值自动 ×1.3/×4.0 换算），应对不同网络干扰环境。
 - **精准 TCP 延迟**：多次探测并发发起取最小值，数据更真实可靠。
@@ -52,9 +53,9 @@
 - **系统托盘**：支持关闭窗口时最小化到系统托盘，托盘菜单可快速启动扫描或显示主窗口。
 
 ### 🌐 双形态发行
-- **桌面版**：PySide6 原生界面，可在设置中开启内置 HTTP 服务（默认 `127.0.0.1:17443`），浏览器即可访问同一面板。
-- **面板版**：纯 HTTP 服务（无 Qt，体积更小），`python serve.py` 一条命令启动，浏览器管理扫描/测速/历史/设置。
-- **REST + SSE**：进度、日志、结果实时推送；支持 Token 鉴权与局域网访问开关。
+- **桌面版**：原生窗口，同时在本机监听（默认 `127.0.0.1:17443`），浏览器打开就是同一个面板——不是两套实现，是同一个 handler 的两个出口。
+- **面板版**：纯 HTTP 服务（不带 GUI 依赖，体积更小），一个 exe 启动，浏览器管理扫描/测速/历史/设置。
+- **WebSocket 实时推送**：进度、日志、结果一路推过来；支持 Token 鉴权与局域网访问开关。
 - **双 UI 同步**：桌面窗口与浏览器面板共享同一任务状态，可同时打开、互相实时可见。
 
 ### 💾 完善的数据管理
@@ -65,7 +66,7 @@
 - **单实例保护**：同一时间只允许运行一个实例，避免桌面版与面板版抢占端口与历史目录（`CLOUDTRACE_ALLOW_MULTI=1` 可强制多开）。
 
 ### ⚒️ 极致系统兼容
-- **Win7 深度适配**：底层强制使用 TLS 1.2 协议并切换事件循环策略，完美解决 Windows 7 下 PySide6 崩溃与 SSL 握手失败问题。
+- **Win7 深度适配**：单独一条构建线（社区维护的 Go 分支工具链），并为 Win7 桌面版附带固定版本的 WebView2 运行时——系统自带的那个版本在 Win7 上装不上。
 
 ---
 
@@ -83,45 +84,74 @@
 ## 🚄 安装与运行
 
 ### 环境要求
-- Python 3.8 及以上版本
-- Windows 7 / 10 / 11 或其他主流操作系统
+
+- **运行**：Windows 7 SP1 及以上。
+- **从源码构建**：Go 1.25+；只在需要重新构建前端时才要 Node.js 18+。
+  桌面版**不需要** wails CLI，也**不需要** C 编译器——直接 `go build` 即可。
 
 ### 使用预编译版本
 
-从 [Releases](https://github.com/zrf-code/CloudTrace/releases/latest) 页面下载可执行文件。
+从 [Releases](https://github.com/zrf-code/CloudTrace/releases/latest) 页面下载对应压缩包：
 
-### 从源码运行
+| 包 | 适用 |
+| :--- | :--- |
+| `cloudtrace-panel-<版本>-win-x64.zip` | Windows 10/11 面板版：双击后浏览器访问 |
+| `cloudtrace-desktop-<版本>-win-x64.zip` | Windows 10/11 桌面版：原生窗口 |
+| `cloudtrace-panel-<版本>-win7-x64.zip` | Windows 7 面板版 |
+| `cloudtrace-desktop-<版本>-win7-x64-lite.zip` | Windows 7 桌面版（需自备 WebView2 109） |
+| `cloudtrace-desktop-<版本>-win7-x64-full.zip` | Windows 7 桌面版（已附带固定版 WebView2） |
 
-1. 克隆本项目：
-   ```bash
-   git clone https://github.com/zrf-code/CloudTrace.git
-   cd CloudTrace
-   ```
+解压后直接运行，**不需要安装**：数据默认放在程序同级的 `data/` 目录，整个目录拷走就是迁移。
 
-2. 安装依赖：
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 从源码构建
 
-3. 运行程序：
-   ```bash
-   # 桌面版（图形界面 + 内置 HTTP 面板）
-   python CloudTrace.py
+```bash
+git clone https://github.com/zrf-code/CloudTrace.git
+cd CloudTrace
+```
 
-   # 纯面板版（浏览器访问 http://127.0.0.1:17443/）
-   python serve.py
-   ```
+```powershell
+# 一次产出全部 5 个压缩包（需要 PowerShell 7）
+pwsh -File scripts/release.ps1 -Version 1.0.0
+
+# 只出一个
+pwsh -File scripts/build.ps1 -Target panel   -Version 1.0.0
+pwsh -File scripts/build.ps1 -Target desktop -Version 1.0.0
+```
+
+有 `make` 的话更省事（同一套脚本的薄封装，本地与 CI 走的是同一条路径）：
+
+```bash
+make build-panel      # 面板版
+make build-desktop    # 桌面版
+make release          # 全部 5 个包
+```
+
+产物在 `dist/`。几点说明：
+
+- 前端产物 `web/dist` 随仓库提供；只有改了前端才需要 `make web`（那一步要 Node.js）。
+- **Win7 线**需要额外的工具链，`release.ps1` 会自动下载到 `.toolchain/`，与主构建的
+  官方 Go 隔离成两个 `GOROOT`，互不污染。
+- **Win7 桌面版的 full 包**需要一个固定版本的 WebView2 运行时：设好 `WEBVIEW2_CAB_URL`
+  再跑，否则只产出 lite（其余产物不受影响）。
+- 桌面版的 exe 没有自定义图标。图标要靠资源编译器嵌进 `.syso`，而那是二进制文件、
+  不该进仓库；需要图标时用 wails CLI 构建，或自行生成一次图标资源。
 
 ### HTTP 管理面板
 
-- 桌面版在「设置 → HTTP 服务面板」中开启后，浏览器访问 `http://127.0.0.1:17443/` 即可使用与桌面一致的面板。
-- 开启「允许局域网访问」后，同网段设备也可访问（建议同时设置访问 Token）。
-- 面板版命令行参数：
-  ```bash
-  python serve.py --host 0.0.0.0 --port 18080 --token abc123
-  ```
-- REST API 摘要：`GET /api/state`、`POST /api/scan/start`、`POST /api/speed/start`、`POST /api/stop`、`POST /api/sources/preview`、`GET /api/events`(SSE)、`GET /api/history`、`POST /api/history/load`、`GET /api/export`、`GET/PUT /api/settings`、`POST /api/settings/reset`、`GET /api/health`。
-- 鉴权：设置 Token 后，所有 `/api/*` 请求需带 `X-Token` 头或 `?token=` 查询参数（恒定时间比较）；`GET /api/state` 不会回传明文 Token，只给出 `http_token_set` 标记。
+两个发行版**共用同一个面板**：桌面版启动时也在本地监听，浏览器打开
+`http://127.0.0.1:17443/` 看到的是同一个界面、同一份数据——不是两套实现。
+
+- 开启局域网访问后同网段设备也可访问；监听 `0.0.0.0` 时**强制要求**设置访问 Token。
+- 接口：
+  - `GET /api/health` — 健康检查与配置告警，**不需要鉴权**，供监控用。
+  - `GET|POST /auth/login`、`POST /auth/logout` — 面板登录。
+  - `GET /ws` — WebSocket。面板的全部命令与事件都走它，没有一堆 REST 端点。
+  - `GET /api/latest`、`GET /api/latest.json` — 最新结果（纯文本 / JSON）。
+  - `GET /api/download/{id}` — 下载导出物。
+  - `GET /api/export/fields` — 导出字段清单。
+- 命令行参数（两个版本完全一致）：`-data-dir`、`-port`、`-bind`、`-no-browser`、
+  `-log-level`、`-version`。例如 `cloudtrace-panel.exe -bind 0.0.0.0 -port 18080`。
 
 ---
 
@@ -183,14 +213,21 @@
 ## ⚠️ 常见问题
 
 ### 1. 杀毒软件报毒怎么办？
-本程序使用 PyInstaller 打包。由于 PyInstaller 的工作原理（将 Python 解释器和脚本打包成单个可执行文件并自解压运行），极易被 Windows Defender 等杀毒软件误报为木马（如 `Trojan.Win32`）。
-**这是开源打包软件的通病，程序绝对安全！** 如遇报错，请添加信任或暂时关闭杀毒软件后运行。如果你不放心，完全可以下载源码自行审查并打包。
+
+程序是**单个静态链接的可执行文件**：没有自解压、不释放临时文件、不写注册表（除非
+你自己打开开机自启）。这类产物被误报的概率远低于「把解释器打包进去再自解压」的做法。
+
+仍然被误报时，请添加信任；不放心的话可以下载源码自行构建——构建过程不依赖任何
+预编译的二进制，`scripts/` 下的脚本就是 CI 用的那一套。
 
 ### 2. Windows 7 兼容说明
-在 Windows 7 环境下运行 PySide6 与异步网络程序通常会遇到 SSL 握手失败或事件循环崩溃的问题。本项目已在底层进行了适配：
-- 强制使用 `WindowsSelectorEventLoopPolicy` 替代默认的 Proactor 策略。
-- 针对 Win7 的 SSL 上下文进行了修补，强制使用 TLS 1.2 协议。
-- 关闭了 Qt 的高 DPI 缩放，避免在 Win7 上出现界面渲染错乱。
+
+Win7 需要单独一条构建线：现代 Go 工具链产出的二进制默认跑不起来，因此发布包里
+Win7 的两个产物由社区维护的分支工具链编译。
+
+桌面版还额外需要 WebView2 运行时，而**系统自动安装的那个版本在 Win7 上装不上**，
+所以 Win7 桌面版分两种包：`lite` 需要你自备 WebView2 109，`full` 已经把那个固定
+版本附在包里。面板版没有这个依赖，Win7 上只有面板版是零前提的。
 
 ---
 
@@ -198,97 +235,88 @@
 
 ```text
 CloudTrace/
-├── CloudTrace.py             # 桌面版入口（Qt + 内置 HTTP 服务）
-├── serve.py                  # 纯面板版入口（无 Qt）
-├── build.py                  # 自动打包构建脚本（双目标：桌面版/面板版）
-├── favicon.ico               # 程序图标
-├── requirements.txt          # 依赖列表
-├── README.md                 # 说明文档
-├── Screenshots/              # 界面截图目录
-├── core/                     # 无头核心（不依赖 Qt）
-│   ├── compat.py             #   平台兼容性（Win7 适配等）
-│   ├── constants.py          #   常量定义与资源路径
-│   ├── utils.py              #   类型兜底（to_int/to_float）+ 原子写文件
-│   ├── single_instance.py    #   单实例锁（Windows/Unix）
-│   ├── network.py            #   TCP/HTTPing 延迟、下载测速、可用性验证
-│   ├── scanner.py            #   扫描器（IPv4/IPv6/非标）与测速任务
-│   ├── speed_url.py          #   测速地址解析 + auto 模式 ISP 探测选源
-│   ├── scoring.py            #   综合评分
-│   ├── importer.py           #   来源文本解析（CIDR/IP/IP:port/IP 段/域名）
-│   ├── sources.py            #   远程节点数据源（拉取 + 自适应解析）
-│   ├── export.py             #   CSV/JSON/TXT 导出（字段可选）
-│   ├── analytics.py          #   地区统计与过滤
-│   └── factory.py            #   扫描器/测速任务统一构建（Qt 与 API 共用）
-├── service/                  # 任务编排与 HTTP 服务
-│   ├── events.py             #   线程安全事件总线
-│   ├── task_manager.py       #   单例任务状态机（双 UI 共享状态）
-│   ├── api.py                #   REST + SSE + 静态资源 + Token 鉴权
-│   ├── http_server.py        #   独立线程运行的 aiohttp 服务
-│   └── health.py             #   配置体检
-├── settings/                 # 用户配置与持久化
-│   ├── settings.py           #   用户设置读写（进程内唯一数据源）
-│   └── history.py            #   历史文件管理（增删查）
-├── ui/                       # 桌面界面层（PySide6）
-│   ├── main_window.py        #   主窗口薄壳（导航 + 状态 + 编排）
-│   ├── bridge.py             #   事件总线 → Qt 信号桥
-│   ├── widgets.py            #   导航/芯片/漏斗/终端等通用组件
-│   ├── dialogs.py            #   自定义对话框（含导出对话框）
-│   ├── styles.py             #   样式与字体定义
-│   └── pages/                #   五个页面
-│       ├── scan_page.py      #     扫描页
-│       ├── result_page.py    #     结果页
-│       ├── speed_page.py     #     测速页
-│       ├── history_page.py   #     历史页
-│       └── settings_page.py  #     设置页
-├── web/                      # Web 面板（纯静态，无构建）
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-├── tests/                    # 离线验证脚本（核心/接口/桌面 UI/Web 面板）
-│   ├── run_all.py            #   一键运行全部验证
-│   ├── verify_core.py
-│   ├── verify_api.py
-│   ├── verify_ui.py
-│   ├── verify_web.js
-│   └── render_screenshots.py #   重新生成 Screenshots/ 预览图
-└── CloudTrace_history/       # 结果自动保存目录（运行后自动生成）
-    ├── ipv4_scan_latest.json
-    └── ...
+├── cmd/
+│   ├── panel/            # 面板版入口：纯 Go，浏览器访问
+│   └── desktop/          # 桌面版入口：原生窗口（构建标签 desktop）
+├── internal/
+│   ├── launch/           # 两个入口共用的启动装配
+│   ├── platform/         # 平台能力：单实例、开机自启、浏览器、窗口状态、DPI
+│   ├── app/              # 依赖容器与生命周期
+│   ├── config/           # 配置：加载、校验、补丁、档位、参数来源表
+│   ├── model/            # 共享数据模型
+│   ├── probe/            # 探测内核：TCP/HTTP 延迟、TLS 校验
+│   ├── scan/             # 扫描任务：候选池、前置过滤、两阶段
+│   ├── speed/            # 测速任务与测速源选择
+│   ├── score/            # 综合评分
+│   ├── adaptive/         # 自适应判定（绝不覆盖用户的显式选择）
+│   ├── geo/              # ASN 库与归属地
+│   ├── history/          # 历史：索引、参数快照、对比、软删除
+│   ├── exporter/         # CSV / JSON / TXT 导出
+│   ├── health/           # 配置体检
+│   ├── server/           # HTTP + WebSocket：静态资源、REST、命令分发
+│   ├── event/            # 事件总线
+│   ├── task/             # 任务编排（状态机 + 进度节流）
+│   └── atomicfile/       # 原子写文件
+├── web/                  # 前端（Vue 3 + Vite + TS）；产物 web/dist 由 go:embed 打进二进制
+├── assets/               # 内置的官方网段数据
+├── scripts/              # 构建与打包脚本（本地与 CI 共用同一套）
+├── .github/workflows/    # CI 与发布流水线
+└── Makefile              # 构建入口（scripts/ 的薄封装）
 ```
 
 ---
 
 ## 🧪 验证测试
 
-仓库自带一套**完全离线**的验证脚本，覆盖核心逻辑、HTTP 接口与桌面/Web 两个 UI：
-
 ```bash
-python tests/run_all.py
+# 后端：单元测试 + 竞态检测 + 覆盖率
+go test ./... -race -count=1 -timeout 600s
+
+# 前端：类型检查 + 单元测试
+cd web && npm ci && npm run typecheck && npm test
 ```
 
-| 脚本 | 覆盖内容 |
+CI（`.github/workflows/ci.yml`）在每个 PR 上跑同一套，另加 `gofmt`、`go vet` 与
+两个构建标签的编译检查——两个发行版都要能编过。
+
+测试与被测代码放在一起（`internal/<包>/<文件>_test.go`、`web/src/**/*.spec.ts`）。
+几条守得比较紧的：
+
+| 位置 | 覆盖内容 |
 | :--- | :--- |
-| `tests/verify_core.py` | 类型兜底、原子写、测速地址解析与预设、来源文本多形态解析、远程数据源解析、段折算、端口前置过滤、分地区 TopN、导出渲染、设置规范化、历史往返、测速中止语义 |
-| `tests/verify_api.py` | REST/SSE、Token 鉴权、设置热更新、扫描参数校验、来源多形态与版本不符提示、远程数据源预览接口、路径穿越防护、导出格式 |
-| `tests/verify_ui.py` | 事件桥订阅生命周期、芯片重建、漏斗顺序、对话框、各页面回填、来源多形态显隐与实时预览、远程数据源卡片、设置同步、中止状态 |
-| `tests/verify_web.js` | Web 面板（jsdom 真实执行 `app.js`）：首屏、统计卡、来源解析预览与数据源拉取、筛选、导出、SSE 事件、测速地址预设切换、设置同步、401 流程 |
+| `internal/scan` | 候选池生成、前置过滤顺序（端口 → 黑名单 → 白名单）、两阶段共用同一个 ctx、`verify_nodes=false` 时**真的零** trace 请求 |
+| `internal/speed` | 参数补齐与校验、熔断按**连续**次数计、提前收敛要真的取消在跑的任务、选源缓存 |
+| `internal/server` | 命令契约：参数非法同步回错误码、任务互斥、设置补丁与来源标记、档位只读 |
+| `internal/config` | 校验边界、补丁形状、参数来源表、档位存储；另有两条守卫：**设置页声明的键必须真的存在**、**每个配置项都得有人读** |
+| `internal/adaptive` | 红线：`user` 来源的值只建议、一个字节都不改 |
+| `web/src/**/*.spec.ts` | 参数联动、档位换算、离线守卫（禁止任何远程资源）、对比度实测 |
 
-UI 脚本自动使用离屏模式，无需图形界面。测试不会访问网络，且会还原 `settings.json` 与历史目录。
-
-界面截图可用 `python tests/render_screenshots.py` 重新生成。
+测试**不访问外网**：网络原语全部注入，单测只用回环地址与 `httptest`。
 
 ---
 
 ## 📦 打包发布
 
-```bash
-python build.py
+```powershell
+# 一次产出全部 5 个产物
+pwsh -File scripts/release.ps1 -Version 1.0.0
+
+# 或走 make（同一套脚本的薄封装）
+make release VERSION=1.0.0
 ```
-按提示依次选择：
-1. **打包目标**：桌面版 / 面板版 / 两者
-2. **版本号**（自动写入 `version.txt`）
-3. **打包模式**：单文件 or 文件夹
-4. UPX 路径（可跳过）
+
+| # | 产物 | 说明 |
+| :- | :--- | :--- |
+| 1 | `cloudtrace-panel-<版本>-win-x64.zip` | 面板版（Win10+） |
+| 2 | `cloudtrace-desktop-<版本>-win-x64.zip` | 桌面版（Win10+） |
+| 3 | `cloudtrace-panel-<版本>-win7-x64.zip` | 面板版（Win7） |
+| 4 | `cloudtrace-desktop-<版本>-win7-x64-lite.zip` | 桌面版（Win7），不含 WebView2 |
+| 5 | `cloudtrace-desktop-<版本>-win7-x64-full.zip` | 桌面版（Win7），含固定版 WebView2 |
+
+`lite` 与 `full` 共用同一个 exe，只差是否附带 `webview2/` 目录。
+
+打一个 `v1.2.3` 形式的 tag 会触发 `.github/workflows/release.yml`，在 CI 上产出同一套
+并挂到同一个 Release。本地脚本与 CI 走的是同一份代码，不存在「本地能打、CI 打不出来」。
 
 产物：
 - 桌面版 `dist/CloudTrace-<版本>/`（或单 exe），双击即用，设置中可开 HTTP 面板
