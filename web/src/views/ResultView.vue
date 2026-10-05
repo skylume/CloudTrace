@@ -12,6 +12,7 @@ import MobileActionBar from '@/components/result/MobileActionBar.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import Pager from '@/components/ui/Pager.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import type { IPRecord } from '@/api/types'
@@ -281,9 +282,21 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         </button>
       </div>
 
-      <RecordCardList v-if="narrow" :records="results.visible" />
-      <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.visible" @speed="onGroupSpeed" />
+      <RecordCardList v-if="narrow" :records="results.paged" />
+      <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.paged" @speed="onGroupSpeed" />
       <p class="ct-subtle foot">{{ results.visible.length }} / {{ results.total }}</p>
+      <!--
+        只有一页时不显示分页控件：一个「第 1 / 1 页」的工具栏只是占地方，
+        而绝大多数扫描的结果本来就只有一页。
+      -->
+      <Pager
+        v-if="results.pageCount > 1"
+        :page="results.currentPage"
+        :page-count="results.pageCount"
+        :total="results.visible.length"
+        :page-size="ui.pageSize"
+        @update:page="results.setPage"
+      />
 
       <MobileActionBar
         v-if="narrow"

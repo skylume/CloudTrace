@@ -5,9 +5,10 @@
  * 追加，否则表格里会出现两行同一个节点。
  */
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { UNREACHABLE, type IPRecord, type Summary } from '@/api/types'
+import { useUIStore } from '@/stores/ui'
 
 export type GroupBy = 'none' | 'colo' | 'region' | 'asn'
 
@@ -86,6 +87,9 @@ export function mergeRecord(old: IPRecord, incoming: IPRecord): IPRecord {
 }
 
 export const useResultsStore = defineStore('results', () => {
+  /** 每页行数来自界面配置，所以这里要读另一个 store。 */
+  const uiStore = useUIStore()
+
   /** 用 Map 保存：合并与查找都是按键进行的，数组每次都要遍历一遍。 */
   const records = ref(new Map<string, IPRecord>())
   /** 触发视图更新的版本号。Map 的原地修改不会被响应式系统看到。 */
@@ -190,6 +194,48 @@ export const useResultsStore = defineStore('results', () => {
     return sortRecords(list, sortKey.value, sortDesc.value)
   })
 
+  // ---- 分页 ----
+  //
+  // 扫描的典型结果是几十到几百条，一次全渲染出来会明显卡。分页放在这里而不是
+  // 组件里：`visible` 是本 store 算出来的，页码必须和它同源——放在组件里就要
+  // 把整份列表传进去再切，等于把排序结果白算一遍。
+  const pageSize = computed(() => uiStore.pageSize)
+
+  /** page 是当前页码，从 1 开始。 */
+  const page = ref(1)
+
+  /** pageCount 至少是 1：没有结果时也该显示「第 1 / 1 页」，而不是第 0 页。 */
+  const pageCount = computed(() => Math.max(1, Math.ceil(visible.value.length / pageSize.value)))
+
+  /**
+   * currentPage 是把页码夹进合法范围之后的结果。
+   *
+   * 不直接改 page：筛选条件一变，visible 立刻变短，而 page 可能还停在很后面。
+   * 在计算里夹住，界面就不会出现「第 7 / 2 页」这种自相矛盾的状态。
+   */
+  const currentPage = computed(() => Math.min(Math.max(1, page.value), pageCount.value))
+
+  /** paged 是表格与卡片列表实际渲染的那一页。 */
+  const paged = computed(() => {
+    const size = pageSize.value
+    const start = (currentPage.value - 1) * size
+    return visible.value.slice(start, start + size)
+  })
+
+  function setPage(next: number): void {
+    page.value = Math.min(Math.max(1, next), pageCount.value)
+  }
+
+  /**
+   * 筛选、排序、关键词一变就回到第一页。
+   *
+   * 不回的话，用户停在第 7 页改一下筛选，看到的就是一张空表——而结果其实有，
+   * 只是都在前几页。
+   */
+  watch([regionFilter, maxLatency, keyword, sortKey, sortDesc, groupBy], () => {
+    page.value = 1
+  })
+
   /**
    * 前三名，以及它们为什么被推荐。
    *
@@ -242,8 +288,14 @@ export const useResultsStore = defineStore('results', () => {
     selected.value = next
   }
 
-  function selectAllVisible(): void {
-    selected.value = new Set(visible.value.map(recordKey))
+  /**
+   * 表头那个复选框选的是**本页**，不是全部筛选结果。
+   *
+   * 分页之后「全选」如果指全部，用户会选中一堆他看不见的行——接着点「导出」
+   * 或「测速」，拿到的东西和他以为选中的完全不是一回事。
+   */
+  function selectAllOnPage(): void {
+    selected.value = new Set(paged.value.map(recordKey))
   }
 
   function clearSelection(): void {
@@ -263,6 +315,11 @@ export const useResultsStore = defineStore('results', () => {
   return {
     all,
     visible,
+    paged,
+    page,
+    pageCount,
+    currentPage,
+    setPage,
     groups,
     groupBy,
     keyword,
@@ -282,7 +339,7 @@ export const useResultsStore = defineStore('results', () => {
     replaceAll,
     clear,
     toggleSelect,
-    selectAllVisible,
+    selectAllOnPage,
     clearSelection,
   }
 })

@@ -78,6 +78,10 @@ export const en: Record<keyof typeof zh, string> = {
 
   'result.title': 'Results',
   'result.empty': 'No results yet — run a scan first',
+  'pager.label': 'Pagination',
+  'pager.range': '{from}–{to} of {total}',
+  'pager.prev': 'Previous',
+  'pager.next': 'Next',
   'result.emptyAction': 'Go to scan',
   'result.stat.usable': 'Usable IPs',
   'result.stat.regions': 'Regions',

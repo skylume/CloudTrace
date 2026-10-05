@@ -88,7 +88,7 @@ const allSelected = computed(
 
 function toggleAll(): void {
   if (allSelected.value) results.clearSelection()
-  else results.selectAllVisible()
+  else results.selectAllOnPage()
 }
 
 /**

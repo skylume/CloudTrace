@@ -63,7 +63,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
       { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
       // 结果表目前一次渲染全部结果，还没有翻页。
-      { path: 'ui.page_size', kind: 'int', min: 20, max: 500, pending: true },
+      { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
       { path: 'ui.animation', kind: 'bool', primary: true },
       { path: 'ui.contrast', kind: 'bool', primary: true },
       { path: 'ui.remember_state', kind: 'bool' },
@@ -216,7 +216,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.lang': { label: '界面语言', hint: '中英文切换' },
     'ui.font_scale': { label: '字号', hint: '小 / 中 / 大三档，整体缩放而不破坏布局' },
     'ui.table_density': { label: '表格密度', hint: '只改行高，不动字号——两者互不干扰' },
-    'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行。结果表还没有翻页，这一项暂时不生效' },
+    'ui.page_size': { label: '每页条数', hint: '结果表一页显示多少行。条数超过一页时表格下方会出现翻页控件' },
     'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
     'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
     'ui.remember_state': {

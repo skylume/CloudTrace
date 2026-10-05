@@ -70,6 +70,10 @@ export const zh = {
 
   'result.title': '结果',
   'result.empty': '还没有结果，先去扫描一次',
+  'pager.label': '分页',
+  'pager.range': '第 {from}–{to} 条，共 {total} 条',
+  'pager.prev': '上一页',
+  'pager.next': '下一页',
   'result.emptyAction': '去扫描',
   'result.stat.usable': '可用 IP',
   'result.stat.regions': '覆盖地区',

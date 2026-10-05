@@ -100,6 +100,13 @@ export const useUIStore = defineStore('ui', () => {
   const stateSettled = ref(false)
   /** 准确时间的显示时区。 */
   const timeFormat = ref<TimeFormat>('local')
+  /**
+   * 结果表每页行数。
+   *
+   * 初始值只是「配置还没到之前先按这个渲染」，配置一到就以 `ui.page_size`
+   * 为准——它和主题、字号一样是配置项，不是本地偏好。
+   */
+  const pageSize = ref(50)
 
   /** 系统当前是不是深色。跟随系统时用它决定实际主题。 */
   const systemDark = ref(true)
@@ -152,6 +159,9 @@ export const useUIStore = defineStore('ui', () => {
 
     timeFormat.value = ui.time_format
     rememberState.value = ui.remember_state
+    // 兜底到 50：配置里给了 0 或负数时不能让它变成「一页零行」——
+    // 那会得到一张空表，而用户不知道是自己填错了。
+    pageSize.value = ui.page_size > 0 ? ui.page_size : 50
     settleInitialView(ui)
   }
 
@@ -275,6 +285,7 @@ export const useUIStore = defineStore('ui', () => {
     activeView,
     rememberState,
     timeFormat,
+    pageSize,
     resolvedTheme,
     showAdvanced,
     toasts,
