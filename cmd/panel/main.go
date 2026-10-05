@@ -95,10 +95,7 @@ func run() error {
 		return err
 	}
 
-	app.Logger.Info("面板已启动", "url", app.URL, "data_dir", app.DataDir)
-	if cfg := app.Store.Get(); cfg.Server.Bind != "127.0.0.1" {
-		app.Logger.Warn("面板已开放局域网访问，登录需要访问 Token", "token", cfg.Server.Token)
-	}
+	app.LogAccess()
 
 	serveErr := make(chan error, 1)
 	go func() {

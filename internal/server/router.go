@@ -15,6 +15,7 @@ func (s *server) routes() http.Handler {
 
 	// 登录相关：登录页与登录接口本身不能要求已登录。
 	mux.HandleFunc("/auth/login", s.handleLogin)
+	mux.HandleFunc("/auth/login-info", s.handleLoginInfo)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 
 	// 导出字段清单、导出文件下载与本地结果地址。
@@ -171,4 +172,35 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.auth.revoke(sessionToken(r))
 	clearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// loginInfoResponse 是登录页要的那点上下文。
+type loginInfoResponse struct {
+	// LAN 表示面板绑定的不止回环地址，也就是「同一个网络里的设备都能打开」。
+	//
+	// 登录页原来把「已开放局域网访问」写死在文案里，只绑回环时那句话是错的。
+	LAN bool `json:"lan"`
+	// TokenPath 是配置文件的绝对路径，用户照着它就能翻到 Token。
+	//
+	// 只对本机请求给出：把服务端的目录结构发给整个网段没有道理，而站在
+	// 这台机器上的人本来就能自己打开那个文件。
+	TokenPath string `json:"token_path,omitempty"`
+}
+
+// handleLoginInfo 处理 GET /auth/login-info。
+//
+// 登录页是静态产物，而「绑没绑局域网」「配置文件在哪」只有服务端知道，
+// 所以单开一个不需要鉴权的只读接口把这两件事告诉它。
+func (s *server) handleLoginInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeError(w, http.StatusMethodNotAllowed, CodeInvalidParam, "只支持 GET")
+		return
+	}
+
+	out := loginInfoResponse{LAN: s.cfg.Get().Server.Bind != "127.0.0.1"}
+	if isLoopbackIP(clientIP(r)) {
+		out.TokenPath = s.cfg.Path()
+	}
+	writeJSON(w, http.StatusOK, out)
 }

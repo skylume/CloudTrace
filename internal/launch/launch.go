@@ -162,7 +162,6 @@ func Prepare(opts Options) (*App, error) {
 		if _, serr := store.Set(cfg); serr != nil {
 			return nil, fmt.Errorf("保存配置失败：%w", serr)
 		}
-		logger.Info("已生成访问 Token")
 	}
 
 	if patch, origins := flagOverrides(opts.Flags, rootDir); len(patch) > 0 {
@@ -230,6 +229,25 @@ func (a *App) HTTPServer() *http.Server {
 	return &http.Server{
 		Handler:           a.Handler,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+}
+
+// LogAccess 输出「面板起在哪儿、怎么进去」。
+//
+// 访问 Token 必须把值打出来：登录页让用户「输入启动时控制台打印的访问 Token」，
+// 那就得真的打印。只写一句「已生成访问 Token」等于什么也没给——用户只能去翻
+// 配置文件，而配置文件在哪个目录取决于数据目录，那正是他不知道的东西。
+//
+// 两个入口共用一份，不在各自的 main 里各写一遍：只绑回环时该不该提示、
+// 局域网时该说什么，两版必须一致，而各写一遍正是一致性最先被破坏的地方。
+func (a *App) LogAccess() {
+	cfg := a.Store.Get()
+	a.Logger.Info("面板已启动", "url", a.URL, "data_dir", a.DataDir)
+	if cfg.Server.Token != "" {
+		a.Logger.Info("访问 Token（局域网访问面板时需要）", "token", cfg.Server.Token)
+	}
+	if cfg.Server.Bind != "127.0.0.1" {
+		a.Logger.Warn("面板已开放局域网访问，同一网络下的设备都能打开它")
 	}
 }
 

@@ -3,6 +3,10 @@
  *
  * 单独一份而不是塞进 base.css：它只服务一个页面，放进基础样式里会让每个
  * 页面都多背几条用不到的规则。
+ *
+ * 这一屏是局域网用户见到的第一眼，而它出现在「程序已经在跑了、用户却不知道
+ * 该填什么」的时刻——所以版式上多花一点：品牌、说明、字段、按钮四段清楚分开，
+ * 说明那块还要能放下一段路径。
  */
 
 .login-body {
@@ -15,21 +19,104 @@
 
 .login-card {
   width: 100%;
-  max-width: 360px;
+  max-width: 400px;
   padding: var(--space-6);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-top-color: var(--color-border-highlight);
+  border-radius: var(--radius-xl);
   background: var(--color-surface);
+  box-shadow: var(--elevation-2);
   display: flex;
   flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- 品牌 ---- */
+
+.login-brand {
+  display: flex;
+  align-items: center;
   gap: var(--space-3);
 }
 
-.login-card h1 {
-  font-size: var(--font-size-lg);
+.login-mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.login-hint {
+.login-brand h1 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1.3;
+}
+
+.login-tagline {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* ---- 提示 ---- */
+
+.login-note {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: var(--font-size-sm);
+}
+
+.login-note-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-top: 2px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.login-note-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.login-note-text p {
+  margin: 0;
+}
+
+/* 路径可能很长（含用户名与多级目录），折行而不是把卡片撑破。 */
+.login-note-text code {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---- 字段与按钮 ---- */
+
+.login-label {
+  margin-bottom: calc(var(--space-1) - var(--space-4));
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
@@ -38,10 +125,12 @@
   width: 100%;
   height: var(--control-height-lg);
   padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
 }
 
 .login-card input:focus-visible {
@@ -54,6 +143,7 @@
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: var(--color-on-primary);
+  font-size: var(--font-size-md);
   font-weight: 500;
   cursor: pointer;
 }
@@ -69,6 +159,7 @@
 
 .login-error {
   min-height: 1.2em;
+  margin: 0;
   color: var(--color-bad);
   font-size: var(--font-size-sm);
 }
