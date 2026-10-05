@@ -1,12 +1,15 @@
 name: CI
 
-# 每次推送与 PR 都跑，作为合并前的门禁。
-# 发布走 release.yml，本文件不产出分发包。
+# 只在 PR 与手动触发时跑。
+#
+# 刻意不在 push 时跑：这个仓库的提交大多是同一个人直接推的，每次提交都起一台
+# runner 只会白烧额度，而门禁真正有价值的时机是「合并之前」那一次。需要临时
+# 验证一次，用 Actions 页面上的「Run workflow」。
+#
+# 发布走 release.yml（打 tag 时触发），本文件不产出分发包。
 on:
-  push:
-    branches: ['**']
-    tags-ignore: ['v*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +21,11 @@ concurrency:
 env:
   # 与 Win7 线锁定的工具链保持一致，避免两套 Go 行为差异。
   GO_VERSION: '1.27.x'
+  # 显式列出包路径，而不是 `./...`：web/node_modules 里有个 npm 包夹带了 Go
+  # 源码（flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率——
+  # 它和这个项目毫无关系，哪天它编译不过就会连带把 CI 弄红。
+  # **新增顶层目录时记得加进这里。**
+  GO_PACKAGES: './assets/... ./cmd/... ./internal/...'
 
 jobs:
   check:
@@ -77,32 +85,47 @@ jobs:
           Write-Host 'gofmt 通过'
 
       - name: 静态检查
-        run: go vet ./...
+        shell: pwsh
+        run: |
+          go vet $env:GO_PACKAGES
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: 构建（两个构建标签都要能编过）
         shell: pwsh
         run: |
-          go build -tags panel ./...
+          go build -tags panel $env:GO_PACKAGES
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          go build -tags desktop ./...
+          go build -tags desktop $env:GO_PACKAGES
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: 单元测试 + 竞态检测 + 覆盖率
+      # 测试与覆盖率门禁**放在同一步**。
+      #
+      # 拆成两步时，第二步依赖第一步在磁盘上留下的 coverage.out——那个依赖曾经
+      # 断过，而断掉时的日志里看不出原因（第一步一切正常、文件却不在）。放在
+      # 同一步里，失败点与产出点就在同一段输出里，还多一行文件大小可以对照。
+      - name: 单元测试 + 竞态检测 + 覆盖率门禁
         shell: pwsh
         env:
           CGO_ENABLED: '1'
         run: |
-          go test ./... -race -count=1 -timeout 600s -covermode=atomic -coverprofile=coverage.out
+          $profile = Join-Path $env:GITHUB_WORKSPACE 'coverage.out'
+          Remove-Item -Force $profile -ErrorAction SilentlyContinue
+
+          go test $env:GO_PACKAGES -race -count=1 -timeout 600s -covermode=atomic -coverprofile=$profile
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      # 核心包低于阈值直接失败；里程碑未到达的包会被自动跳过。
-      - name: 覆盖率门禁
-        shell: pwsh
-        run: |
+          if (-not (Test-Path $profile)) {
+            Write-Error "测试跑完了却没有产出覆盖率文件：$profile"
+            exit 1
+          }
+          Write-Host "覆盖率文件：$profile（$((Get-Item $profile).Length) 字节）"
+
+          # 核心包低于阈值直接失败；里程碑未到达的包会被自动跳过。
           ./scripts/check-coverage.ps1 `
-            -CoverProfile coverage.out `
+            -CoverProfile $profile `
             -Threshold 70 `
             -Package cloudtrace/internal/probe, cloudtrace/internal/source, cloudtrace/internal/scan, cloudtrace/internal/speed, cloudtrace/internal/history, cloudtrace/internal/score, cloudtrace/internal/geo
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: 上传覆盖率报告
         if: always()

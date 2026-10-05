@@ -16,6 +16,12 @@ SHELL := pwsh
 VERSION ?= dev
 OUTDIR  ?= dist
 
+# 显式列出包路径，而不是 `./...`：web/node_modules 里有个 npm 包夹带了 Go 源码
+# （flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率。CI 用同一份
+# 列表，本地与流水线不会各测各的。
+# **新增顶层目录时记得加进这里。**
+PACKAGES ?= ./assets/... ./cmd/... ./internal/...
+
 .DEFAULT_GOAL := help
 .PHONY: help dev web build build-panel build-desktop build-win7 release test lint fmt clean
 
@@ -58,12 +64,12 @@ release: ## 产出全部分发包
 	@./scripts/release.ps1 -Version $(VERSION) -OutDir $(OUTDIR)
 
 test: ## 全量测试（含竞态检测）
-	go test ./... -race -count=1 -timeout 600s
+	go test $(PACKAGES) -race -count=1 -timeout 600s
 
 lint: ## 格式 + 静态检查
 	@Write-Host '==> gofmt'
 	@$(MAKE) --no-print-directory fmt-check
-	go vet ./...
+	go vet $(PACKAGES)
 
 fmt-check:
 	@$out = gofmt -l .; if ($out) { Write-Host $out; exit 1 } else { Write-Host 'gofmt 通过' }

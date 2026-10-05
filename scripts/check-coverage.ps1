@@ -38,7 +38,13 @@ Set-StrictMode -Version Latest
 $LASTEXITCODE = 0
 
 if (-not (Test-Path $CoverProfile)) {
-    throw "覆盖率文件不存在：$CoverProfile"
+    # 把「找的是哪个绝对路径、当前目录在哪」一起报出来。
+    #
+    # 上一次这个检查在 CI 上失败时，日志里只有一句「文件不存在」，而产出文件的
+    # 那一步看起来一切正常——没有这两条信息就只能靠猜。
+    $where = (Get-Location).Path
+    $resolved = Join-Path $where $CoverProfile
+    throw "覆盖率文件不存在：$CoverProfile（在 $where 下解析为 $resolved）"
 }
 
 # ---- 1. 按包聚合 --------------------------------------------------------
