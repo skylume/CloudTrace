@@ -259,9 +259,6 @@ func (c Config) validateSource(add func(string, any, string)) {
 }
 
 func (c Config) validateNet(add func(string, any, string)) {
-	if c.Net.ConnectTimeoutMS < 1 || c.Net.ConnectTimeoutMS > 60000 {
-		add("net.connect_timeout_ms", c.Net.ConnectTimeoutMS, "必须在 1–60000 之间")
-	}
 	if !oneOf(c.Net.UseTLS, "auto", "true", "false") {
 		add("net.use_tls", c.Net.UseTLS, "只能是 auto / true / false")
 	}

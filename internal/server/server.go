@@ -14,6 +14,7 @@ import (
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/migrate"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/netx"
 	"cloudtrace/internal/speed"
 )
 
@@ -103,16 +104,22 @@ func newServer(cfg *config.Store, svc *app.Services, listenPort int) (*server, e
 	}
 
 	s := &server{
-		cfg:         cfg,
-		svc:         svc,
-		logger:      svc.Logger,
-		auth:        newAuthStore(time.Duration(cfg.Get().Server.SessionTTLMin) * time.Minute),
-		hub:         newWSHub(svc.Logger),
-		static:      static,
-		speedSource: speed.NewSourceResolver(nil, time.Now, speed.DefaultSourceTTL),
-		downloads:   newDownloadStore(),
-		listenPort:  listenPort,
-		startup:     cfg.Get(),
+		cfg:    cfg,
+		svc:    svc,
+		logger: svc.Logger,
+		auth:   newAuthStore(time.Duration(cfg.Get().Server.SessionTTLMin) * time.Minute),
+		hub:    newWSHub(svc.Logger),
+		static: static,
+		speedSource: speed.NewSourceResolver(
+			// 出口探测要解析域名；下载地址虽然也是域名，但连接被强制打到
+			// 目标 IP 上，不经过解析。
+			speed.HTTPISPProbeWith(netx.NewDialer(cfg.Get().Net.CustomDNS, cfg.Get().Net.DNSFallback)),
+			time.Now,
+			speed.DefaultSourceTTL,
+		),
+		downloads:  newDownloadStore(),
+		listenPort: listenPort,
+		startup:    cfg.Get(),
 	}
 	s.speedSource.SetLogger(func(format string, args ...any) {
 		svc.Logger.Info(fmt.Sprintf(format, args...))

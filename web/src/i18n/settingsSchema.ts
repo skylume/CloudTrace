@@ -120,23 +120,22 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'source',
     fields: [
-      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] , pending: true },
+      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
       { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
       { path: 'source.retry', kind: 'int', min: 0, max: 10, primary: true },
-      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 , pending: true },
+      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 },
     ],
   },
   {
     id: 'net',
     fields: [
-      { path: 'net.connect_timeout_ms', kind: 'int', min: 100, max: 60000, primary: true, pending: true },
       { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
       { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
       { path: 'net.max_workers', kind: 'int', min: 1, max: 10000, primary: true },
       { path: 'net.proxy', kind: 'text' },
       { path: 'net.force_direct', kind: 'bool' },
-      { path: 'net.custom_dns', kind: 'list' , pending: true },
-      { path: 'net.dns_fallback', kind: 'bool' , pending: true },
+      { path: 'net.custom_dns', kind: 'list' },
+      { path: 'net.dns_fallback', kind: 'bool' },
       { path: 'net.user_agent', kind: 'text' },
     ],
   },
@@ -198,8 +197,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
     fields: [
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
       // 日志目前只写控制台，没有落盘的文件可清理。
-      { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365, pending: true },
-      { path: 'advanced.check_update', kind: 'bool', pending: true },
+      { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
+      { path: 'advanced.check_update', kind: 'bool' },
     ],
   },
 ]
@@ -302,7 +301,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'source.retry': { label: '拉取重试', hint: '远端源失败后重试几次' },
     'source.retry_interval_ms': { label: '重试间隔', hint: '两次重试之间等多久' },
 
-    'net.connect_timeout_ms': { label: '连接超时', hint: '建立 TCP 连接等多久算失败' },
     'net.use_tls': { label: 'TLS 探测', hint: '自动时按端口推断：443 与 8443 走 TLS，其余不走' },
     'net.ip_version': { label: '地址族', hint: '只测 IPv4、只测 IPv6，或两者都测' },
     'net.max_workers': {
@@ -324,7 +322,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'export.filename_template': { label: '文件名模板', hint: '可用占位符：时间、类型、条数' },
 
     'advanced.log_keep_days': { label: '日志保留天数', hint: '超过天数的日志会被清理' },
-    'advanced.check_update': { label: '检查更新', hint: '启动时检查是否有新版本' },
+    'advanced.check_update': { label: '自动检查更新', hint: '启动时问一次有没有新版本，结果显示在日志里。关掉之后一次请求都不发' },
   },
   en: {
     'ui.theme': { label: 'Theme', hint: 'Dark, light, or follow the system. Applies instantly' },
@@ -419,8 +417,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'source.timeout_ms': { label: 'Fetch timeout', hint: 'How long a single remote source may take' },
     'source.retry': { label: 'Fetch retries', hint: 'Retries after a remote source fails' },
     'source.retry_interval_ms': { label: 'Retry interval', hint: 'Wait between retries' },
-
-    'net.connect_timeout_ms': { label: 'Connect timeout', hint: 'How long establishing a TCP connection may take' },
     'net.use_tls': { label: 'TLS probing', hint: 'Auto infers from the port: 443 and 8443 use TLS, others do not' },
     'net.ip_version': { label: 'Address family', hint: 'IPv4 only, IPv6 only, or both' },
     'net.max_workers': {

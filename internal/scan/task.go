@@ -78,6 +78,10 @@ type Options struct {
 	Host string
 	// RemoteURLs 是远程源地址；为空时不发起任何远程拉取。
 	RemoteURLs []string
+	// RemoteOptions 是远端拉取的重试、间隔与合并方式。
+	//
+	// 零值表示「不重试、按并集合并」，与旧行为一致。
+	RemoteOptions source.RemoteOptions
 	// Seed 是采样的随机种子。
 	Seed int64
 
@@ -110,7 +114,9 @@ type Runner struct {
 	params     model.ScanParams
 	host       string
 	remoteURLs []string
-	seed       int64
+	// remoteOptions 是远端拉取的重试、间隔与合并方式。
+	remoteOptions source.RemoteOptions
+	seed          int64
 
 	probeFn  ProbeFunc
 	traceFn  TraceFunc
@@ -199,18 +205,19 @@ func NewRunner(opts Options) (*Runner, error) {
 	}
 
 	r := &Runner{
-		params:     params,
-		host:       opts.Host,
-		remoteURLs: opts.RemoteURLs,
-		seed:       opts.Seed,
-		probeFn:    opts.Probe,
-		traceFn:    opts.Trace,
-		verifyFn:   opts.Verify,
-		remoteFn:   opts.Remote,
-		resolver:   opts.Resolver,
-		logger:     opts.Logger,
-		enrich:     opts.Enrich,
-		onDone:     opts.OnDone,
+		params:        params,
+		host:          opts.Host,
+		remoteURLs:    opts.RemoteURLs,
+		remoteOptions: opts.RemoteOptions,
+		seed:          opts.Seed,
+		probeFn:       opts.Probe,
+		traceFn:       opts.Trace,
+		verifyFn:      opts.Verify,
+		remoteFn:      opts.Remote,
+		resolver:      opts.Resolver,
+		logger:        opts.Logger,
+		enrich:        opts.Enrich,
+		onDone:        opts.OnDone,
 	}
 	if r.host == "" {
 		r.host = defaultTestHost
@@ -242,7 +249,7 @@ func NewRunner(opts Options) (*Runner, error) {
 	}
 	if r.remoteFn == nil {
 		r.remoteFn = func(ctx context.Context, urls []string) ([]model.IPRecord, []string, error) {
-			result, err := source.FetchRemote(ctx, urls, source.RemoteOptions{})
+			result, err := source.FetchRemote(ctx, urls, r.remoteOptions)
 			if err != nil {
 				return nil, nil, err
 			}

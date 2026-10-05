@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloudtrace/internal/atomicfile"
+	"cloudtrace/internal/netx"
 )
 
 // 库的下载地址。
@@ -44,8 +45,12 @@ const (
 type Fetcher func(ctx context.Context, url string, onProgress func(read, total int64)) ([]byte, error)
 
 // httpFetcher 是默认的 HTTP 拉取实现。
-func httpFetcher(timeout time.Duration) Fetcher {
-	client := &http.Client{Timeout: timeout}
+func httpFetcher(timeout time.Duration, dial netx.Dialer) Fetcher {
+	transport := &http.Transport{}
+	if dial != nil {
+		transport.DialContext = dial
+	}
+	client := &http.Client{Timeout: timeout, Transport: transport}
 	return func(ctx context.Context, url string, onProgress func(read, total int64)) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {

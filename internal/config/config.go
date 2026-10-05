@@ -129,10 +129,9 @@ type ServerConfig struct {
 
 // AdvancedConfig 是高级与调试相关配置（前缀 advanced.）。
 type AdvancedConfig struct {
-	LogLevel     string          `json:"log_level"` // debug | info | warn | error
-	LogKeepDays  int             `json:"log_keep_days"`
-	Experimental map[string]bool `json:"experimental"`
-	CheckUpdate  bool            `json:"check_update"`
+	LogLevel    string `json:"log_level"` // debug | info | warn | error
+	LogKeepDays int    `json:"log_keep_days"`
+	CheckUpdate bool   `json:"check_update"`
 }
 
 // Default 返回内置默认配置。
@@ -200,10 +199,9 @@ func Default() Config {
 		},
 		Notify: defaultNotify(),
 		Advanced: AdvancedConfig{
-			LogLevel:     "info",
-			LogKeepDays:  7,
-			Experimental: map[string]bool{},
-			CheckUpdate:  false,
+			LogLevel:    "info",
+			LogKeepDays: 7,
+			CheckUpdate: false,
 		},
 		Origins: model.ParamOrigins{},
 	}
@@ -296,9 +294,6 @@ func (c *Config) normalize() {
 	if c.Advanced.LogKeepDays == 0 {
 		c.Advanced.LogKeepDays = d.Advanced.LogKeepDays
 	}
-	if c.Advanced.Experimental == nil {
-		c.Advanced.Experimental = map[string]bool{}
-	}
 
 	if c.Origins == nil {
 		c.Origins = model.ParamOrigins{}
@@ -332,12 +327,6 @@ func (c Config) Clone() Config {
 	out.Scan.PreFilterPorts = append([]int(nil), c.Scan.PreFilterPorts...)
 	out.Scan.AllowedRegions = append([]string(nil), c.Scan.AllowedRegions...)
 	out.Scan.BlockedRegions = append([]string(nil), c.Scan.BlockedRegions...)
-	if c.Advanced.Experimental != nil {
-		out.Advanced.Experimental = make(map[string]bool, len(c.Advanced.Experimental))
-		for k, v := range c.Advanced.Experimental {
-			out.Advanced.Experimental[k] = v
-		}
-	}
 	out.Origins = c.Origins.Clone()
 	return out
 }

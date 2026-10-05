@@ -130,6 +130,8 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+	// 释放日志文件：Windows 上被占用的文件连删除都会失败。
+	app.Close()
 	if err := app.Services.Shutdown(shutdownCtx); err != nil {
 		app.Logger.Warn("关闭服务时出错", "err", err)
 	}

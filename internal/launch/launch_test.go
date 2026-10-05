@@ -115,6 +115,9 @@ func TestPrepareAssemblesUsableApp(t *testing.T) {
 	dir := t.TempDir()
 
 	app, err := Prepare(Options{Flags: Flags{DataDir: dir}, Version: "test"})
+	if err == nil {
+		t.Cleanup(app.Close)
+	}
 	if err != nil {
 		t.Fatalf("装配失败：%v", err)
 	}
@@ -145,6 +148,9 @@ func TestPrepareAssemblesUsableApp(t *testing.T) {
 // 首次运行要自动生成访问 Token：局域网访问靠它，缺了用户根本登不进去。
 func TestPrepareGeneratesToken(t *testing.T) {
 	app, err := Prepare(Options{Flags: Flags{DataDir: t.TempDir()}, Version: "test"})
+	if err == nil {
+		t.Cleanup(app.Close)
+	}
 	if err != nil {
 		t.Fatalf("装配失败：%v", err)
 	}
@@ -158,6 +164,9 @@ func TestPrepareGeneratesToken(t *testing.T) {
 // 端口占用时给出的是可用的地址，而不是一句「端口被占用」。
 func TestListenReportsAddrInUse(t *testing.T) {
 	app, err := Prepare(Options{Flags: Flags{DataDir: t.TempDir()}, Version: "test"})
+	if err == nil {
+		t.Cleanup(app.Close)
+	}
 	if err != nil {
 		t.Fatalf("装配失败：%v", err)
 	}

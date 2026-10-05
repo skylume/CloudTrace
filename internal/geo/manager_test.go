@@ -594,7 +594,7 @@ func TestHTTPFetcher(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	fetch := httpFetcher(10 * time.Second)
+	fetch := httpFetcher(10*time.Second, nil)
 
 	data, err := fetch(context.Background(), ts.URL+"/ok", nil)
 	if err != nil {

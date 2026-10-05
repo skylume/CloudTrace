@@ -95,27 +95,25 @@ const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 // NetConfig 是网络相关配置（前缀 net.）。
 type NetConfig struct {
-	ConnectTimeoutMS int      `json:"connect_timeout_ms"` // 连接超时
-	CustomDNS        []string `json:"custom_dns"`         // 自定义 DNS
-	DNSFallback      bool     `json:"dns_fallback"`       // 系统 DNS 失败时回退内置
-	UserAgent        string   `json:"user_agent"`         // 请求 UA
-	Proxy            string   `json:"proxy"`              // HTTP 代理地址
-	ForceDirect      bool     `json:"force_direct"`       // 强制直连
-	UseTLS           string   `json:"use_tls"`            // auto（按端口推断）/ true / false
-	IPVersion        string   `json:"ip_version"`         // auto | v4 | v6
-	MaxWorkers       int      `json:"max_workers"`        // 全局并发硬上限
+	CustomDNS   []string `json:"custom_dns"`   // 自定义 DNS
+	DNSFallback bool     `json:"dns_fallback"` // 系统 DNS 失败时回退内置
+	UserAgent   string   `json:"user_agent"`   // 请求 UA
+	Proxy       string   `json:"proxy"`        // HTTP 代理地址
+	ForceDirect bool     `json:"force_direct"` // 强制直连
+	UseTLS      string   `json:"use_tls"`      // auto（按端口推断）/ true / false
+	IPVersion   string   `json:"ip_version"`   // auto | v4 | v6
+	MaxWorkers  int      `json:"max_workers"`  // 全局并发硬上限
 }
 
 func defaultNet() NetConfig {
 	return NetConfig{
-		ConnectTimeoutMS: 2000,
-		CustomDNS:        []string{},
-		DNSFallback:      true,
-		UserAgent:        DefaultUserAgent,
-		ForceDirect:      true,
-		UseTLS:           "auto",
-		IPVersion:        "auto",
-		MaxWorkers:       MaxWorkersDefault,
+		CustomDNS:   []string{},
+		DNSFallback: true,
+		UserAgent:   DefaultUserAgent,
+		ForceDirect: true,
+		UseTLS:      "auto",
+		IPVersion:   "auto",
+		MaxWorkers:  MaxWorkersDefault,
 	}
 }
 
@@ -256,9 +254,6 @@ func (c *NetConfig) normalize() {
 	d := defaultNet()
 	if c.CustomDNS == nil {
 		c.CustomDNS = []string{}
-	}
-	if c.ConnectTimeoutMS == 0 {
-		c.ConnectTimeoutMS = d.ConnectTimeoutMS
 	}
 	if c.UserAgent == "" {
 		c.UserAgent = d.UserAgent

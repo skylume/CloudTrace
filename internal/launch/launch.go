@@ -10,6 +10,7 @@
 package launch
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/server"
+	"cloudtrace/internal/update"
 )
 
 // Flags 是两个入口共用的命令行参数。
@@ -74,6 +76,10 @@ type App struct {
 	// DataDir 是最终生效的数据目录。
 	DataDir string
 	Logger  *slog.Logger
+	// LogPath 是本次运行的日志文件路径；没有落盘时为空。
+	LogPath string
+	// logFile 是日志文件句柄，由 Close 释放。
+	logFile *os.File
 	// Version 是构建时注入的版本号。
 	Version string
 }
@@ -101,7 +107,46 @@ func Prepare(opts Options) (*App, error) {
 		return nil, fmt.Errorf("加载配置失败：%w", err)
 	}
 
-	logger := newLogger(opts.Flags.LogLevel, store.Get().Advanced.LogLevel, opts.LogWriter)
+	// 更新检查放在后台：它要联网，而联网可能很慢甚至不通——那不该让程序
+	// 晚几秒才起来。开关关掉时一次请求都不发。
+	if store.Get().Advanced.CheckUpdate {
+		go checkUpdate(opts.Version)
+	}
+
+	// 日志同时进控制台与文件。
+	//
+	// 控制台是给「现在正看着的人」的，文件是给「事后要查的人」的——排查一个
+	// 跑了几分钟的任务时，控制台早就被刷掉了。
+	logWriters := []io.Writer{opts.LogWriter}
+	if opts.LogWriter == nil {
+		logWriters[0] = os.Stdout
+	}
+
+	logPath := ""
+	var logFile *os.File
+	if keep := store.Get().Advanced.LogKeepDays; keep > 0 {
+		file, ferr := openLogFile(rootDir, time.Now())
+		if ferr != nil {
+			// 写不了文件不该让程序起不来：日志只是排查用的辅助。
+			fmt.Fprintf(os.Stderr, "警告：打开日志文件失败：%v\n", ferr)
+		} else {
+			// 进程存活期间一直开着：日志是逐行写的，关掉再开没有意义。
+			// 退出时由 Close 释放。
+			logWriters = append(logWriters, file)
+			logPath = file.Name()
+			logFile = file
+		}
+	}
+
+	logger := newLogger(opts.Flags.LogLevel, store.Get().Advanced.LogLevel, io.MultiWriter(logWriters...))
+	if logPath != "" {
+		logger.Info("日志写入文件", "path", logPath)
+		if removed, perr := pruneLogs(rootDir, store.Get().Advanced.LogKeepDays, time.Now()); perr != nil {
+			logger.Warn("清理过期日志失败", "err", perr)
+		} else if removed > 0 {
+			logger.Info("已清理过期日志", "removed", removed, "keep_days", store.Get().Advanced.LogKeepDays)
+		}
+	}
 	for _, w := range store.Warnings() {
 		logger.Warn(w)
 	}
@@ -151,6 +196,8 @@ func Prepare(opts Options) (*App, error) {
 		URL:      PanelURL(cfg.Server.Bind, cfg.Server.Port),
 		DataDir:  dataDir,
 		Logger:   logger,
+		LogPath:  logPath,
+		logFile:  logFile,
 		Version:  opts.Version,
 	}, nil
 }
@@ -282,4 +329,42 @@ func PanelURL(bind string, port int) string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// checkUpdate 在后台问一次有没有新版本，并把结果写进日志。
+//
+// 结果只写日志：日志面板在界面上就能看到，为此再加一套通知不划算。查不动
+// （网络不通、当前是开发版）都只记 debug——用户没主动问，不该被这些打扰。
+func checkUpdate(current string) {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+
+	res, err := update.Check(ctx, current, nil)
+	switch {
+	case err != nil:
+		slog.Debug("检查更新失败", "err", err)
+	case res.Skipped != "":
+		slog.Debug("跳过更新检查", "reason", res.Skipped)
+	case res.HasUpdate:
+		slog.Info("有新版本可用", "current", res.Current, "latest", res.Latest, "url", res.URL)
+	default:
+		slog.Debug("已是最新版本", "version", res.Current)
+	}
+}
+
+// updateTimeout 是一次更新检查的上限。
+const updateTimeout = 15 * time.Second
+
+// Close 释放启动时占用的资源。
+//
+// 目前只有日志文件。它在进程存活期间一直开着，而 Windows 上被占用的文件连
+// 删除都会失败——数据目录因此删不掉，用户会以为程序还在跑。
+//
+// 由入口在退出路径上调用一次；不保证并发安全，也不需要。
+func (a *App) Close() {
+	if a.logFile == nil {
+		return
+	}
+	_ = a.logFile.Close()
+	a.logFile = nil
 }

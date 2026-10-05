@@ -75,7 +75,7 @@ func TestNormalizeKeepsMeaningfulZeros(t *testing.T) {
 	if c.Speed.IntervalMS != 1200 || c.Speed.DownloadDurationS != 10 || c.Speed.Breaker429 != 3 {
 		t.Errorf("测速零值未补齐：%+v", c.Speed)
 	}
-	if c.Net.MaxWorkers == 0 || c.Net.ConnectTimeoutMS == 0 {
+	if c.Net.MaxWorkers == 0 {
 		t.Errorf("网络零值未补齐：%+v", c.Net)
 	}
 	if c.Source.Retry == 0 || c.Source.TimeoutMS == 0 || c.Source.MergeStrategy == "" {

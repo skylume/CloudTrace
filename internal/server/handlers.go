@@ -13,7 +13,9 @@ import (
 	"cloudtrace/internal/geo"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/netx"
 	"cloudtrace/internal/scan"
+	"cloudtrace/internal/source"
 	"cloudtrace/internal/speed"
 	"cloudtrace/internal/task"
 )
@@ -135,6 +137,31 @@ type speedBreakerPayload struct {
 // 单独成一个方法是为了能被直接断言：这里的每一项都是「配置到任务」的接线，
 // 少传一项不会报错，只会让某个功能静默失效——远端源就曾经这样漏过一次。
 // 抽出来之后，用例可以直接检查这些字段，不必真的跑一次扫描。
+/**
+ * remoteOptions 把来源配置翻译成远端拉取的选项。
+ *
+ * 单独一个函数而不是塞进 scanOptions 的构造字面量里：三处单位换算（秒→毫秒）
+ * 加一个枚举校验挤在一起，读的人分不清哪个字段对应哪一项。
+ *
+ * 这三个开关（重试次数、重试间隔、超时）此前**一个都没被读过**——界面上它们
+ * 是可用的，改了什么都不会发生。名字和探测参数里的 Retry / TimeoutMS 撞了，
+ * 所以「每个配置项都得有人读」那条守卫也没发现。
+ */
+func remoteOptions(cfg config.Config) source.RemoteOptions {
+	strategy := source.MergeUnion
+	if cfg.Source.MergeStrategy == string(source.MergeIntersect) {
+		strategy = source.MergeIntersect
+	}
+	return source.RemoteOptions{
+		Timeout:  time.Duration(cfg.Source.TimeoutMS) * time.Millisecond,
+		Retries:  cfg.Source.Retry,
+		Interval: time.Duration(cfg.Source.RetryIntervalMS) * time.Millisecond,
+		Merge:    strategy,
+		// 远程源要解析域名，是自定义 DNS 的主要作用面。
+		Dialer: netx.NewDialer(cfg.Net.CustomDNS, cfg.Net.DNSFallback),
+	}
+}
+
 func (s *server) scanOptions(params model.ScanParams) scan.Options {
 	return scan.Options{
 		Params: params,
@@ -145,6 +172,8 @@ func (s *server) scanOptions(params model.ScanParams) scan.Options {
 		// 远端源从配置现取：用户可能刚在界面上加了地址还没保存任务参数，
 		// 拿配置才是他看到的那个列表。
 		RemoteURLs: s.cfg.Get().Source.EnabledURLs(),
+		// 重试、间隔、合并方式同样从配置现取，理由和地址一样。
+		RemoteOptions: remoteOptions(s.cfg.Get()),
 		// 归属地补齐只在本地查表与内存里算，不发请求，因此可以挂在每个
 		// 节点的产出路径上。
 		Enrich: s.geoEnrich(),

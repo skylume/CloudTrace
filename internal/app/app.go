@@ -14,6 +14,7 @@ import (
 	"cloudtrace/internal/geo"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/netx"
 	"cloudtrace/internal/task"
 )
 
@@ -146,6 +147,8 @@ func newGeo(cfg *config.Store, bus *event.Bus, logger *slog.Logger) (*geo.InfoCa
 		Cache:      cache,
 		OnProgress: onProgress,
 		Logger:     logger,
+		// 归属地库要下载，因此也要解析域名。
+		Dialer: netx.NewDialer(cfg.Get().Net.CustomDNS, cfg.Get().Net.DNSFallback),
 	})
 }
 

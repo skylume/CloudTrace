@@ -302,7 +302,7 @@ func TestFetchRemoteStopsWhenContextCancelled(t *testing.T) {
 }
 
 func TestNewRemoteClientDisablesProxy(t *testing.T) {
-	client := newRemoteClient(0)
+	client := newRemoteClient(0, nil)
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("传输层类型 = %T，期望 *http.Transport", client.Transport)
@@ -313,7 +313,7 @@ func TestNewRemoteClientDisablesProxy(t *testing.T) {
 	if client.Timeout != defaultRemoteTimeout {
 		t.Errorf("超时 = %v，期望默认值 %v", client.Timeout, defaultRemoteTimeout)
 	}
-	if got := newRemoteClient(time.Second).Timeout; got != time.Second {
+	if got := newRemoteClient(time.Second, nil).Timeout; got != time.Second {
 		t.Errorf("显式超时 = %v，期望 1s", got)
 	}
 }
@@ -354,5 +354,150 @@ func TestFetchRemoteRecordsMalformedURL(t *testing.T) {
 	}
 	if len(result.Records) != 0 {
 		t.Errorf("Records = %+v，期望空", result.Records)
+	}
+}
+
+// nodes 返回一个固定输出这几个地址的测试服务端。
+func nodes(t *testing.T, ips ...string) *httptest.Server {
+	t.Helper()
+	var body string
+	for i, ip := range ips {
+		if i > 0 {
+			body += ","
+		}
+		body += `{"ip":"` + ip + `","port":443}`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"nodes":[` + body + `]}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// 默认按并集合并：任一个源里出现过的都留下。
+func TestFetchRemoteUnionKeepsEverything(t *testing.T) {
+	a := nodes(t, "1.1.1.1", "2.2.2.2")
+	b := nodes(t, "2.2.2.2", "3.3.3.3")
+
+	result, err := FetchRemote(context.Background(), []string{a.URL, b.URL}, RemoteOptions{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("FetchRemote 返回错误：%v", err)
+	}
+	if len(result.Records) != 4 {
+		t.Fatalf("并集得到 %d 条，期望 4：%+v", len(result.Records), result.Records)
+	}
+}
+
+// 按交集合并时只留下同时出现在每个源里的地址。
+func TestFetchRemoteIntersectKeepsCommonOnly(t *testing.T) {
+	a := nodes(t, "1.1.1.1", "2.2.2.2")
+	b := nodes(t, "2.2.2.2", "3.3.3.3")
+
+	result, err := FetchRemote(context.Background(), []string{a.URL, b.URL}, RemoteOptions{
+		Timeout: 2 * time.Second,
+		Merge:   MergeIntersect,
+	})
+	if err != nil {
+		t.Fatalf("FetchRemote 返回错误：%v", err)
+	}
+	if len(result.Records) != 1 || result.Records[0].IP != "2.2.2.2" {
+		t.Fatalf("交集 = %+v，期望只剩 2.2.2.2", result.Records)
+	}
+}
+
+/**
+ * 拉挂的源不参与求交。
+ *
+ * 一路没通不是「各源都认可它」，把失败源算进去会让交集变成空集——而空集在
+ * 上层看来和「这些源里没有可用节点」是一样的，用户会以为源全废了。
+ */
+func TestFetchRemoteIntersectIgnoresFailedSources(t *testing.T) {
+	a := nodes(t, "1.1.1.1", "2.2.2.2")
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	result, err := FetchRemote(context.Background(), []string{a.URL, bad.URL}, RemoteOptions{
+		Timeout: 2 * time.Second,
+		Merge:   MergeIntersect,
+	})
+	if err != nil {
+		t.Fatalf("FetchRemote 返回错误：%v", err)
+	}
+	if len(result.Records) != 2 {
+		t.Fatalf("交集 = %+v，期望保留成功源里的两条", result.Records)
+	}
+	if len(result.Failed) != 1 {
+		t.Errorf("失败清单 = %+v", result.Failed)
+	}
+}
+
+// 三个源求交时，只出现在其中两个里的地址也要被剔除。
+func TestFetchRemoteIntersectAcrossThreeSources(t *testing.T) {
+	a := nodes(t, "1.1.1.1", "2.2.2.2", "3.3.3.3")
+	b := nodes(t, "2.2.2.2", "3.3.3.3")
+	c := nodes(t, "3.3.3.3")
+
+	result, err := FetchRemote(context.Background(), []string{a.URL, b.URL, c.URL}, RemoteOptions{
+		Timeout: 2 * time.Second,
+		Merge:   MergeIntersect,
+	})
+	if err != nil {
+		t.Fatalf("FetchRemote 返回错误：%v", err)
+	}
+	if len(result.Records) != 1 || result.Records[0].IP != "3.3.3.3" {
+		t.Fatalf("交集 = %+v，期望只剩 3.3.3.3", result.Records)
+	}
+}
+
+/**
+ * 重试次数与间隔要真的起作用。
+ *
+ * 服务端前两次返回 500、第三次成功——这组参数此前没有任何代码读它们，
+ * 界面上却是可用的。
+ */
+func TestFetchRemoteRetriesWithInterval(t *testing.T) {
+	var calls atomic.Int32
+	flaky := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"nodes":[{"ip":"9.9.9.9","port":443}]}`))
+	}))
+	defer flaky.Close()
+
+	result, err := FetchRemote(context.Background(), []string{flaky.URL}, RemoteOptions{
+		Timeout:  2 * time.Second,
+		Retries:  2,
+		Interval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("FetchRemote 返回错误：%v", err)
+	}
+	if len(result.Records) != 1 || result.Records[0].IP != "9.9.9.9" {
+		t.Fatalf("重试之后仍没拿到结果：%+v / %+v", result.Records, result.Failed)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("请求了 %d 次，期望 3 次（首次 + 2 次重试）", got)
+	}
+}
+
+// 重试次数为 0 时只请求一次，不会因为「没配重试」反而多打几次。
+func TestFetchRemoteNoRetryWhenZero(t *testing.T) {
+	var calls atomic.Int32
+	flaky := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer flaky.Close()
+
+	result, _ := FetchRemote(context.Background(), []string{flaky.URL}, RemoteOptions{Timeout: time.Second})
+	if got := calls.Load(); got != 1 {
+		t.Errorf("请求了 %d 次，期望 1 次", got)
+	}
+	if len(result.Failed) != 1 {
+		t.Errorf("失败清单 = %+v", result.Failed)
 	}
 }

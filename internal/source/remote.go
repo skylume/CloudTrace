@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/netx"
 	"cloudtrace/internal/probe"
 )
 
@@ -22,12 +23,37 @@ const maxRemoteBody = 8 << 20
 // defaultRemoteTimeout 是未指定超时时的取值。
 const defaultRemoteTimeout = 15 * time.Second
 
+// MergeStrategy 决定多个源的结果怎么合并。
+type MergeStrategy string
+
+const (
+	// MergeUnion 取并集：任一个源里出现过的节点都留下。默认。
+	MergeUnion MergeStrategy = "union"
+	// MergeIntersect 取交集：只在所有成功的源里都出现的节点才留下。
+	//
+	// 用在「宁可少而准」的场合：多个源各自维护一份列表时，同时出现在全部
+	// 源里的那些才是它们都认可的。
+	MergeIntersect MergeStrategy = "intersect"
+)
+
 // RemoteOptions 控制远程源的拉取行为。
 type RemoteOptions struct {
 	Timeout  time.Duration // 单个地址的超时（含重试）
 	Retries  int           // 失败后的重试次数，不含首次
 	Interval time.Duration // 重试间隔
-	Client   *http.Client  // 可注入；为空时使用禁代理的默认客户端
+	Merge    MergeStrategy // 多源合并方式；空值按并集
+	// Dialer 接管域名解析；为 nil 时走系统解析。
+	//
+	// 远程源是这套程序里少数几个要解析域名的地方（其余全是 IP 直连），
+	// 因此 net.custom_dns 主要作用在这里。
+	Dialer netx.Dialer
+	Client *http.Client // 可注入；为空时使用禁代理的默认客户端
+}
+
+// outcome 是单个源的拉取结果。
+type outcome struct {
+	records []model.IPRecord
+	err     error
 }
 
 // RemoteFailure 记录一个拉取失败的地址。
@@ -55,13 +81,9 @@ func FetchRemote(ctx context.Context, urls []string, opts RemoteOptions) (Remote
 	}
 	client := opts.Client
 	if client == nil {
-		client = newRemoteClient(opts.Timeout)
+		client = newRemoteClient(opts.Timeout, opts.Dialer)
 	}
 
-	type outcome struct {
-		records []model.IPRecord
-		err     error
-	}
 	results := make([]outcome, len(urls))
 
 	var wg sync.WaitGroup
@@ -89,7 +111,81 @@ func FetchRemote(ctx context.Context, urls []string, opts RemoteOptions) (Remote
 		}
 		out.Records = append(out.Records, results[i].records...)
 	}
+
+	if opts.Merge == MergeIntersect {
+		out.Records = intersect(results, out.Records)
+	}
 	return out, nil
+}
+
+// intersect 取各源结果的交集。
+//
+// 只统计**成功**的源：一路拉挂了不该让交集变成空集——那不是「各源都认可」，
+// 那是「有一路没通」。一个源都没成功时返回空，由调用方按「全部失败」处理。
+//
+// 顺序沿用第一个成功源里的顺序，保证同一组输入得到同一组输出。
+func intersect(results []outcome, union []model.IPRecord) []model.IPRecord {
+	// 逐个源求交：每处理一个源就把上一轮的候选里不属于它的删掉。
+	var kept map[string]bool
+	var first []model.IPRecord
+	sources := 0
+
+	for i := range results {
+		if results[i].err != nil {
+			continue
+		}
+		sources++
+
+		present := make(map[string]bool, len(results[i].records))
+		for _, rec := range results[i].records {
+			present[recordKey(rec)] = true
+		}
+
+		if kept == nil {
+			kept = present
+			first = results[i].records
+			continue
+		}
+		for key := range kept {
+			if !present[key] {
+				delete(kept, key)
+			}
+		}
+	}
+
+	if sources == 0 {
+		return nil
+	}
+
+	out := make([]model.IPRecord, 0, len(kept))
+	seen := make(map[string]bool, len(kept))
+	for _, rec := range first {
+		key := recordKey(rec)
+		if !kept[key] || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, rec)
+	}
+	// 交集里可能有只出现在后面那些源、而不在第一个源里的节点——那不可能：
+	// 交集的成员必须出现在**每个**源里，因此必然也在第一个源里。这里用
+	// union 兜底只是为了不让「一个源成功但列表为空」把结果整个丢掉。
+	if len(out) == 0 && len(kept) > 0 {
+		for _, rec := range union {
+			if kept[recordKey(rec)] {
+				out = append(out, rec)
+			}
+		}
+	}
+	return out
+}
+
+// recordKey 是跨源比对节点身份用的键。
+//
+// 用地址加端口而不是整条记录：不同源给的地区、延迟字段天然不同，按整条记录
+// 比对会让交集永远是空的。
+func recordKey(rec model.IPRecord) string {
+	return rec.IP + ":" + strconv.Itoa(rec.Port)
 }
 
 // fetchOne 拉取单个地址，失败按配置重试。
@@ -145,19 +241,20 @@ func fetchBody(ctx context.Context, client *http.Client, rawURL string) ([]byte,
 //
 // 禁用代理：远程源是公网地址，走用户环境里的代理会拿到与本机网络无关的
 // 内容，还可能把代理自身的限流算到源头上。
-func newRemoteClient(timeout time.Duration) *http.Client {
+func newRemoteClient(timeout time.Duration, dial netx.Dialer) *http.Client {
 	if timeout <= 0 {
 		timeout = defaultRemoteTimeout
 	}
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			Proxy:               nil,
-			MaxIdleConns:        8,
-			IdleConnTimeout:     30 * time.Second,
-			TLSHandshakeTimeout: timeout,
-		},
+	transport := &http.Transport{
+		Proxy:               nil,
+		MaxIdleConns:        8,
+		IdleConnTimeout:     30 * time.Second,
+		TLSHandshakeTimeout: timeout,
 	}
+	if dial != nil {
+		transport.DialContext = dial
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
 // ParseRemotePayload 自适应解析任意文本或 JSON 载荷。

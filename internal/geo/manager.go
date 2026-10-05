@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloudtrace/internal/config"
+	"cloudtrace/internal/netx"
 )
 
 // Status 是 ASN 库的当前状态，供设置页展示。
@@ -55,6 +56,10 @@ type Options struct {
 	Now func() time.Time
 	// Fetch 拉取远程文件，为 nil 时用默认的 HTTP 实现。
 	Fetch Fetcher
+	// Dialer 接管域名解析；为 nil 时走系统解析。
+	//
+	// 只在 Fetch 为空时生效——调用方自己给了拉取实现，就由它自己决定怎么解析。
+	Dialer netx.Dialer
 	// Cache 是归属地缓存，为 nil 时不缓存。
 	//
 	// 由调用方持有：它记录的是扫描过程中顺手学到的地区，与 ASN 库的加载
@@ -87,8 +92,10 @@ type Manager struct {
 	dataDir string
 	now     func() time.Time
 	fetch   Fetcher
-	cache   *InfoCache
-	logger  *slog.Logger
+	// dialer 接管域名解析；为 nil 时走系统解析。
+	dialer netx.Dialer
+	cache  *InfoCache
+	logger *slog.Logger
 
 	onProgress func(Status)
 
@@ -113,6 +120,7 @@ func NewManager(opts Options) *Manager {
 		dataDir:    opts.DataDir,
 		now:        opts.Now,
 		fetch:      opts.Fetch,
+		dialer:     opts.Dialer,
 		cache:      opts.Cache,
 		onProgress: opts.OnProgress,
 		logger:     opts.Logger,
@@ -124,7 +132,7 @@ func NewManager(opts Options) *Manager {
 		m.now = time.Now
 	}
 	if m.fetch == nil {
-		m.fetch = httpFetcher(downloadTimeout)
+		m.fetch = httpFetcher(downloadTimeout, m.dialer)
 	}
 	if m.logger == nil {
 		m.logger = slog.Default()

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloudtrace/internal/geo"
+	"cloudtrace/internal/netx"
 )
 
 // 测速源模式（对应配置里的 speed.url_mode）。
@@ -304,6 +305,21 @@ func pickRandom(urls []string) string {
 // 不走代理：测速下载是直连目标 IP 的，出口 ISP 也必须按直连的结果判断，
 // 否则会把代理的 ISP 当成自己的。
 func HTTPISPProbe(ctx context.Context) (ISPInfo, error) {
+	return httpISPProbe(ctx, nil)
+}
+
+// HTTPISPProbeWith 返回一个用指定解析器探测出口的函数。
+//
+// 出口探测是测速链路上唯一要解析域名的地方：下载地址虽然也是域名，但连接被
+// 强制打到目标 IP 上，不经过解析。
+func HTTPISPProbeWith(dial netx.Dialer) ISPProbe {
+	if dial == nil {
+		return HTTPISPProbe
+	}
+	return func(ctx context.Context) (ISPInfo, error) { return httpISPProbe(ctx, dial) }
+}
+
+func httpISPProbe(ctx context.Context, dial netx.Dialer) (ISPInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, ispProbeTimeout)
 	defer cancel()
 
@@ -313,6 +329,9 @@ func HTTPISPProbe(ctx context.Context) (ISPInfo, error) {
 	}
 
 	transport := &http.Transport{Proxy: nil}
+	if dial != nil {
+		transport.DialContext = dial
+	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
 

@@ -57,17 +57,9 @@ var configOnly = map[string]string{
 // 它们在设置页里带着「尚未生效」的标记并被禁用：一个改了什么都不会发生的开关，
 // 比没有这个开关更伤信任——用户会以为是自己没配对。
 var pending = map[string]string{
-	"advanced.log_keep_days": "日志目前只写控制台，没有落盘的文件可清理",
-	"advanced.check_update":  "还没有更新检查",
-	"advanced.experimental":  "实验开关还没有消费方",
 
 	// 下面这些是「协议层还留着的旋钮」：探测与测速的超时、DNS、并发上限目前
 	// 全部由请求参数决定，配置里这几项没有接到任何地方。
-	"net.connect_timeout_ms":   "探测超时由请求参数决定，配置项还没接上",
-	"net.custom_dns":           "探测目前走系统 DNS",
-	"net.dns_fallback":         "探测目前走系统 DNS",
-	"source.merge_strategy":    "多源合并目前固定取并集",
-	"source.retry_interval_ms": "来源拉取还没有重试",
 }
 
 // configField 是一个配置项：json 名与 Go 字段名。
