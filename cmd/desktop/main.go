@@ -15,6 +15,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -102,7 +103,7 @@ func run() error {
 			app.Logger.Warn("本地监听异常退出，浏览器将无法访问面板", "err", err)
 		}
 	}()
-	app.Logger.Info("面板已启动", "url", app.URL, "data_dir", app.DataDir)
+	app.LogAccess()
 
 	return runUI(app, httpServer)
 }
@@ -123,7 +124,7 @@ func runUI(app *launch.App, httpServer *http.Server) error {
 		Description: "Cloudflare IP 扫描与测速",
 		Logger:      app.Logger,
 		// 窗口与浏览器共用同一个 handler，前端因此不必区分运行环境。
-		Assets: application.AssetOptions{Handler: app.Handler},
+		Assets: application.AssetOptions{Handler: windowRequestsOnly(app.Handler)},
 		// 只有明确要求退出时才真的退：否则关掉窗口会把后台任务一起带走。
 		ShouldQuit: func() bool { return quitting.Load() },
 		Windows: application.WindowsOptions{
@@ -152,6 +153,13 @@ func runUI(app *launch.App, httpServer *http.Server) error {
 		MinHeight: 640,
 		X:         state.X,
 		Y:         state.Y,
+		// 背景色必须显式给，而且必须是不透明的。
+		//
+		// Win7 上 WebView2 的 put_DefaultBackgroundColor 只接受 alpha = 255，
+		// 传别的值会返回 E_INVALIDARG，而 Wails 把那个错误当致命错误直接
+		// os.Exit(1)——窗口还没画出来进程就没了。Wails 的默认背景色是全零
+		// （alpha = 0），所以不设这一项在 Win7 上必崩。
+		BackgroundColour: windowBackground(app),
 	})
 	if state.Maximised {
 		window.Maximise()
@@ -285,6 +293,46 @@ func saveWindow(window *application.WebviewWindow, path string) {
 		// 记不住窗口位置不是用户要关心的问题，不值得打断退出流程。
 		fmt.Fprintln(os.Stderr, "警告：保存窗口位置失败："+err.Error())
 	}
+}
+
+// windowRequestsOnly 把窗口发来的请求标成「本机」。
+//
+// Wails 的资源服务器不经过真实网络栈：它自己拼一个 http.Request，RemoteAddr
+// 为空时填一个合成地址（RFC 5737 的 192.0.2.1）。而面板的「只绑回环时本机
+// 免鉴权」判断的正是这个地址——于是原生窗口被判成远程访问、弹出登录页，偏偏
+// 只绑回环时控制台又没有 Token 可填，用户直接被挡在自己的程序外面。
+//
+// 窗口和进程同生共死，它发出的请求就是本机请求，这里把地址改写回回环。
+// 绑定 0.0.0.0 时仍然要鉴权（免鉴权的前提就是只绑回环），窗口照旧要求登录，
+// 与浏览器看到的行为一致。
+func windowRequestsOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = net.JoinHostPort("127.0.0.1", "0")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// windowBackground 返回窗口在内容画出来之前铺的底色。
+//
+// 取值与前端的两套主题同源：这里差一档就会在启动瞬间闪一下别的颜色。
+// 「跟随系统」得自己去问系统——前端的解析在 JS 层，这时还没有脚本在跑。
+//
+// 用 NewRGB 而不是直接写 RGBA：它会把 alpha 置成 255，而 Win7 只认这个值
+// （原因见建窗口处的注释）。
+func windowBackground(app *launch.App) application.RGBA {
+	dark := platform.PrefersDarkTheme()
+	switch app.Store.Get().UI.Theme {
+	case "dark":
+		dark = true
+	case "light":
+		dark = false
+	}
+	if dark {
+		// 与深色主题的 --color-surface 一致。
+		return application.NewRGB(0x16, 0x1b, 0x24)
+	}
+	// 与浅色主题的 --color-bg 一致。
+	return application.NewRGB(0xf4, 0xf6, 0xfb)
 }
 
 // webviewBrowserPath 返回随包携带的 WebView2 运行时目录。
