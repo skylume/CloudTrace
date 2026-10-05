@@ -232,6 +232,46 @@ func (a *App) HTTPServer() *http.Server {
 	}
 }
 
+// PeekPanelURL 只读地算出面板地址。
+//
+// 给「已经有实例在跑」那条路用：第二个实例要把已有面板打开然后退出。
+//
+// 刻意不经过 Prepare——那个函数会生成访问 Token、把命令行参数写进配置、建日志
+// 文件，每一件都只有真正要启动的那一份才该做。第二个实例在退出前把配置重写
+// 一遍，正在运行的那份内存里的 Token 就和磁盘上对不上了：控制台打印的是新的，
+// 而登录校验用的还是旧的，用户怎么输都进不去。
+//
+// 读不到配置就退回默认值：这条路只为了打开一个网址，不值得因为读不到配置
+// 而让用户什么也看不到。
+func PeekPanelURL(flags Flags) string {
+	bind := flags.Bind
+	port := flags.Port
+
+	exeDir, err := config.ExecutableDir()
+	if err == nil {
+		if rootDir, rerr := resolveRootDir(flags.DataDir, exeDir); rerr == nil {
+			// LoadFile 在文件不存在时返回默认值，不会创建任何东西。
+			if cfg, lerr := config.LoadFile(config.ConfigPath(rootDir)); lerr == nil {
+				if bind == "" {
+					bind = cfg.Server.Bind
+				}
+				if port == 0 {
+					port = cfg.Server.Port
+				}
+			}
+		}
+	}
+
+	d := config.Default()
+	if bind == "" {
+		bind = d.Server.Bind
+	}
+	if port == 0 {
+		port = d.Server.Port
+	}
+	return PanelURL(bind, port)
+}
+
 // LogAccess 输出「面板起在哪儿、怎么进去」。
 //
 // 访问 Token 必须把值打出来：登录页让用户「输入启动时控制台打印的访问 Token」，

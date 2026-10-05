@@ -132,11 +132,15 @@ try {
             # 少一个必须额外安装的工具，构建在别人机器上就少一类失败方式——而
             # 「照文档装了却打不出来」是最劝退的一种。
             #
+            # -H=windowsgui 是必须的：不加的话 exe 是控制台子系统，双击时先弹出一个
+            # 黑窗口，用户会以为程序出了问题。桌面版不需要控制台——日志本来就同时
+            # 写进数据目录下的文件，访问 Token 也能在登录页上看到它在哪个文件里。
+            #
             # 代价：exe 没有自定义图标。图标要靠资源编译器嵌进 .syso，而 .syso 是
             # 二进制、不该进仓库；想要图标的话自己跑一次 wails 的图标生成，或改用
             # CLI 构建。
             Invoke-Step "构建 desktop（$Toolchain）" {
-                & $goExe build -trimpath -tags desktop -ldflags $ldflags -o $outFile ./cmd/desktop
+                & $goExe build -trimpath -tags desktop -ldflags "$ldflags -H=windowsgui" -o $outFile ./cmd/desktop
             }
         }
     }

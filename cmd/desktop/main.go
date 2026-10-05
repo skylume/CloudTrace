@@ -15,7 +15,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,25 +58,31 @@ func run() error {
 		return nil
 	}
 
-	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
-	if err != nil {
-		return err
-	}
-
 	// 单实例：第二个实例不再开一个窗口，而是把已有面板打开。
 	//
 	// 桌面版尤其需要它——双击两次图标就出现两个窗口、两份后台任务，而它们
 	// 写的是同一份配置与历史。
+	//
+	// **必须在 Prepare 之前**：那个函数会生成访问 Token 并把配置写回磁盘。
+	// 第二个实例在退出前重写一遍配置，正在运行的那份内存里的 Token 就与磁盘
+	// 对不上了——控制台打印新的、登录校验用旧的，用户怎么输都进不去。
 	lock, first, lockErr := platform.AcquireLock(platform.SingleInstanceName)
 	if lockErr != nil {
-		app.Logger.Warn("单实例检查失败，继续启动", "err", lockErr)
+		// 拿不到锁不算致命：宁可多开一个实例，也不要因为一个辅助能力让程序起不来。
+		fmt.Fprintln(os.Stderr, "警告：单实例检查失败，继续启动："+lockErr.Error())
 	} else {
 		defer lock.Release()
 		if !first {
-			app.Logger.Info("已有实例在运行，打开它的面板后退出", "url", app.URL)
-			_ = platform.OpenBrowser(app.URL)
+			url := launch.PeekPanelURL(flags)
+			fmt.Fprintln(os.Stderr, "已有实例在运行，打开它的面板后退出："+url)
+			_ = platform.OpenBrowser(url)
 			return nil
 		}
+	}
+
+	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
+	if err != nil {
+		return err
 	}
 
 	if err := platform.SyncAutostart(app.Store.Get().Server.Autostart); err != nil {
@@ -123,8 +128,6 @@ func runUI(app *launch.App, httpServer *http.Server) error {
 		Name:        "CloudTrace",
 		Description: "Cloudflare IP 扫描与测速",
 		Logger:      app.Logger,
-		// 窗口与浏览器共用同一个 handler，前端因此不必区分运行环境。
-		Assets: application.AssetOptions{Handler: windowRequestsOnly(app.Handler)},
 		// 只有明确要求退出时才真的退：否则关掉窗口会把后台任务一起带走。
 		ShouldQuit: func() bool { return quitting.Load() },
 		Windows: application.WindowsOptions{
@@ -153,6 +156,17 @@ func runUI(app *launch.App, httpServer *http.Server) error {
 		MinHeight: 640,
 		X:         state.X,
 		Y:         state.Y,
+		// 窗口直接指向本机监听，不走 Wails 内嵌的资源服务器。
+		//
+		// 走内嵌资源时页面的来源是 http://wails.localhost，前端按 location.host
+		// 拼出来的 WS 地址就成了 ws://wails.localhost/ws——而 Wails 只接管 http
+		// 请求，ws 会落到真实网络上，那里并没有这台服务器，于是窗口永远停在
+		// 「连接不上后端」，而同一个地址用浏览器打开却是好的。
+		//
+		// 指向真实监听之后，窗口就是一个普通浏览器：资源、REST、WebSocket、
+		// Cookie、鉴权全部与浏览器走同一条路径，两个发行版的行为天然一致，
+		// 也不存在「内嵌一份产物、监听又发一份」两处要对齐。
+		URL: app.URL,
 		// 背景色必须显式给，而且必须是不透明的。
 		//
 		// Win7 上 WebView2 的 put_DefaultBackgroundColor 只接受 alpha = 255，
@@ -293,23 +307,6 @@ func saveWindow(window *application.WebviewWindow, path string) {
 		// 记不住窗口位置不是用户要关心的问题，不值得打断退出流程。
 		fmt.Fprintln(os.Stderr, "警告：保存窗口位置失败："+err.Error())
 	}
-}
-
-// windowRequestsOnly 把窗口发来的请求标成「本机」。
-//
-// Wails 的资源服务器不经过真实网络栈：它自己拼一个 http.Request，RemoteAddr
-// 为空时填一个合成地址（RFC 5737 的 192.0.2.1）。而面板的「只绑回环时本机
-// 免鉴权」判断的正是这个地址——于是原生窗口被判成远程访问、弹出登录页，偏偏
-// 只绑回环时控制台又没有 Token 可填，用户直接被挡在自己的程序外面。
-//
-// 窗口和进程同生共死，它发出的请求就是本机请求，这里把地址改写回回环。
-// 绑定 0.0.0.0 时仍然要鉴权（免鉴权的前提就是只绑回环），窗口照旧要求登录，
-// 与浏览器看到的行为一致。
-func windowRequestsOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.RemoteAddr = net.JoinHostPort("127.0.0.1", "0")
-		next.ServeHTTP(w, r)
-	})
 }
 
 // windowBackground 返回窗口在内容画出来之前铺的底色。

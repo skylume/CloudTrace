@@ -2,9 +2,12 @@ package launch
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"cloudtrace/internal/config"
 )
 
 func TestPanelURLUsesLoopbackForWildcardBind(t *testing.T) {
@@ -22,8 +25,7 @@ func TestPanelURLUsesLoopbackForWildcardBind(t *testing.T) {
 	}
 }
 
-func TestIsAddrInUse(t *testing.T) {
-	if IsAddrInUse(nil) {
+func TestIsAddrInUse(t *testing.T) {	if IsAddrInUse(nil) {
 		t.Error("nil 不该被当成端口占用")
 	}
 	if !IsAddrInUse(errors.New("listen tcp 127.0.0.1:17443: bind: address already in use")) {
@@ -189,5 +191,52 @@ func TestListenReportsAddrInUse(t *testing.T) {
 		if inUse.URL == "" {
 			t.Error("没带上可访问的地址")
 		}
+	}
+}
+
+// PeekPanelURL 供「已有实例在跑」那条路使用，因此有一条硬性要求：
+// **只读**。它一旦顺手建了配置或写了 Token，正在运行的那份实例内存里的
+// Token 就与磁盘对不上了——控制台打印新的、登录校验用旧的，用户怎么输都
+// 进不去。
+func TestPeekPanelURLDoesNotCreateAnything(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	got := PeekPanelURL(Flags{DataDir: dir})
+	if want := PanelURL(config.Default().Server.Bind, config.Default().Server.Port); got != want {
+		t.Errorf("没有配置时 = %q，期望默认值 %q", got, want)
+	}
+	if _, err := os.Stat(cfgPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("只读地看一眼却创建了配置文件：%v", err)
+	}
+}
+
+func TestPeekPanelURLReadsConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Server.Bind = "0.0.0.0"
+	cfg.Server.Port = 18999
+	if err := config.SaveFile(filepath.Join(dir, "config.json"), cfg); err != nil {
+		t.Fatalf("写入测试配置失败：%v", err)
+	}
+
+	// 绑了通配地址也要给回环：用户要打开的是一个点得开的地址。
+	if got, want := PeekPanelURL(Flags{DataDir: dir}), "http://127.0.0.1:18999"; got != want {
+		t.Errorf("= %q，期望 %q", got, want)
+	}
+}
+
+func TestPeekPanelURLPrefersFlags(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Server.Port = 18999
+	if err := config.SaveFile(filepath.Join(dir, "config.json"), cfg); err != nil {
+		t.Fatalf("写入测试配置失败：%v", err)
+	}
+
+	// 本次显式指定的端口就是实际监听的那个，配置里的旧值不作数。
+	got := PeekPanelURL(Flags{DataDir: dir, Port: 18888})
+	if want := "http://127.0.0.1:18888"; got != want {
+		t.Errorf("= %q，期望 %q", got, want)
 	}
 }

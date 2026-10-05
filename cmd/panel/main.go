@@ -44,28 +44,33 @@ func run() error {
 		return nil
 	}
 
-	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
-	if err != nil {
-		return err
-	}
-
 	// 单实例：第二个实例只把已有面板打开，不真的再起一份。
 	//
 	// 用系统级锁而不是靠「端口被占用」来判断：两个实例用不同端口时端口判断
 	// 会漏，而它们会同时写同一份配置与历史——那是数据损坏，不是多开一个窗口。
+	//
+	// **必须在 Prepare 之前**：那个函数会生成访问 Token 并把配置写回磁盘。
+	// 第二个实例在退出前重写一遍配置，正在运行的那份内存里的 Token 就与磁盘
+	// 对不上了——控制台打印新的、登录校验用旧的，用户怎么输都进不去。
 	lock, first, lockErr := platform.AcquireLock(platform.SingleInstanceName)
 	if lockErr != nil {
 		// 拿不到锁不算致命：宁可多开一个实例，也不要因为一个辅助能力让程序起不来。
-		app.Logger.Warn("单实例检查失败，继续启动", "err", lockErr)
+		fmt.Fprintln(os.Stderr, "警告：单实例检查失败，继续启动："+lockErr.Error())
 	} else {
 		defer lock.Release()
 		if !first {
-			app.Logger.Info("已有实例在运行，打开它的面板后退出", "url", app.URL)
+			url := launch.PeekPanelURL(flags)
+			fmt.Fprintln(os.Stderr, "已有实例在运行，打开它的面板后退出："+url)
 			if !flags.NoBrowser {
-				_ = platform.OpenBrowser(app.URL)
+				_ = platform.OpenBrowser(url)
 			}
 			return nil
 		}
+	}
+
+	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
+	if err != nil {
+		return err
 	}
 
 	// 开机自启以配置为准：用户可能把 exe 挪到了别处，注册表里那条旧记录
