@@ -72,7 +72,7 @@ export const zh = {
   'result.empty': '还没有结果，先去扫描一次',
   'notify.title.done': '任务完成',
   'notify.title.failed': '任务失败',
-  'notify.body.done': '{phase}完成，共 {count} 个节点',
+  'notify.body.done': '{phase}完成',
   'notify.body.failed': '{phase}失败：{reason}',
   'notify.body.failedUnknown': '{phase}失败了，详情见日志',
   'pager.label': '分页',

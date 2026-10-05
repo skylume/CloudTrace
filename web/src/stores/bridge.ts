@@ -42,8 +42,12 @@ import type {
  *
  * 文案在这里拼而不是在 notify 模块里：那个模块不认识语言，也不该认识——
  * 它只负责「用哪几个渠道把这段文字送出去」。
+ *
+ * **提醒里不带结果条数**：结果是一批批发过来的，而总线跨 topic 不保证到达
+ * 顺序——这条提醒到达时，最后一批可能还在路上。报一个偏小的数字比不报更糟：
+ * 用户会以为漏扫了。
  */
-function notifyEnd(state: TaskState, prefs: NotifyPrefs | null, count: number): void {
+function notifyEnd(state: TaskState, prefs: NotifyPrefs | null): void {
   const outcome: NotifyOutcome | null =
     state.status === 'done' ? 'done' : state.status === 'failed' ? 'failed' : null
   if (!outcome) return
@@ -51,7 +55,7 @@ function notifyEnd(state: TaskState, prefs: NotifyPrefs | null, count: number): 
   const phase = t(`task.phase.${state.phase}`)
   let body: string
   if (outcome === 'done') {
-    body = t('notify.body.done', { phase, count })
+    body = t('notify.body.done', { phase })
   } else {
     // 失败原因可能为空（比如进程被杀），那时给一句通用的话而不是「失败：」。
     body = state.error
@@ -142,7 +146,7 @@ export function wireEvents(): void {
       // 中途停止但已经扫出了东西时也跳：那批结果同样是可用的。
       else if (next.status === 'aborted' && results.total > 0) ui.activeView = 'result'
 
-      notifyEnd(next, settings.notify, results.total)
+      notifyEnd(next, settings.notify)
     }
     task.applyState(next)
   })
