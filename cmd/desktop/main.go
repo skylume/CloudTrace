@@ -228,13 +228,19 @@ func setupTray(
 	// 托盘提示跟随任务状态——这就是「托盘通知」的落地：后台跑着的时候把鼠标
 	// 移到图标上就能看到进度，不必把窗口翻出来。
 	//
+	// 订阅本身**不受开关影响**：下面「停止」项的可点状态也靠它，而那属于菜单
+	// 本身的功能，不是通知。受 `notify.tray` 控制的只有提示文案。
+	//
 	// 订阅失败不报错：那只是少了一个便利，任务本身照跑。
+	trayNotify := app.Store.Get().Notify.Tray
 	if _, err := app.Services.Bus.Subscribe(task.TopicState, func(payload any) {
 		state, ok := payload.(model.TaskState)
 		if !ok {
 			return
 		}
-		tray.SetLabel(platform.TrayTooltip(labels, state.Status, percentOf(state)))
+		if trayNotify {
+			tray.SetLabel(platform.TrayTooltip(labels, state.Status, percentOf(state)))
+		}
 
 		// 「停止」只在有任务可停时才是可点的：一个点了没反应的菜单项，用户
 		// 会以为是程序卡住了。
