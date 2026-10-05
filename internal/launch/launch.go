@@ -107,12 +107,6 @@ func Prepare(opts Options) (*App, error) {
 		return nil, fmt.Errorf("加载配置失败：%w", err)
 	}
 
-	// 更新检查放在后台：它要联网，而联网可能很慢甚至不通——那不该让程序
-	// 晚几秒才起来。开关关掉时一次请求都不发。
-	if store.Get().Advanced.CheckUpdate {
-		go checkUpdate(opts.Version)
-	}
-
 	// 日志同时进控制台与文件。
 	//
 	// 控制台是给「现在正看着的人」的，文件是给「事后要查的人」的——排查一个
@@ -146,6 +140,15 @@ func Prepare(opts Options) (*App, error) {
 		} else if removed > 0 {
 			logger.Info("已清理过期日志", "removed", removed, "keep_days", store.Get().Advanced.LogKeepDays)
 		}
+	}
+
+	// 更新检查放在后台：它要联网，而联网可能很慢甚至不通——那不该让程序
+	// 晚几秒才起来。开关关掉时一次请求都不发。
+	//
+	// 必须等 logger 建好之后再起：结果要写进那份带文件输出的日志，
+	// 而不是默认 logger。
+	if store.Get().Advanced.CheckUpdate {
+		go checkUpdate(logger, opts.Version)
 	}
 	for _, w := range store.Warnings() {
 		logger.Warn(w)
@@ -335,20 +338,24 @@ func PanelURL(bind string, port int) string {
 //
 // 结果只写日志：日志面板在界面上就能看到，为此再加一套通知不划算。查不动
 // （网络不通、当前是开发版）都只记 debug——用户没主动问，不该被这些打扰。
-func checkUpdate(current string) {
+//
+// logger 必须传进来，不能用包级的 slog：这个包从不调 slog.SetDefault，包级
+// 调用会走到默认 logger——Debug 被它的级别挡掉、Info 只进 stderr 不进日志文件，
+// 等于这个功能的结果谁也看不到。
+func checkUpdate(logger *slog.Logger, current string) {
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
 
 	res, err := update.Check(ctx, current, nil)
 	switch {
 	case err != nil:
-		slog.Debug("检查更新失败", "err", err)
+		logger.Debug("检查更新失败", "err", err)
 	case res.Skipped != "":
-		slog.Debug("跳过更新检查", "reason", res.Skipped)
+		logger.Debug("跳过更新检查", "reason", res.Skipped)
 	case res.HasUpdate:
-		slog.Info("有新版本可用", "current", res.Current, "latest", res.Latest, "url", res.URL)
+		logger.Info("有新版本可用", "current", res.Current, "latest", res.Latest, "url", res.URL)
 	default:
-		slog.Debug("已是最新版本", "version", res.Current)
+		logger.Debug("已是最新版本", "version", res.Current)
 	}
 }
 
