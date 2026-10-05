@@ -7,6 +7,7 @@
 import { api } from '@/api/rest'
 import { EVT, onEvent, sendCommand, setSendFailureHandler, wsClient } from '@/api/client'
 import { t } from '@/i18n'
+import { notifyTaskEnd, type NotifyOutcome, type NotifyPrefs } from '@/utils/notify'
 
 import { useAdaptiveStore, type AdaptiveNotice } from './adaptive'
 import { useExportStore } from './export'
@@ -32,6 +33,37 @@ import type {
   SettingsPayload,
   TaskState,
 } from '@/api/types'
+
+/**
+ * notifyEnd 任务刚结束时按配置提醒一次。
+ *
+ * 只处理「完成」与「失败」两种结束：中途停止是用户自己按的，他本来就知道，
+ * 再提醒一次只是噪音。
+ *
+ * 文案在这里拼而不是在 notify 模块里：那个模块不认识语言，也不该认识——
+ * 它只负责「用哪几个渠道把这段文字送出去」。
+ */
+function notifyEnd(state: TaskState, prefs: NotifyPrefs | null, count: number): void {
+  const outcome: NotifyOutcome | null =
+    state.status === 'done' ? 'done' : state.status === 'failed' ? 'failed' : null
+  if (!outcome) return
+
+  const phase = t(`task.phase.${state.phase}`)
+  let body: string
+  if (outcome === 'done') {
+    body = t('notify.body.done', { phase, count })
+  } else {
+    // 失败原因可能为空（比如进程被杀），那时给一句通用的话而不是「失败：」。
+    body = state.error
+      ? t('notify.body.failed', { phase, reason: state.error })
+      : t('notify.body.failedUnknown', { phase })
+  }
+
+  notifyTaskEnd(outcome, prefs, {
+    title: t(outcome === 'done' ? 'notify.title.done' : 'notify.title.failed'),
+    body,
+  })
+}
 
 /** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
 export function refreshSettings(): void {
@@ -109,6 +141,8 @@ export function wireEvents(): void {
       if (next.status === 'done') ui.activeView = 'result'
       // 中途停止但已经扫出了东西时也跳：那批结果同样是可用的。
       else if (next.status === 'aborted' && results.total > 0) ui.activeView = 'result'
+
+      notifyEnd(next, settings.notify, results.total)
     }
     task.applyState(next)
   })

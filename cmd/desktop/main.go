@@ -208,8 +208,9 @@ func setupTray(
 		},
 	}
 
+	cfg := app.Store.Get()
 	tray := native.SystemTray.New()
-	tray.SetLabel(platform.TrayTooltip(labels, model.StatusIdle, 0))
+	tray.SetLabel(platform.TrayTooltip(labels, model.StatusIdle, 0, cfg.Notify.OnDone, cfg.Notify.OnFail))
 
 	menu := application.NewMenu()
 	items := map[string]*application.MenuItem{}
@@ -229,17 +230,21 @@ func setupTray(
 	// 移到图标上就能看到进度，不必把窗口翻出来。
 	//
 	// 订阅本身**不受开关影响**：下面「停止」项的可点状态也靠它，而那属于菜单
-	// 本身的功能，不是通知。受 `notify.tray` 控制的只有提示文案。
+	// 本身的功能，不是通知。受开关控制的只有提示文案。
+	//
+	// 开关在回调里现读，不在装订阅时读一次：用户在设置页改完就该立刻生效，
+	// 而为了一个勾选框重启程序说不过去。
 	//
 	// 订阅失败不报错：那只是少了一个便利，任务本身照跑。
-	trayNotify := app.Store.Get().Notify.Tray
 	if _, err := app.Services.Bus.Subscribe(task.TopicState, func(payload any) {
 		state, ok := payload.(model.TaskState)
 		if !ok {
 			return
 		}
-		if trayNotify {
-			tray.SetLabel(platform.TrayTooltip(labels, state.Status, percentOf(state)))
+		if live := app.Store.Get().Notify; live.Tray {
+			tray.SetLabel(platform.TrayTooltip(
+				labels, state.Status, percentOf(state), live.OnDone, live.OnFail,
+			))
 		}
 
 		// 「停止」只在有任务可停时才是可点的：一个点了没反应的菜单项，用户

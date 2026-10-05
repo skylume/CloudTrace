@@ -126,12 +126,35 @@ func TestTrayTooltip(t *testing.T) {
 		{"running", 45, "CloudTrace · 进行中 45%"},
 		{"done", 100, "CloudTrace · 已完成"},
 		{"failed", 0, "CloudTrace · 失败"},
+		// 中途停止是用户自己按的，不需要再提醒一次。
 		{"aborted", 0, "CloudTrace"},
 	}
 	for _, tt := range cases {
-		if got := TrayTooltip(zh, tt.status, tt.percent); got != tt.want {
+		if got := TrayTooltip(zh, tt.status, tt.percent, true, true); got != tt.want {
 			t.Errorf("TrayTooltip(%q, %d) = %q，期望 %q", tt.status, tt.percent, got, tt.want)
 		}
+	}
+}
+
+/**
+ * 关掉「完成/失败提醒」之后，托盘不再报结束状态。
+ *
+ * 「不提醒」的含义就是别拿这件事打扰我，而托盘提示也是一次提醒——两处一个说
+ * 提醒、一个不提醒，用户只会觉得开关坏了。
+ */
+func TestTrayTooltipRespectsOutcomeSwitches(t *testing.T) {
+	zh := TrayLabelsFor("zh")
+
+	if got := TrayTooltip(zh, "done", 100, false, true); got != "CloudTrace" {
+		t.Errorf("关掉完成提醒后仍报完成：%q", got)
+	}
+	if got := TrayTooltip(zh, "failed", 0, true, false); got != "CloudTrace" {
+		t.Errorf("关掉失败提醒后仍报失败：%q", got)
+	}
+
+	// 进行中的进度是状态而不是提醒，不受这两个开关影响。
+	if got := TrayTooltip(zh, "running", 45, false, false); got != "CloudTrace · 进行中 45%" {
+		t.Errorf("进度不该受结束提醒开关影响：%q", got)
 	}
 }
 
@@ -139,10 +162,10 @@ func TestTrayTooltip(t *testing.T) {
 func TestTrayTooltipClampsPercent(t *testing.T) {
 	zh := TrayLabelsFor("zh")
 
-	if got := TrayTooltip(zh, "running", -5); got != "CloudTrace · 进行中 0%" {
+	if got := TrayTooltip(zh, "running", -5, true, true); got != "CloudTrace · 进行中 0%" {
 		t.Errorf("负数进度 = %q", got)
 	}
-	if got := TrayTooltip(zh, "running", 300); got != "CloudTrace · 进行中 100%" {
+	if got := TrayTooltip(zh, "running", 300, true, true); got != "CloudTrace · 进行中 100%" {
 		t.Errorf("越界进度 = %q", got)
 	}
 }

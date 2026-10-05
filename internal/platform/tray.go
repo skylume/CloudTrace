@@ -97,9 +97,14 @@ func TrayMenu(deps TrayDeps, labels TrayLabels) []TrayItem {
 // TrayTooltip 按任务状态算出托盘提示文案。
 //
 // 这就是「托盘通知」的落地：任务在后台跑的时候，用户把鼠标移到托盘图标上
-// 就能看到进度，不必把窗口翻出来。状态用字符串而不是某个结构体，是为了让
-// 这个函数不依赖业务包——它只做拼装。
-func TrayTooltip(labels TrayLabels, status string, percent int) string {
+// 就能看到进度，不必把窗口翻出来。
+//
+// 结束状态受「完成提醒 / 失败提醒」控制：关掉之后托盘回到应用名——**不提醒**
+// 的含义就是别拿这件事打扰我，而托盘提示也是一次提醒。进行中的进度不受它们
+// 影响：那是状态，不是提醒。
+//
+// 状态用字符串而不是某个结构体，是为了让这个函数不依赖业务包——它只做拼装。
+func TrayTooltip(labels TrayLabels, status string, percent int, onDone, onFail bool) string {
 	switch status {
 	case "running":
 		if percent < 0 {
@@ -110,8 +115,14 @@ func TrayTooltip(labels TrayLabels, status string, percent int) string {
 		}
 		return labels.AppName + " · " + labels.Running + " " + strconv.Itoa(percent) + "%"
 	case "done":
+		if !onDone {
+			return labels.AppName
+		}
 		return labels.AppName + " · " + labels.Done
 	case "failed":
+		if !onFail {
+			return labels.AppName
+		}
 		return labels.AppName + " · " + labels.Failed
 	default:
 		return labels.AppName

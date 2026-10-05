@@ -78,6 +78,11 @@ export const en: Record<keyof typeof zh, string> = {
 
   'result.title': 'Results',
   'result.empty': 'No results yet — run a scan first',
+  'notify.title.done': 'Task finished',
+  'notify.title.failed': 'Task failed',
+  'notify.body.done': '{phase} finished — {count} node(s)',
+  'notify.body.failed': '{phase} failed: {reason}',
+  'notify.body.failedUnknown': '{phase} failed — see the log for details',
   'pager.label': 'Pagination',
   'pager.range': '{from}–{to} of {total}',
   'pager.prev': 'Previous',

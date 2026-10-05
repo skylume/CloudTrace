@@ -324,6 +324,27 @@ export interface UIConfig {
   remember_state: boolean
   adaptive_enabled: boolean
   adaptive_allow_preset: boolean
+  /** 关闭窗口时收进托盘（桌面版）。 */
+  close_to_tray: boolean
+}
+
+/**
+ * 通知渠道与触发条件。
+ *
+ * 两个维度是正交的：`on_done` / `on_fail` 决定「这次结束值不值得提醒」，
+ * `web` / `sound` / `tray` 决定「用什么提醒」。
+ */
+export interface NotifyConfig {
+  /** 托盘通知（桌面版）。 */
+  tray: boolean
+  /** 浏览器通知，需要授权。 */
+  web: boolean
+  /** 任务完成时提醒。 */
+  on_done: boolean
+  /** 任务失败时提醒。 */
+  on_fail: boolean
+  /** 提示音。 */
+  sound: boolean
 }
 
 /**
@@ -343,7 +364,7 @@ export interface Settings {
   export?: Record<string, unknown>
   ui: UIConfig
   server?: Record<string, unknown>
-  notify?: Record<string, unknown>
+  notify?: NotifyConfig
   advanced?: Record<string, unknown>
   origins?: ParamOrigins
 }

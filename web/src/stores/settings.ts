@@ -8,7 +8,15 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { FieldIssue, HealthReport, ParamOrigins, Settings, SettingsPayload, UIConfig } from '@/api/types'
+import type {
+  FieldIssue,
+  HealthReport,
+  NotifyConfig,
+  ParamOrigins,
+  Settings,
+  SettingsPayload,
+  UIConfig,
+} from '@/api/types'
 import { useUIStore } from './ui'
 
 /** 改设置时带上的参数来源标记。用户手改的一律是 user。 */
@@ -23,6 +31,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const health = ref<HealthReport | null>(null)
 
   const ui = computed<UIConfig | null>(() => values.value?.ui ?? null)
+  const notify = computed<NotifyConfig | null>(() => values.value?.notify ?? null)
   const origins = computed<ParamOrigins>(() => values.value?.origins ?? {})
 
   /**
@@ -73,6 +82,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     values,
     ui,
+    notify,
     origins,
     restartRequired,
     warnings,

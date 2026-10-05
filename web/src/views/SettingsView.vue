@@ -15,6 +15,7 @@ import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settings
 import { useGeoStore } from '@/stores/geo'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
+import { requestWebPermission } from '@/utils/notify'
 import { checkCombinations, type ParamWarning } from '@/utils/paramRules'
 import { useNarrow } from '@/utils/useMediaQuery'
 
@@ -99,6 +100,10 @@ function warningText(item: ParamWarning): string {
 /** 改一项：只把这一项按点号路径拼成嵌套 patch，不动别的键。 */
 function change(path: string, value: unknown): void {
   sendCommand('settings/update', { patch: buildPatch(path, value), origins: { [path]: 'user' } })
+
+  // 打开浏览器通知时顺手申请权限：申请需要一个用户手势，而任务结束时没有手势
+  // 可借。用户之前拒绝过就不再问——反复弹窗只会让人把整个站点的通知永久关掉。
+  if (path === 'notify.web' && value === true) void requestWebPermission()
 }
 
 function resetField(path: string): void {

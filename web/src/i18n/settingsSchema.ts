@@ -186,11 +186,11 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'notify',
     fields: [
-      { path: 'notify.on_done', kind: 'bool', primary: true, pending: true },
-      { path: 'notify.on_fail', kind: 'bool', primary: true, pending: true },
-      { path: 'notify.web', kind: 'bool', pending: true },
-      { path: 'notify.tray', kind: 'bool', pending: true },
-      { path: 'notify.sound', kind: 'bool', pending: true },
+      { path: 'notify.on_done', kind: 'bool', primary: true },
+      { path: 'notify.on_fail', kind: 'bool', primary: true },
+      { path: 'notify.web', kind: 'bool' },
+      { path: 'notify.tray', kind: 'bool' },
+      { path: 'notify.sound', kind: 'bool' },
     ],
   },
   {

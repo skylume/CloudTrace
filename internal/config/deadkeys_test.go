@@ -38,6 +38,10 @@ var frontendOnly = map[string]string{
 	"ui.contrast":       "前端贴 data-contrast",
 	"ui.remember_state": "前端决定要不要恢复上次的页面与密度",
 	"ui.page_size":      "前端决定结果表每页多少行",
+	"notify.on_done":    "前端在任务完成时决定要不要提醒",
+	"notify.on_fail":    "前端在任务失败时决定要不要提醒",
+	"notify.web":        "前端决定要不要发浏览器通知",
+	"notify.sound":      "前端决定要不要出声",
 }
 
 // configOnly 是只被配置包自己读的配置项：它们约束别的项，或者只影响校验。
@@ -53,10 +57,6 @@ var configOnly = map[string]string{
 // 它们在设置页里带着「尚未生效」的标记并被禁用：一个改了什么都不会发生的开关，
 // 比没有这个开关更伤信任——用户会以为是自己没配对。
 var pending = map[string]string{
-	"notify.on_done":         "通知渠道还没做",
-	"notify.on_fail":         "通知渠道还没做",
-	"notify.web":             "通知渠道还没做",
-	"notify.sound":           "通知渠道还没做",
 	"advanced.log_keep_days": "日志目前只写控制台，没有落盘的文件可清理",
 	"advanced.check_update":  "还没有更新检查",
 	"advanced.experimental":  "实验开关还没有消费方",
