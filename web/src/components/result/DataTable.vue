@@ -60,7 +60,6 @@ function isSorted(key: string): 'asc' | 'desc' | '' {
 }
 
 /** 有没有推荐可标。没有时连那一列都不渲染。 */
-const showRecommend = computed(() => results.topKeys.size > 0)
 
 function toggleRow(record: IPRecord): void {
   const key = recordKey(record)
@@ -132,11 +131,6 @@ function selectGroup(records: IPRecord[]): void {
             {{ column.label }}
             <span v-if="isSorted(column.key)" class="arrow">{{ isSorted(column.key) === 'desc' ? '↓' : '↑' }}</span>
           </th>
-          <!--
-            推荐徽章占行尾一格。只在真有推荐时才出现：按地区排序时前三名只是
-            字母序，这时多一列空列纯属占地方。
-          -->
-          <th v-if="showRecommend" class="ct-recommend-col" />
         </tr>
       </thead>
       <tbody>
@@ -146,7 +140,7 @@ function selectGroup(records: IPRecord[]): void {
               :group="group"
               :expanded="expandedGroups.includes(group.key)"
               :selectable="group.count > 0"
-              :column-count="props.columns.length + (showRecommend ? 1 : 0)"
+              :column-count="props.columns.length"
               @toggle="toggleGroup(group.key)"
               @speed="selectGroup(group.records)"
             />
@@ -158,7 +152,6 @@ function selectGroup(records: IPRecord[]): void {
                 :columns="props.columns"
                 :rank="ranks.get(recordKey(record)) ?? 0"
                 :expanded="expandedRows.includes(recordKey(record))"
-                :show-recommend="showRecommend"
                 @toggle="toggleRow(record)"
               />
             </template>
@@ -172,7 +165,6 @@ function selectGroup(records: IPRecord[]): void {
             :columns="props.columns"
             :rank="ranks.get(recordKey(record)) ?? 0"
             :expanded="expandedRows.includes(recordKey(record))"
-            :show-recommend="showRecommend"
             @toggle="toggleRow(record)"
           />
         </template>

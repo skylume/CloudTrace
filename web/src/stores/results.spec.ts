@@ -4,12 +4,11 @@
  * 这里覆盖的都是「看不出错、但结果就是不对」的地方：测速结果覆盖扫描结果
  * 时把地区抹掉、不可达节点在升序里冒充最快、1.1.1.10 排到 1.1.1.2 前面。
  */
-import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { UNREACHABLE, type IPRecord } from '@/api/types'
 
-import { mergeRecord, recordKey, sortRecords, summarize, useResultsStore } from './results'
+import { mergeRecord, recordKey, sortRecords, summarize } from './results'
 
 function record(partial: Partial<IPRecord> & { ip: string }): IPRecord {
   return {
@@ -167,83 +166,3 @@ describe('summarize', () => {
   })
 })
 
-describe('前三名与推荐理由', () => {
-  beforeEach(() => setActivePinia(createPinia()))
-
-  /** 造一批延迟依次递增的节点。 */
-  function fill(store: ReturnType<typeof useResultsStore>, latencies: number[]): void {
-    store.addChunk(latencies.map((latency, index) => record({ ip: '1.1.1.' + (index + 1), latency })))
-  }
-
-  it('按延迟排序时给出延迟最低的三个', () => {
-    const store = useResultsStore()
-    fill(store, [30, 10, 20, 40])
-    store.sortKey = 'latency'
-    store.sortDesc = false
-
-    expect([...store.topKeys].sort()).toEqual(['1.1.1.1:443', '1.1.1.2:443', '1.1.1.3:443'])
-    expect(store.recommendReasonKey).toBe('result.recommend.latency')
-  })
-
-  /**
-   * 按地区排列时靠前的三个只是字母序，标上「推荐」等于在骗人——用户一查就
-   * 会发现这个理由站不住。
-   */
-  it('排序维度不反映优劣时不推荐', () => {
-    const store = useResultsStore()
-    fill(store, [30, 10, 20, 40])
-    store.sortKey = 'region'
-
-    expect(store.topKeys.size).toBe(0)
-    expect(store.recommendReasonKey).toBe('')
-  })
-
-  it('换排序维度后推荐跟着换', () => {
-    const store = useResultsStore()
-    store.addChunk([
-      record({ ip: '1.1.1.1', latency: 10, speed_mbps: 1, score: 5 }),
-      record({ ip: '1.1.1.2', latency: 90, speed_mbps: 50, score: 90 }),
-      record({ ip: '1.1.1.3', latency: 50, speed_mbps: 20, score: 40 }),
-    ])
-
-    store.sortKey = 'latency'
-    store.sortDesc = false
-    expect(store.topKeys.has('1.1.1.1:443')).toBe(true)
-
-    store.sortKey = 'score'
-    store.sortDesc = true
-    expect(store.topKeys.has('1.1.1.2:443')).toBe(true)
-    expect(store.recommendReasonKey).toBe('result.recommend.score')
-  })
-
-  it('筛选之后推荐跟着变，不是固定不变的前三名', () => {
-    const store = useResultsStore()
-    store.addChunk([
-      record({ ip: '1.1.1.1', latency: 10, colo: 'HKG' }),
-      record({ ip: '1.1.1.2', latency: 20, colo: 'NRT' }),
-      record({ ip: '1.1.1.3', latency: 30, colo: 'NRT' }),
-    ])
-    store.sortKey = 'latency'
-    store.sortDesc = false
-    expect(store.topKeys.has('1.1.1.1:443')).toBe(true)
-
-    store.regionFilter = ['NRT']
-    expect(store.topKeys.has('1.1.1.1:443')).toBe(false)
-    expect(store.topKeys.has('1.1.1.2:443')).toBe(true)
-  })
-
-  it('结果不足三个时有多少给多少', () => {
-    const store = useResultsStore()
-    fill(store, [30, 10])
-    store.sortKey = 'latency'
-
-    expect(store.topKeys.size).toBe(2)
-  })
-
-  it('没有结果时没有推荐', () => {
-    const store = useResultsStore()
-    store.sortKey = 'latency'
-
-    expect(store.topKeys.size).toBe(0)
-  })
-})

@@ -218,12 +218,6 @@
   --table-narrow-width: 34px;
 }
 
-/* 推荐徽章那一格：宽度固定，空着的时候也只是一小段留白。 */
-.ct-recommend-col {
-  width: 64px;
-  white-space: nowrap;
-}
-
 .ct-sticky-1 {
   left: 0;
 }
