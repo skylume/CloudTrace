@@ -10,7 +10,7 @@
 handler 与同一份数据，桌面版开着的时候浏览器也能访问同一个面板。  
 融合了 [XIU2/CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) 的高效测速逻辑与 [xiaolin-007/CloudFlareScan](https://github.com/xiaolin-007/CloudFlareScan) 的美观 UI 设计理念。
 
-[👉 点此前往下载页面](https://github.com/zrf-code/CloudTrace/releases/latest)
+[👉 点此前往下载页面](https://github.com/skylume/CloudTrace/releases/latest)
 
 </div>
 
@@ -91,7 +91,7 @@ handler 与同一份数据，桌面版开着的时候浏览器也能访问同一
 
 ### 使用预编译版本
 
-从 [Releases](https://github.com/zrf-code/CloudTrace/releases/latest) 页面下载对应压缩包：
+从 [Releases](https://github.com/skylume/CloudTrace/releases/latest) 页面下载对应压缩包：
 
 | 包 | 适用 |
 | :--- | :--- |
@@ -106,7 +106,7 @@ handler 与同一份数据，桌面版开着的时候浏览器也能访问同一
 ### 从源码构建
 
 ```bash
-git clone https://github.com/zrf-code/CloudTrace.git
+git clone https://github.com/skylume/CloudTrace.git
 cd CloudTrace
 ```
 
@@ -317,6 +317,17 @@ make release VERSION=1.0.0
 
 打一个 `v1.2.3` 形式的 tag 会触发 `.github/workflows/release.yml`，在 CI 上产出同一套
 并挂到同一个 Release。本地脚本与 CI 走的是同一份代码，不存在「本地能打、CI 打不出来」。
+
+### 只出产物、不发 Release（测试版）
+
+想拿一套测试包但不发正式版，**手动触发同一个 workflow** 即可，不需要另外的脚本：
+
+1. 仓库页 → **Actions** → 左侧选 **Release** → 右上 **Run workflow**
+2. 版本号填一个（例如 `0.0.0-test`）。留空会用 `0.0.0-dev`
+3. 跑完后在同一页面的 **Artifacts** 区域下载那 5 个包
+
+**不会建 Release**：汇总发布那一步只在打 tag 时执行（条件是 `github.ref` 以
+`refs/tags/` 开头），手动触发时它被跳过，前面的构建与打包照常跑完。
 
 产物：
 - 桌面版 `dist/CloudTrace-<版本>/`（或单 exe），双击即用，设置中可开 HTTP 面板

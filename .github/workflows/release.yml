@@ -36,10 +36,13 @@ jobs:
         shell: pwsh
         run: |
           $ver = '${{ inputs.version }}'.Trim()
-          if ([string]::IsNullOrWhiteSpace($ver)) {
+          # 只有 tag 才拿 ref 名当版本号。手动触发时 ref 是分支名，拿它当版本号会
+          # 产出 cloudtrace-panel-main-win-x64.zip 这种包名——能用，但看的人得先
+          # 想一下 main 是什么版本。
+          if ([string]::IsNullOrWhiteSpace($ver) -and '${{ github.ref }}' -like 'refs/tags/*') {
             $ver = '${{ github.ref_name }}' -replace '^v', ''
           }
-          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = 'dev' }
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = '0.0.0-dev' }
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$ver"
 
           $desktop = Test-Path cmd/desktop
