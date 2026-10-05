@@ -76,7 +76,8 @@ $lines += ''
 $lines += '## 说明'
 $lines += ''
 $lines += '- 绿色免安装：解压后直接运行，数据默认落在程序同级 ``data/`` 目录。'
-$lines += '- Windows 7 桌面版固定使用 WebView2 ``109.0.1518.140``（最后一个支持 Win7 的版本），该版本已停止安全更新，建议优先升级系统。'
+# 只写分支号不写具体补丁号：补丁号随 fetch-webview2.ps1 变，写在这里迟早对不上。
+$lines += '- Windows 7 桌面版固定使用 WebView2 ``109``（最后一个支持 Win7 的分支），该分支已停止安全更新，建议优先升级系统。'
 $lines += '- Windows 7 支持由社区分支 Go 工具链提供，主构建使用官方 Go。'
 
 Set-Content -Path $Out -Value ($lines -join "`n") -Encoding utf8

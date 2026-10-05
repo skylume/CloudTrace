@@ -15,7 +15,9 @@
       4. cloudtrace-desktop-<ver>-win7-x64-lite.zip  Win7 工具链，不含 WebView2
       5. cloudtrace-desktop-<ver>-win7-x64-full.zip  Win7 工具链，含固定版 WebView2
 
-    lite 与 full 共用同一个 exe，只差是否附带 webview2/ 目录。
+    lite 与 full 共用同一个 exe，只差是否附带 webview2/ 目录。full 附带的固定版
+    WebView2 默认从 nuget.org 上的 WebView2.Runtime.X64 取（微软官方的地址是 GUID
+    形式的临时链接、会过期）；也可以设 WEBVIEW2_CAB_URL 改从官方 .cab 取。
 
 .PARAMETER Only
     只产出指定产物；缺省 all。
@@ -30,6 +32,10 @@
     跳过前端构建（由调用方保证 web/dist 已就绪）。CI 中前端只构建一次，
     因此除 build-web job 外都应带上本开关。
 
+.PARAMETER StageOnly
+    只准备各包的暂存目录（dist/pkg/<包名>/），不压 zip。CI 的构建 job 用它上传
+    artifact，zip 由汇总发布那一步统一生成。
+
 .PARAMETER KeepIntermediate
     保留未压缩的 exe，便于排查；缺省清理。
 #>
@@ -43,6 +49,8 @@ param(
     [string]$OutDir = 'dist',
 
     [switch]$SkipWeb,
+
+    [switch]$StageOnly,
 
     [switch]$KeepIntermediate
 )
@@ -59,6 +67,11 @@ $webviewScript = Join-Path $PSScriptRoot 'fetch-webview2.ps1'
 
 $outDirAbs = Join-Path $repoRoot $OutDir
 New-Item -ItemType Directory -Force -Path $outDirAbs | Out-Null
+
+# 各包的暂存目录都放这里。CI 上传的就是它（而不是 zip），见 package.ps1 的说明。
+# 目录本身由 package.ps1 按需创建，这里不预先建：非 StageOnly 的那条路上不该
+# 留下一个空的 dist/pkg/。
+$pkgDirAbs = Join-Path $outDirAbs 'pkg'
 
 function Test-Wanted {
     param([string]$Name)
@@ -88,11 +101,32 @@ function Invoke-Build {
 }
 
 function New-Package {
-    param([string]$ZipName, [string[]]$Items)
-    $dest = Join-Path $outDirAbs $ZipName
-    & $packageScript -Path $Items -Destination $dest -Root $repoRoot | ForEach-Object { Write-Host $_ }
+    param([string]$Name, [string[]]$Items)
+    $dest = Join-Path $outDirAbs "$Name.zip"
+    $pkgArgs = @{
+        Path        = $Items
+        Destination = $dest
+        Root        = $repoRoot
+    }
+    # 暂存目录只在 CI 那条路上留着：本地跑一遍没必要多出一份几百兆的解包内容。
+    if ($StageOnly) {
+        $pkgArgs['StageDir'] = $pkgDirAbs
+        $pkgArgs['StageOnly'] = $true
+    }
+
+    # 子脚本的输出经 Write-Host 直通控制台（保留可见性），但不进入管道：
+    # 否则包路径会被当成返回值混进来。
+    & $packageScript @pkgArgs | ForEach-Object { Write-Host $_ }
+
+    if ($StageOnly) {
+        $stage = Join-Path $pkgDirAbs $Name
+        if (-not (Test-Path $stage)) {
+            throw "暂存 $Name 未产出预期目录：$stage"
+        }
+        return $stage
+    }
     if (-not (Test-Path $dest)) {
-        throw "打包 $ZipName 未产出预期文件：$dest"
+        throw "打包 $Name 未产出预期文件：$dest"
     }
     return $dest
 }
@@ -119,7 +153,7 @@ try {
         Write-Host ''
         Write-Host '########## 产物 1/5：面板版（Win10+）##########'
         $exe = Invoke-Build -Target 'panel' -Toolchain 'modern'
-        $produced += (New-Package -ZipName "cloudtrace-panel-$Version-win-x64.zip" -Items @($exe))
+        $produced += (New-Package -Name "cloudtrace-panel-$Version-win-x64" -Items @($exe))
     }
 
     # ---- 2. 桌面版（官方 Go + wails）----------------------------------
@@ -127,7 +161,7 @@ try {
         Write-Host ''
         Write-Host '########## 产物 2/5：桌面版（Win10+）##########'
         $exe = Invoke-Build -Target 'desktop' -Toolchain 'modern'
-        $produced += (New-Package -ZipName "cloudtrace-desktop-$Version-win-x64.zip" -Items @($exe))
+        $produced += (New-Package -Name "cloudtrace-desktop-$Version-win-x64" -Items @($exe))
     }
 
     # ---- 3. 面板版（Win7）---------------------------------------------
@@ -135,7 +169,7 @@ try {
         Write-Host ''
         Write-Host '########## 产物 3/5：面板版（Win7）##########'
         $exe = Invoke-Build -Target 'panel' -Toolchain 'win7'
-        $produced += (New-Package -ZipName "cloudtrace-panel-$Version-win7-x64.zip" -Items @($exe))
+        $produced += (New-Package -Name "cloudtrace-panel-$Version-win7-x64" -Items @($exe))
     }
 
     # ---- 4/5. 桌面版（Win7）lite 与 full -------------------------------
@@ -143,24 +177,29 @@ try {
         Write-Host ''
         Write-Host '########## 产物 4/5：桌面版（Win7）lite ##########'
         $exe = Invoke-Build -Target 'desktop' -Toolchain 'win7'
-        $produced += (New-Package -ZipName "cloudtrace-desktop-$Version-win7-x64-lite.zip" -Items @($exe))
+        $produced += (New-Package -Name "cloudtrace-desktop-$Version-win7-x64-lite" -Items @($exe))
 
         Write-Host ''
         Write-Host '########## 产物 5/5：桌面版（Win7）full ##########'
         # full 与 lite 共用同一个 exe，只多带一个固定版本 WebView2 运行时目录。
+        #
+        # 默认从 nuget 取那份固定版运行时，因为微软官方的下载地址是 GUID 形式的
+        # 临时链接、会过期——按「没配变量就跳过」处理的话，full 会在某次发版时
+        # 无声消失。设了 WEBVIEW2_CAB_URL 才改用官方 .cab。
+        $webviewArgs = @{ Dest = (Join-Path $outDirAbs 'webview2') }
         $cabUrl = $env:WEBVIEW2_CAB_URL
-        if ([string]::IsNullOrWhiteSpace($cabUrl)) {
-            Write-Warning '未设置 WEBVIEW2_CAB_URL，跳过 full 变体（其余产物不受影响）。'
+        if (-not [string]::IsNullOrWhiteSpace($cabUrl)) {
+            $webviewArgs['CabUrl'] = $cabUrl
+            Write-Host "==> 使用 WEBVIEW2_CAB_URL 指定的官方 .cab"
         }
-        else {
-            $webviewDest = Join-Path $outDirAbs 'webview2'
-            & $webviewScript -Url $cabUrl -Dest $webviewDest | Out-Null
-            if (-not $?) { throw '准备 WebView2 运行时失败' }
-            $produced += (New-Package -ZipName "cloudtrace-desktop-$Version-win7-x64-full.zip" -Items @($exe, $webviewDest))
-        }
+        $webviewDest = & $webviewScript @webviewArgs | Select-Object -Last 1
+        if ([string]::IsNullOrWhiteSpace($webviewDest)) { throw '准备 WebView2 运行时失败' }
+        $webviewDest = "$webviewDest".Trim()
+        $produced += (New-Package -Name "cloudtrace-desktop-$Version-win7-x64-full" -Items @($exe, $webviewDest))
     }
 
     # ---- 收尾 ----------------------------------------------------------
+    # 只清中间产物。dist/pkg/ 是各包的内容本身（CI 要上传它），不能当临时文件删掉。
     if (-not $KeepIntermediate) {
         Get-ChildItem -Path $outDirAbs -Filter '*.exe' -File -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue

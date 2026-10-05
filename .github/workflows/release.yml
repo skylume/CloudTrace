@@ -84,7 +84,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: web-dist
+          name: _web-dist
           path: web/dist
           retention-days: 1
 
@@ -103,19 +103,21 @@ jobs:
           cache: true
       - uses: actions/download-artifact@v4
         with:
-          name: web-dist
+          name: _web-dist
           path: web/dist
 
       - name: 构建并打包
         shell: pwsh
         run: |
-          ./scripts/release.ps1 -Only panel-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          ./scripts/release.ps1 -Only panel-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb -StageOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      # 上传的是包的内容而不是 zip：artifact 下载下来本来就会被 GitHub 再包一层，
+      # 传 zip 会变成「解压两次才看到 exe」。zip 由汇总发布那一步统一生成。
       - uses: actions/upload-artifact@v4
         with:
-          name: pkg-panel-modern
-          path: dist/*.zip
+          name: cloudtrace-panel-${{ needs.prepare.outputs.version }}-win-x64
+          path: dist/pkg/cloudtrace-panel-${{ needs.prepare.outputs.version }}-win-x64
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
@@ -134,19 +136,19 @@ jobs:
           cache: true
       - uses: actions/download-artifact@v4
         with:
-          name: web-dist
+          name: _web-dist
           path: web/dist
 
       - name: 构建并打包
         shell: pwsh
         run: |
-          ./scripts/release.ps1 -Only desktop-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          ./scripts/release.ps1 -Only desktop-modern -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb -StageOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pkg-desktop-modern
-          path: dist/*.zip
+          name: cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win-x64
+          path: dist/pkg/cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win-x64
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
@@ -164,7 +166,7 @@ jobs:
           cache: true
       - uses: actions/download-artifact@v4
         with:
-          name: web-dist
+          name: _web-dist
           path: web/dist
 
       # 与主构建的官方 Go 完全隔离成两个 GOROOT，互不污染。
@@ -177,13 +179,13 @@ jobs:
       - name: 构建并打包
         shell: pwsh
         run: |
-          ./scripts/release.ps1 -Only panel-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          ./scripts/release.ps1 -Only panel-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb -StageOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pkg-panel-win7
-          path: dist/*.zip
+          name: cloudtrace-panel-${{ needs.prepare.outputs.version }}-win7-x64
+          path: dist/pkg/cloudtrace-panel-${{ needs.prepare.outputs.version }}-win7-x64
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
@@ -196,7 +198,9 @@ jobs:
     if: needs.prepare.outputs.desktop == 'true'
     runs-on: windows-latest
     env:
-      # 固定版本 WebView2 的下载地址；未配置时 full 变体会被跳过。
+      # 可选的覆盖：给了它就从微软官方的固定版 .cab 取运行时（地址会过期，需要
+      # 自己从下载页拿）。留空则从 nuget.org 上的 WebView2.Runtime.X64 取，
+      # 那是长期有效的版本化地址，full 变体因此每次都能产出。
       WEBVIEW2_CAB_URL: ${{ vars.WEBVIEW2_CAB_URL }}
     steps:
       - uses: actions/checkout@v4
@@ -206,7 +210,7 @@ jobs:
           cache: true
       - uses: actions/download-artifact@v4
         with:
-          name: web-dist
+          name: _web-dist
           path: web/dist
 
       - name: 准备 Win7 工具链
@@ -218,13 +222,21 @@ jobs:
       - name: 构建并打包
         shell: pwsh
         run: |
-          ./scripts/release.ps1 -Only desktop-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb
+          ./scripts/release.ps1 -Only desktop-win7 -Version '${{ needs.prepare.outputs.version }}' -OutDir dist -SkipWeb -StageOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # lite 与 full 是两个独立的包，因此是两个 artifact——一个 artifact 装两个包
+      # 的话，下载下来还要先分辨里面哪份是哪个。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win7-x64-lite
+          path: dist/pkg/cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win7-x64-lite
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pkg-desktop-win7
-          path: dist/*.zip
+          name: cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win7-x64-full
+          path: dist/pkg/cloudtrace-desktop-${{ needs.prepare.outputs.version }}-win7-x64-full
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
@@ -257,12 +269,31 @@ jobs:
             exit 1
           }
 
+      # 每个 artifact 落在自己的子目录里（不要 merge-multiple），目录名就是包名
+      # ——下一步要按目录逐个压成同名的 zip。
       - name: 收集全部产物
         uses: actions/download-artifact@v4
         with:
-          pattern: pkg-*
+          pattern: cloudtrace-*
           path: artifacts
-          merge-multiple: true
+
+      # 上游传的是包的内容，Release 要的是 zip，所以在这里统一压一次。
+      #
+      # 放在这一步而不是各构建 job 里：一个包只压一次，几百兆的 Win7 运行时
+      # 不会被压两遍。
+      - name: 打成 zip
+        shell: pwsh
+        run: |
+          $dirs = Get-ChildItem -Path artifacts -Directory
+          if ($dirs.Count -eq 0) {
+            Write-Error 'artifacts 下没有任何包目录，终止'
+            exit 1
+          }
+          foreach ($dir in $dirs) {
+            $items = Get-ChildItem -Path $dir.FullName | ForEach-Object { $_.FullName }
+            ./scripts/package.ps1 -Path $items -Destination (Join-Path 'artifacts' "$($dir.Name).zip")
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
 
       # 说明的生成逻辑放在脚本里：写在 workflow 里就只能等发版时才知道对不对，
       # 而这个脚本可以拿几个假文件名在本地跑一遍。
