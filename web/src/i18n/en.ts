@@ -98,6 +98,7 @@ export const en: Record<keyof typeof zh, string> = {
   'result.stat.total': 'Total',
   'result.filter.region': 'Region',
   'result.filter.latency': 'Max latency',
+  'result.filter.unlimited': 'Any',
   'result.filter.clear': 'Clear filters',
   'result.selected': '{count} selected',
   'result.speedSelected': 'Test {count} selected',

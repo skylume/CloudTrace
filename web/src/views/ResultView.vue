@@ -126,6 +126,20 @@ const stats = computed(() => {
 const showEmpty = computed(() => results.total === 0 && !task.running)
 const selectedCount = computed(() => results.selected.size)
 
+/**
+ * 延迟上限的输入值。
+ *
+ * 存储侧用 `null` 表示「不限」，而输入框清空时给的是空串——两边直接绑会在
+ * 「清空 = 变成 0」上出错，而 0 会滤掉所有节点。
+ */
+const latencyLimit = computed({
+  get: () => (results.maxLatency === null ? '' : String(results.maxLatency)),
+  set: (value: string) => {
+    const parsed = Number.parseInt(value, 10)
+    results.maxLatency = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  },
+})
+
 /** 复制前几条：按当前排序取，与用户看到的顺序一致。 */
 async function copyTop(count: number): Promise<void> {
   const text = results.visible
@@ -143,14 +157,23 @@ async function copyTop(count: number): Promise<void> {
 }
 
 function speedSelected(): void {
-  const targets = results.selectedRecords
-  if (targets.length === 0) return
-  startSpeed(targets)
+  startSpeed('single', results.selectedRecords)
 }
 
 /** 「测速本组」走同一条路径：先选中，再按选中发起。 */
 function onGroupSpeed(records: typeof results.all): void {
-  startSpeed(records)
+  startSpeed('single', records)
+}
+
+/**
+ * 按范围发起测速。
+ *
+ * 三个入口对应三种目标集。`scope` 不只是给后端看的标签：分地区 TopN 只在
+ * `all` 时生效（地区测速是用户点名要测这个地区的全部节点，再截断就等于把
+ * 用户要的东西砍掉），所以范围必须如实上报，不能一律报 `single`。
+ */
+function speedByScope(scope: 'region' | 'all'): void {
+  startSpeed(scope, scope === 'region' ? results.visible : results.all)
 }
 
 /**
@@ -160,9 +183,9 @@ function onGroupSpeed(records: typeof results.all): void {
  * 替我们去读配置——只发目标和范围的话，设置页里改过的并发、间隔、测速源
  * 就一个都不会生效。
  */
-function startSpeed(targets: typeof results.all): void {
+function startSpeed(scope: 'single' | 'region' | 'all', targets: typeof results.all): void {
   if (targets.length === 0) return
-  sendCommand('speed/start', buildSpeedParams(settings.values, { scope: 'single', targets }))
+  sendCommand('speed/start', buildSpeedParams(settings.values, { scope, targets }))
   view.value = 'speed'
 }
 
@@ -264,6 +287,18 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
           type="search"
           :placeholder="t('common.search')"
         />
+        <label class="filter">
+          <span class="ct-subtle">{{ t('result.filter.latency') }}</span>
+          <input
+            v-model="latencyLimit"
+            class="ct-input filter-input"
+            type="number"
+            min="0"
+            step="10"
+            inputmode="numeric"
+            :placeholder="t('result.filter.unlimited')"
+          />
+        </label>
         <span class="spacer" />
         <SegmentedControl :segments="presetSegments" :model-value="fields.presetId" @update:model-value="applyPreset" />
         <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
@@ -277,9 +312,30 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         <button type="button" class="ct-btn" :disabled="exporter.pending" @click="exportResult">
           {{ t('common.export') }}
         </button>
-        <button type="button" class="ct-btn ct-btn--primary" :disabled="selectedCount === 0" @click="speedSelected">
-          {{ t('result.speedSelected', { count: selectedCount }) }}
-        </button>
+        <!--
+          三种测速范围并排给出，各自的可用条件写在按钮的禁用状态上：
+          没勾选就没法「测速选中」，没筛地区就没法「测速所选地区」。
+          合成一个下拉会把「这次到底要测哪些」藏起来，而那是发起前唯一要确认的事。
+
+          三个包在一个不换行的组里：工具栏本身会换行，拆散的话窄屏上会出现
+          「一个在上一行、两个在下一行」这种断法。
+        -->
+        <div class="speed-group">
+          <button type="button" class="ct-btn ct-btn--primary" :disabled="selectedCount === 0" @click="speedSelected">
+            {{ t('result.speedSelected', { count: selectedCount }) }}
+          </button>
+          <button
+            type="button"
+            class="ct-btn"
+            :disabled="results.regionFilter.length === 0 || results.visible.length === 0"
+            @click="speedByScope('region')"
+          >
+            {{ t('result.speedRegion') }}
+          </button>
+          <button type="button" class="ct-btn" :disabled="results.total === 0" @click="speedByScope('all')">
+            {{ t('result.speedAll') }}
+          </button>
+        </div>
       </div>
 
       <RecordCardList v-if="narrow" :records="results.paged" />
@@ -365,6 +421,24 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-2);
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.filter-input {
+  width: 84px;
+}
+
+/* 三个测速入口要么都在这一行、要么整体挪到下一行，不拆散。 */
+.speed-group {
+  display: flex;
+  flex-wrap: nowrap;
   gap: var(--space-2);
 }
 

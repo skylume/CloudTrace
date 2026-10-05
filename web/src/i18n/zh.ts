@@ -90,6 +90,7 @@ export const zh = {
   'result.stat.total': '总数',
   'result.filter.region': '地区',
   'result.filter.latency': '延迟上限',
+  'result.filter.unlimited': '不限',
   'result.filter.clear': '清空筛选',
   'result.selected': '已选 {count}',
   'result.speedSelected': '测速选中 {count}',

@@ -25,20 +25,48 @@
         root.dataset.fontScale = (ui && ui.fontScale) || 'medium'
       })()
     </script>
-    <script type="module" crossorigin src="/assets/login-DhUrOqCJ.js"></script>
+    <script type="module" crossorigin src="/assets/login-ZNVO3ZSc.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/base-kIHyFnVQ.js">
     <link rel="stylesheet" crossorigin href="/assets/base-PPGiVxNi.css">
-    <link rel="stylesheet" crossorigin href="/assets/login-DcFElZ8Q.css">
+    <link rel="stylesheet" crossorigin href="/assets/login-CuEuFWJb.css">
   </head>
   <body class="login-body">
     <form class="login-card" id="login-form" novalidate>
-      <h1>CloudTrace</h1>
-      <p class="login-hint" id="login-hint">
-        面板已开放局域网访问，请输入启动时控制台打印的访问 Token。
-      </p>
-      <label class="sr-only" for="login-token">访问 Token</label>
-      <input id="login-token" type="password" placeholder="访问 Token" autocomplete="off" autofocus />
-      <button type="submit" id="login-submit">登录</button>
+      <header class="login-brand">
+        <svg class="login-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 8.6 4.5 4.5 0 0 0 7 18z" />
+        </svg>
+        <div>
+          <h1>CloudTrace</h1>
+          <p class="login-tagline">挑出当前网络下最好用的 Cloudflare 节点</p>
+        </div>
+      </header>
+
+      <!--
+        提示内容由脚本按服务端的实际情况填：绑没绑局域网、配置文件在哪。
+        写死在 HTML 里只能二选一，而这两件事本来就因机器而异。
+      -->
+      <section class="login-note" id="login-note" hidden>
+        <svg class="login-note-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 8v4M12 16h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" />
+        </svg>
+        <div class="login-note-text">
+          <p id="login-note-main"></p>
+          <p id="login-note-sub"></p>
+          <code id="login-note-path" hidden></code>
+        </div>
+      </section>
+
+      <label class="login-label" for="login-token">访问 Token</label>
+      <input
+        id="login-token"
+        type="password"
+        placeholder="粘贴访问 Token"
+        autocomplete="off"
+        spellcheck="false"
+        autofocus
+      />
+      <button type="submit" id="login-submit">进入面板</button>
       <p class="login-error" id="login-error" role="alert"></p>
     </form>
   </body>
