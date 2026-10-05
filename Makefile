@@ -17,13 +17,17 @@ VERSION ?= dev
 OUTDIR  ?= dist
 
 # 显式列出包路径，而不是 `./...`：web/node_modules 里有个 npm 包夹带了 Go 源码
-# （flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率。CI 用同一份
-# 列表，本地与流水线不会各测各的。
-# **新增顶层目录时记得加进这里。**
+# （flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率。
+#
+# 权威清单在 scripts/ci-check.ps1 里（CI 用的是那一份）；这里这份是给下面几个
+# 轻量目标用的，改动时两边要一起改。
 PACKAGES ?= ./assets/... ./cmd/... ./internal/...
 
 .DEFAULT_GOAL := help
-.PHONY: help dev web build build-panel build-desktop build-win7 release test lint fmt clean
+.PHONY: help dev web build build-panel build-desktop build-win7 release ci test lint fmt clean
+
+ci: ## 跑一遍 CI 的检查项（与 workflow 同一份命令）
+	pwsh -NoProfile -File scripts/ci-check.ps1
 
 help: ## 显示所有可用目标
 	@Write-Host 'CloudTrace 构建目标：'
