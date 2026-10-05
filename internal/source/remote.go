@@ -113,7 +113,7 @@ func FetchRemote(ctx context.Context, urls []string, opts RemoteOptions) (Remote
 	}
 
 	if opts.Merge == MergeIntersect {
-		out.Records = intersect(results, out.Records)
+		out.Records = intersect(results)
 	}
 	return out, nil
 }
@@ -124,7 +124,7 @@ func FetchRemote(ctx context.Context, urls []string, opts RemoteOptions) (Remote
 // 那是「有一路没通」。一个源都没成功时返回空，由调用方按「全部失败」处理。
 //
 // 顺序沿用第一个成功源里的顺序，保证同一组输入得到同一组输出。
-func intersect(results []outcome, union []model.IPRecord) []model.IPRecord {
+func intersect(results []outcome) []model.IPRecord {
 	// 逐个源求交：每处理一个源就把上一轮的候选里不属于它的删掉。
 	var kept map[string]bool
 	var first []model.IPRecord
@@ -157,6 +157,9 @@ func intersect(results []outcome, union []model.IPRecord) []model.IPRecord {
 		return nil
 	}
 
+	// 按第一个成功源的顺序输出。kept 只会从这个集合里删，因此它的每个成员
+	// 都在 first 里——不需要为「交集里有 first 之外的节点」做兜底，那种情况
+	// 构造上就不存在。
 	out := make([]model.IPRecord, 0, len(kept))
 	seen := make(map[string]bool, len(kept))
 	for _, rec := range first {
@@ -166,16 +169,6 @@ func intersect(results []outcome, union []model.IPRecord) []model.IPRecord {
 		}
 		seen[key] = true
 		out = append(out, rec)
-	}
-	// 交集里可能有只出现在后面那些源、而不在第一个源里的节点——那不可能：
-	// 交集的成员必须出现在**每个**源里，因此必然也在第一个源里。这里用
-	// union 兜底只是为了不让「一个源成功但列表为空」把结果整个丢掉。
-	if len(out) == 0 && len(kept) > 0 {
-		for _, rec := range union {
-			if kept[recordKey(rec)] {
-				out = append(out, rec)
-			}
-		}
 	}
 	return out
 }
