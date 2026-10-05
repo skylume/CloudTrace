@@ -101,7 +101,7 @@ func TestMeasureStopsAtEOF(t *testing.T) {
 	reader := &pacedReader{remaining: 100 * 1024, chunk: 4096, delay: time.Millisecond}
 
 	start := time.Now()
-	speed, err := measure(context.Background(), reader, duration, time.Now)
+	speed, err := measure(context.Background(), reader, duration, 0, time.Now)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -116,7 +116,7 @@ func TestMeasureStopsAtEOF(t *testing.T) {
 }
 
 func TestMeasureEmptyBodyReturnsZero(t *testing.T) {
-	speed, err := measure(context.Background(), strings.NewReader(""), time.Second, time.Now)
+	speed, err := measure(context.Background(), strings.NewReader(""), time.Second, 0, time.Now)
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -126,7 +126,7 @@ func TestMeasureEmptyBodyReturnsZero(t *testing.T) {
 }
 
 func TestMeasureReturnsErrorOnImmediateFailure(t *testing.T) {
-	speed, err := measure(context.Background(), failingReader{err: errors.New("连接被重置")}, time.Second, time.Now)
+	speed, err := measure(context.Background(), failingReader{err: errors.New("连接被重置")}, time.Second, 0, time.Now)
 	if err == nil {
 		t.Fatal("一个字节都没读到就失败时应返回错误")
 	}
@@ -139,7 +139,7 @@ func TestMeasureReturnsContextErrorWhenCancelledEarly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	speed, err := measure(ctx, failingReader{err: errors.New("读失败")}, time.Second, time.Now)
+	speed, err := measure(ctx, failingReader{err: errors.New("读失败")}, time.Second, 0, time.Now)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v，期望 context.Canceled", err)
 	}
@@ -173,7 +173,7 @@ func TestMeasureFrozenClockStillReportsPositiveSpeed(t *testing.T) {
 	const duration = 5 * time.Second
 	body := strings.NewReader(strings.Repeat("x", 512*1024))
 
-	speed, err := measure(context.Background(), body, duration, frozenClock())
+	speed, err := measure(context.Background(), body, duration, 0, frozenClock())
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -191,7 +191,7 @@ func TestMeasureFrozenClockStillReportsPositiveSpeed(t *testing.T) {
 
 func TestMeasureClampsTinySlice(t *testing.T) {
 	// 时长短到切片为零时必须钳到 1ms：否则片长为零，折算会退化成无穷大。
-	speed, err := measure(context.Background(), strings.NewReader("y"), time.Nanosecond, frozenClock())
+	speed, err := measure(context.Background(), strings.NewReader("y"), time.Nanosecond, 0, frozenClock())
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -205,7 +205,7 @@ func TestMeasureSettlesAtSliceBoundaries(t *testing.T) {
 	const duration = time.Second
 	reader := &pacedReader{remaining: 4 * 1024, chunk: 1024}
 
-	speed, err := measure(context.Background(), reader, duration, steppingClock(11*time.Millisecond))
+	speed, err := measure(context.Background(), reader, duration, 0, steppingClock(11*time.Millisecond))
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -218,7 +218,7 @@ func TestMeasureStopsAtDeadline(t *testing.T) {
 	// 数据一直有、也一直没到 EOF，时钟走到窗口末端就必须停。
 	reader := &pacedReader{remaining: 1 << 20, chunk: 1024}
 
-	speed, err := measure(context.Background(), reader, time.Second, steppingClock(200*time.Millisecond))
+	speed, err := measure(context.Background(), reader, time.Second, 0, steppingClock(200*time.Millisecond))
 	if err != nil {
 		t.Fatalf("measure 返回错误：%v", err)
 	}
@@ -234,7 +234,7 @@ func TestMeasureKeepsPartialResultWhenCancelled(t *testing.T) {
 	cancel()
 
 	reader := &pacedReader{remaining: 4 * 1024, chunk: 1024}
-	speed, err := measure(ctx, reader, time.Second, steppingClock(11*time.Millisecond))
+	speed, err := measure(ctx, reader, time.Second, 0, steppingClock(11*time.Millisecond))
 	if err != nil {
 		t.Fatalf("已有样本时不应返回错误：%v", err)
 	}
@@ -274,7 +274,7 @@ func newDownloadServer(t *testing.T, total int, chunked bool) (*httptest.Server,
 func TestDownloadMeasuresSpeed(t *testing.T) {
 	server, port := newDownloadServer(t, 4<<20, false)
 
-	speed, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", 5*time.Second, false)
+	speed, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", DownloadOptions{Duration: 5 * time.Second, UseTLS: false})
 	if err != nil {
 		t.Fatalf("Download 返回错误：%v", err)
 	}
@@ -288,7 +288,7 @@ func TestDownloadChunkedBody(t *testing.T) {
 	// 若把分块头算进字节数，速度会偏高。
 	server, port := newDownloadServer(t, 2<<20, true)
 
-	speed, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", 5*time.Second, false)
+	speed, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", DownloadOptions{Duration: 5 * time.Second, UseTLS: false})
 	if err != nil {
 		t.Fatalf("Download 返回错误：%v", err)
 	}
@@ -317,7 +317,7 @@ func TestDownloadSetsHostAndPath(t *testing.T) {
 
 	port := server.Listener.Addr().(*net.TCPAddr).Port
 	// 不带协议的地址：应当按 useTLS 补全，并保留主机名与路径。
-	if _, err := Download(context.Background(), "127.0.0.1", port, "edge.example.com/__down", 2*time.Second, false); err != nil {
+	if _, err := Download(context.Background(), "127.0.0.1", port, "edge.example.com/__down", DownloadOptions{Duration: 2 * time.Second, UseTLS: false}); err != nil {
 		t.Fatalf("Download 返回错误：%v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestDownloadRateLimited(t *testing.T) {
 	defer server.Close()
 
 	port := server.Listener.Addr().(*net.TCPAddr).Port
-	_, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", time.Second, false)
+	_, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", DownloadOptions{Duration: time.Second, UseTLS: false})
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("err = %v，期望 ErrRateLimited", err)
 	}
@@ -362,7 +362,7 @@ func TestDownloadNonOKStatus(t *testing.T) {
 			defer server.Close()
 
 			port := server.Listener.Addr().(*net.TCPAddr).Port
-			if _, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", time.Second, false); err == nil {
+			if _, err := Download(context.Background(), "127.0.0.1", port, server.URL+"/__down", DownloadOptions{Duration: time.Second, UseTLS: false}); err == nil {
 				t.Error("非 200 状态码应返回错误")
 			}
 		})
@@ -386,7 +386,7 @@ func TestDownloadInvalidParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Download(context.Background(), tt.ip, tt.port, tt.rawURL, tt.duration, false); err == nil {
+			if _, err := Download(context.Background(), tt.ip, tt.port, tt.rawURL, DownloadOptions{Duration: tt.duration, UseTLS: false}); err == nil {
 				t.Error("期望返回错误，实际为 nil")
 			}
 		})
@@ -397,7 +397,7 @@ func TestDownloadStopsWhenContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := Download(ctx, "127.0.0.1", 1, "https://example.com/a", time.Second, false); err == nil {
+	if _, err := Download(ctx, "127.0.0.1", 1, "https://example.com/a", DownloadOptions{Duration: time.Second, UseTLS: false}); err == nil {
 		t.Error("已取消的 context 上应返回错误")
 	}
 }
@@ -429,7 +429,7 @@ func TestDownloadReturnsPromptlyWhenCancelledMidBody(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		// 窗口给到 10 秒：只有取消真的打断了读取，才会远早于此返回。
-		_, err := Download(ctx, "127.0.0.1", port, server.URL+"/__down", 10*time.Second, false)
+		_, err := Download(ctx, "127.0.0.1", port, server.URL+"/__down", DownloadOptions{Duration: 10 * time.Second, UseTLS: false})
 		done <- err
 	}()
 
@@ -484,5 +484,54 @@ func TestDefaultPortFor(t *testing.T) {
 	}
 	if got := defaultPortFor("http"); got != 80 {
 		t.Errorf("http 默认端口 = %d，期望 80", got)
+	}
+}
+
+/**
+ * 到达下载量上限就停。
+ *
+ * 手机热点、按流量计费的宽带上，一次测速能吃掉几百 MB。用户设这个上限的意思是
+ * 「别把我这个月的流量跑完」，所以到量必须停——而停下来时测得的速度依然有效，
+ * 它本来就是「这段时间里下得多快」。
+ */
+func TestMeasureStopsAtByteCap(t *testing.T) {
+	const capBytes int64 = 8 * 1024
+	const total = 1 << 20
+
+	// 数据管够、时钟不推进：只有「到量」这一条路能让循环停下来。
+	reader := &pacedReader{remaining: total, chunk: 1024}
+
+	speed, err := measure(context.Background(), reader, time.Hour, capBytes, frozenClock())
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
+	}
+
+	read := int64(total - reader.remaining)
+	if read < capBytes {
+		t.Errorf("只读了 %d 字节，上限是 %d", read, capBytes)
+	}
+	// 越过上限是允许的（一次读取可能整块跨过去），但不该越过一整块还多。
+	if read > capBytes+1024 {
+		t.Errorf("读了 %d 字节，越过上限太多", read)
+	}
+}
+
+// 上限为 0 表示不限：应当一路读到 EOF，而不是立刻停下。
+func TestMeasureZeroCapMeansUnlimited(t *testing.T) {
+	const total = 64 * 1024
+	reader := &pacedReader{remaining: total, chunk: 1024}
+
+	speed, err := measure(context.Background(), reader, time.Hour, 0, frozenClock())
+	if err != nil {
+		t.Fatalf("measure 返回错误：%v", err)
+	}
+	if speed <= 0 {
+		t.Fatalf("speed = %v，期望为正", speed)
+	}
+	if reader.remaining != 0 {
+		t.Errorf("还剩 %d 字节没读完，0 应当表示不限", reader.remaining)
 	}
 }

@@ -68,7 +68,6 @@ var pending = map[string]string{
 	"net.dns_fallback":         "探测目前走系统 DNS",
 	"source.merge_strategy":    "多源合并目前固定取并集",
 	"source.retry_interval_ms": "来源拉取还没有重试",
-	"speed.max_download_mb":    "测速目前只按时长停止，没有按下载量",
 }
 
 // configField 是一个配置项：json 名与 Go 字段名。

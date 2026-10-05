@@ -42,7 +42,16 @@ const TopicPartial = "speed/partial"
 var ErrRateLimited = errors.New("测速源连续限流")
 
 // DownloadFunc 测一个目标的下载速度（MB/s）。
-type DownloadFunc func(ctx context.Context, target model.IPRecord, url string, duration time.Duration, useTLS bool) (float64, error)
+//
+// maxBytes 是本次下载的字节上限，0 表示不限；到量即停，测得的速度依然有效。
+type DownloadFunc func(
+	ctx context.Context,
+	target model.IPRecord,
+	url string,
+	duration time.Duration,
+	maxBytes int64,
+	useTLS bool,
+) (float64, error)
 
 // UsabilityFunc 在测速前快速确认目标是否还活着。
 type UsabilityFunc func(ctx context.Context, target model.IPRecord, timeout time.Duration) (bool, error)
@@ -187,6 +196,9 @@ func ValidateParams(p model.SpeedParams) error {
 	if p.DownloadDurationS < 1 {
 		return fmt.Errorf("单次下载时长 %d 秒必须至少为 1", p.DownloadDurationS)
 	}
+	if p.MaxDownloadMB < 0 {
+		return fmt.Errorf("单次最大下载量 %d MB 不能为负（0 = 不限）", p.MaxDownloadMB)
+	}
 	if p.Breaker429 < 1 {
 		return fmt.Errorf("熔断阈值 %d 必须至少为 1", p.Breaker429)
 	}
@@ -219,8 +231,19 @@ func NewRunner(opts Options) (*Runner, error) {
 		r.logger = slog.Default()
 	}
 	if r.downloadFn == nil {
-		r.downloadFn = func(ctx context.Context, target model.IPRecord, url string, duration time.Duration, useTLS bool) (float64, error) {
-			return probe.Download(ctx, target.IP, target.Port, url, duration, useTLS)
+		r.downloadFn = func(
+			ctx context.Context,
+			target model.IPRecord,
+			url string,
+			duration time.Duration,
+			maxBytes int64,
+			useTLS bool,
+		) (float64, error) {
+			return probe.Download(ctx, target.IP, target.Port, url, probe.DownloadOptions{
+				Duration: duration,
+				MaxBytes: maxBytes,
+				UseTLS:   useTLS,
+			})
 		}
 	}
 	if r.usability == nil {

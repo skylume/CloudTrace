@@ -114,6 +114,8 @@ export interface SpeedParams {
   weight_jitter: number
   per_region_topn: number
   download_duration_s: number
+  /** 单个目标的下载量上限（MB），0 = 不限。到量即停。 */
+  max_download_mb: number
   breaker_429: number
   usability_check: boolean
   timeout_ms: number

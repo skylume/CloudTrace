@@ -89,15 +89,25 @@ type fakeDownloader struct {
 	urls     []string
 	tlsModes []bool
 	duration time.Duration
-	fn       func(ctx context.Context, target model.IPRecord) (float64, error)
+	// caps 记录每次调用收到的下载量上限，用来断言配置真的传到了下载层。
+	caps []int64
+	fn   func(ctx context.Context, target model.IPRecord) (float64, error)
 }
 
-func (d *fakeDownloader) download(ctx context.Context, target model.IPRecord, url string, duration time.Duration, useTLS bool) (float64, error) {
+func (d *fakeDownloader) download(
+	ctx context.Context,
+	target model.IPRecord,
+	url string,
+	duration time.Duration,
+	maxBytes int64,
+	useTLS bool,
+) (float64, error) {
 	d.mu.Lock()
 	d.calls = append(d.calls, target.IP)
 	d.urls = append(d.urls, url)
 	d.tlsModes = append(d.tlsModes, useTLS)
 	d.duration = duration
+	d.caps = append(d.caps, maxBytes)
 	fn := d.fn
 	d.mu.Unlock()
 
@@ -391,7 +401,7 @@ func TestNewRunnerFillsDefaultDependencies(t *testing.T) {
 	}
 
 	// 默认下载实现要能挡住非法参数，而不是发出请求。
-	if _, err := r.downloadFn(context.Background(), model.IPRecord{IP: "", Port: 443}, "example.com/x", time.Second, true); err == nil {
+	if _, err := r.downloadFn(context.Background(), model.IPRecord{IP: "", Port: 443}, "example.com/x", time.Second, 0, true); err == nil {
 		t.Error("空地址应当被默认下载实现拒绝")
 	}
 	// 默认可用性校验同理。
@@ -720,5 +730,55 @@ func TestSleepCtx(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("取消后仍等了 %v，说明没有及时打断", elapsed)
+	}
+}
+
+/**
+ * 下载量上限要真的传到下载层。
+ *
+ * 配置项在设置页上写着「超过就停止该节点的测速」，而参数是随任务发过来的——
+ * 中间任何一环漏掉，这个开关都会变成一个改了什么都不会发生的摆设。
+ */
+func TestDownloadCapReachesDownloader(t *testing.T) {
+	d := newDeps()
+	params := baseParams(target("1.1.1.1", 443))
+	params.MaxDownloadMB = 200
+
+	if _, err := d.run(t, params, newFakeReporter(context.Background())); err != nil {
+		t.Fatalf("跑测速失败：%v", err)
+	}
+
+	caps := d.downloader.caps
+	if len(caps) == 0 {
+		t.Fatal("没有调用下载")
+	}
+	if caps[0] != 200*1024*1024 {
+		t.Errorf("下载层收到 %d 字节，期望 %d", caps[0], 200*1024*1024)
+	}
+}
+
+// 0 表示不限，要原样传下去而不是变成一个很小的数。
+func TestDownloadCapZeroMeansUnlimited(t *testing.T) {
+	d := newDeps()
+	params := baseParams(target("1.1.1.1", 443))
+	params.MaxDownloadMB = 0
+
+	if _, err := d.run(t, params, newFakeReporter(context.Background())); err != nil {
+		t.Fatalf("跑测速失败：%v", err)
+	}
+	if len(d.downloader.caps) == 0 || d.downloader.caps[0] != 0 {
+		t.Errorf("下载层收到 %v，期望 0", d.downloader.caps)
+	}
+}
+
+// 负数会被参数校验挡住，而不是悄悄当成「不限」。
+func TestNegativeDownloadCapRejected(t *testing.T) {
+	d := newDeps()
+	params := baseParams(target("1.1.1.1", 443))
+	params.MaxDownloadMB = -1
+
+	// 直接构造而不是走 d.run：后者在构造失败时会 t.Fatalf，看不到错误值。
+	if _, err := NewRunner(d.options(t, params)); err == nil {
+		t.Error("负的下载量上限应当被拒")
 	}
 }

@@ -73,6 +73,9 @@ export function buildSpeedParams(
 
     per_region_topn: num(speed, 'per_region_topn', 0),
     download_duration_s: num(speed, 'download_duration_s', 10),
+    // 0 表示不限。手机热点、按流量计费的宽带上，这是「别把我这个月的流量
+    // 跑完」那个开关，必须随任务一起发过去。
+    max_download_mb: num(speed, 'max_download_mb', 0),
     breaker_429: num(speed, 'breaker_429', 3),
 
     // 可用性校验的开关在扫描分组里（`scan.usability_check`），这是它在配置

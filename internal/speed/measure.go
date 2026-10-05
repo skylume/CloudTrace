@@ -37,6 +37,8 @@ func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages
 	goal := int64(r.params.TargetQualified)
 	interval := time.Duration(r.params.IntervalMS) * time.Millisecond
 	duration := time.Duration(r.params.DownloadDurationS) * time.Second
+	// 0 表示不限；换算成字节交给下载层，到量即停。
+	maxBytes := int64(r.params.MaxDownloadMB) * 1024 * 1024
 
 	out, err := task.RunBounded(ctx, targets, r.params.Concurrency,
 		func(ctx context.Context, rec model.IPRecord) (measured, bool) {
@@ -51,7 +53,7 @@ func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages
 				return measured{rec: rec}, true
 			}
 
-			return r.measureOne(ctx, rec, url, duration, breaker, &qualified, goal, pusher, &tripped)
+			return r.measureOne(ctx, rec, url, duration, maxBytes, breaker, &qualified, goal, pusher, &tripped)
 		},
 		func(done, _ int) { st.Advance(done) },
 	)
@@ -69,6 +71,7 @@ func (r *Runner) measureOne(
 	rec model.IPRecord,
 	url string,
 	duration time.Duration,
+	maxBytes int64,
 	breaker *Breaker,
 	qualified *atomic.Int64,
 	goal int64,
@@ -76,7 +79,7 @@ func (r *Runner) measureOne(
 	tripped *atomic.Bool,
 ) (measured, bool) {
 	useTLS := probe.ResolveUseTLS(r.params.UseTLS, rec.Port)
-	mbps, err := r.downloadFn(ctx, rec, url, duration, useTLS)
+	mbps, err := r.downloadFn(ctx, rec, url, duration, maxBytes, useTLS)
 
 	switch {
 	case errors.Is(err, probe.ErrRateLimited):

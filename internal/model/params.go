@@ -73,6 +73,7 @@ type SpeedParams struct {
 	WeightJitter      float64 `json:"weight_jitter"`       // 评分权重：抖动
 	PerRegionTopN     int     `json:"per_region_topn"`     // 完全测速时每个地区取前 N 个（0 = 不限）
 	DownloadDurationS int     `json:"download_duration_s"` // 单个目标的下载时长
+	MaxDownloadMB     int     `json:"max_download_mb"`     // 单个目标的下载量上限（0 = 不限）
 	Breaker429        int     `json:"breaker_429"`         // 连续多少次限流即熔断
 	UsabilityCheck    bool    `json:"usability_check"`     // 测速前是否先做可用性校验
 	TimeoutMS         int     `json:"timeout_ms"`          // 可用性校验的单次超时

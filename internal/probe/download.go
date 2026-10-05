@@ -55,25 +55,39 @@ func (e *ewma) count() int { return e.samples }
 // valueMBps 返回平滑后的速率，单位 MB/s。
 func (e *ewma) valueMBps() float64 { return e.value / 1024 / 1024 }
 
+// DownloadOptions 是一次测速下载的参数。
+type DownloadOptions struct {
+	// Duration 是测速窗口。
+	Duration time.Duration
+	// MaxBytes 是本次下载的字节上限，0 表示不限。
+	//
+	// 到量即停。手机热点、按流量计费的宽带上，一次测速能吃掉几百 MB——用户
+	// 设这个上限的意思是「别把我这个月的流量跑完」，此时停下比测完重要。
+	// 上限是近似的：一次读取可能整块越过它。
+	MaxBytes int64
+	// UseTLS 决定 rawURL 不带协议时补 http 还是 https。
+	UseTLS bool
+}
+
 // Download 测量到 ip:port 的真实下载带宽，单位 MB/s。
 //
-// 请求发往 rawURL，但连接强制打到 ip:port 上。duration 是测速窗口，
-// 窗口内按固定片数采样并做平滑。rawURL 不带协议时按 useTLS 补全。
+// 请求发往 rawURL，但连接强制打到 ip:port 上。窗口内按固定片数采样并做平滑。
 //
 // 返回错误的情形：参数非法、请求失败、状态码不是 200（429 返回
-// ErrRateLimited）。窗口内正常结束（含提前传完）都返回测得的速度。
-func Download(ctx context.Context, ip string, port int, rawURL string, duration time.Duration, useTLS bool) (float64, error) {
+// ErrRateLimited）。窗口内正常结束、提前传完、到达字节上限都返回测得的速度——
+// 这三种都是「测到了」，不是失败。
+func Download(ctx context.Context, ip string, port int, rawURL string, opts DownloadOptions) (float64, error) {
 	if ip == "" {
 		return 0, errors.New("探测目标 IP 为空")
 	}
 	if rawURL == "" {
 		return 0, errors.New("下载地址不能为空")
 	}
-	if duration <= 0 {
-		return 0, fmt.Errorf("测速时长 %v 必须为正", duration)
+	if opts.Duration <= 0 {
+		return 0, fmt.Errorf("测速时长 %v 必须为正", opts.Duration)
 	}
 
-	target, err := normalizeDownloadURL(rawURL, useTLS)
+	target, err := normalizeDownloadURL(rawURL, opts.UseTLS)
 	if err != nil {
 		return 0, err
 	}
@@ -81,9 +95,9 @@ func Download(ctx context.Context, ip string, port int, rawURL string, duration 
 		port = defaultPortFor(target.Scheme)
 	}
 
-	transport := DirectTransport(ip, port, target.Hostname(), target.Scheme == "https", duration)
+	transport := DirectTransport(ip, port, target.Hostname(), target.Scheme == "https", opts.Duration)
 	defer transport.CloseIdleConnections()
-	return download(ctx, target.String(), duration, transport)
+	return download(ctx, target.String(), opts.Duration, opts.MaxBytes, transport)
 }
 
 // normalizeDownloadURL 补全协议并校验主机名。
@@ -114,7 +128,7 @@ func defaultPortFor(scheme string) int {
 }
 
 // download 是 Download 的实现体，传输层由调用方注入以便测试。
-func download(ctx context.Context, rawURL string, duration time.Duration, transport http.RoundTripper) (float64, error) {
+func download(ctx context.Context, rawURL string, duration time.Duration, maxBytes int64, transport http.RoundTripper) (float64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("构造下载请求失败：%w", err)
@@ -141,13 +155,22 @@ func download(ctx context.Context, rawURL string, duration time.Duration, transp
 
 	// 标准库的传输层已经解好 chunked 编码，读到的是纯载荷；
 	// 这里不需要也不应该再手工处理分块头，否则会把块头字节算进速度。
-	return measure(ctx, resp.Body, duration, time.Now)
+	return measure(ctx, resp.Body, duration, maxBytes, time.Now)
 }
 
 // measure 在时长窗口内按固定片数采样，返回平滑后的速率（MB/s）。
 //
+// maxBytes 为本次下载的字节上限，0 表示不限；到量即停，且停下时测得的速度
+// 依然有效——它本来就是「这段时间里下得多快」。
+//
 // now 由调用方注入，便于在测试里模拟时钟不推进的环境。
-func measure(ctx context.Context, body io.Reader, duration time.Duration, now func() time.Time) (float64, error) {
+func measure(
+	ctx context.Context,
+	body io.Reader,
+	duration time.Duration,
+	maxBytes int64,
+	now func() time.Time,
+) (float64, error) {
 	slice := duration / downloadSlices
 	if slice <= 0 {
 		slice = time.Millisecond
@@ -208,6 +231,11 @@ func measure(ctx context.Context, body io.Reader, duration time.Duration, now fu
 			if !errors.Is(readErr, io.EOF) && total == 0 {
 				return 0, fmt.Errorf("下载中断：%w", readErr)
 			}
+			break
+		}
+		// 到量即停，且先于超时判断：两者同时满足时，到量是更要紧的那个原因。
+		if maxBytes > 0 && total >= maxBytes {
+			settle(at)
 			break
 		}
 		if at.After(deadline) {

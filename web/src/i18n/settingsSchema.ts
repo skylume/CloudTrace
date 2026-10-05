@@ -110,7 +110,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       // 未设置并补成 1.2 秒。与其让 0 静默变成别的数，不如不给这个选项——
       // 想要「几乎不等」填 1 即可，那个值会被原样采纳。
       { path: 'speed.interval_ms', kind: 'int', min: 1, max: 5000 },
-      { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 , pending: true },
+      { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 },
       { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 100 },
       { path: 'speed.weight_speed', kind: 'float', min: 0, max: 10, step: 0.1 },
       { path: 'speed.weight_latency', kind: 'float', min: 0, max: 10, step: 0.1 },
