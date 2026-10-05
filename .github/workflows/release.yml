@@ -261,37 +261,16 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # 说明的生成逻辑放在脚本里：写在 workflow 里就只能等发版时才知道对不对，
+      # 而这个脚本可以拿几个假文件名在本地跑一遍。
       - name: 生成 Release 说明
         shell: pwsh
         run: |
-          $ver = '${{ needs.prepare.outputs.version }}'
-          $files = Get-ChildItem artifacts -Filter '*.zip' | Sort-Object Name
-          $lines = @()
-          $lines += "# CloudTrace $ver"
-          $lines += ""
-          $lines += "## 下载哪个"
-          $lines += ""
-          $lines += "| 文件 | 适用系统 | 说明 |"
-          $lines += "| :--- | :--- | :--- |"
-          foreach ($f in $files) {
-            $note = switch -Wildcard ($f.Name) {
-              '*panel*win-x64*'        { '推荐绝大多数人：解压即用，浏览器访问面板' }
-              '*panel*win7*'           { 'Windows 7：需配 Chrome 109 / Firefox ESR 115' }
-              '*desktop*win-x64*'      { 'Windows 10/11：原生窗口，使用系统 WebView2' }
-              '*desktop*win7*lite*'    { 'Windows 7：需自行安装 WebView2 109' }
-              '*desktop*win7*full*'    { 'Windows 7：已捆绑 WebView2 109，解压即用' }
-              default                  { '' }
-            }
-            $lines += "| ``$($f.Name)`` | | $note |"
-          }
-          $lines += ""
-          $lines += "## 说明"
-          $lines += ""
-          $lines += "- 绿色免安装：解压后直接运行，数据默认落在程序同级 ``data/`` 目录。"
-          $lines += "- Windows 7 桌面版固定使用 WebView2 ``109.0.1518.140``（最后一个支持 Win7 的版本），该版本已停止安全更新，建议优先升级系统。"
-          $lines += "- Windows 7 支持由社区分支 Go 工具链提供，主构建使用官方 Go。"
-          Set-Content -Path RELEASE_NOTES.md -Value ($lines -join "`n") -Encoding utf8
-          Get-Content RELEASE_NOTES.md
+          ./scripts/release-notes.ps1 `
+            -Version '${{ needs.prepare.outputs.version }}' `
+            -ArtifactDir artifacts `
+            -Out RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: 创建或更新 Release
         shell: pwsh
