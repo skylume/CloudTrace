@@ -1,4 +1,0 @@
-PySide6>=6.2,<6.4
-
-aiohttp>=3.8
-requests>=2.25

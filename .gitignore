@@ -1,25 +1,34 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-dist/
-build/
-*.egg
+# 构建产物
+/dist/
+/build/
+/coverage.out
+/.toolchain/
+/vendor/
 
 # 例外：内嵌进 Go 二进制的前端产物必须纳入版本控制
 !web/dist/
 !web/dist/**
 
+# 前端依赖与安装缓存（构建时生成，不进仓库）
+node_modules/
+.npm-cache/
+
+# 方案与规格文档留在工作区，不进仓库
 /docs/
 
-# PyInstaller
-*.manifest
-*.spec
-/dist/
-/build/
+# 运行时数据（便携模式下出现在 exe 同级的 data/ 里）
+/data/
+CloudTrace_history/
+ip_cache.json
+ipinfo_cache.json
+settings.json
+custom_cidrs.txt
+.run.lock
+version.txt
+
+# 日志
+logs/
+*.log
 
 # IDE
 .vscode/
@@ -28,40 +37,6 @@ build/
 *.swo
 *~
 
-# 日志
-logs/
-*.log
-
-# 运行时数据
-CloudTrace_history/
-ip_cache.json
-ipinfo_cache.json
-.run.lock
-version.txt
-settings.json
-custom_cidrs.txt
-
-# 虚拟环境
-venv/
-.env/
-.venv/
-
 # 系统文件
 .DS_Store
 Thumbs.db
-
-# 打包工具与临时产物
-upx-*/
-build - *.py
-cf_scan_*.csv
-cf_speed_*.csv
-node_modules/
-
-# Go 构建与测试产物
-/coverage.out
-/.toolchain/
-/vendor/
-
-
-# 前端依赖与安装缓存（构建时生成，不进仓库）
-.npm-cache/
