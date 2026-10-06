@@ -12,6 +12,7 @@ import (
 
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
+	"cloudtrace/internal/diag"
 	"cloudtrace/internal/migrate"
 	"cloudtrace/internal/model"
 	"cloudtrace/internal/netx"
@@ -48,6 +49,12 @@ type server struct {
 	listenPort int
 	// startup 是启动时的配置快照，用于判断哪些改动要重启才生效。
 	startup config.Config
+
+	// diagOptions 覆盖网络诊断的探测实现；为 nil 时走真实网络。
+	//
+	// 留这个口子是为了能测：诊断要真的去解析域名、连 443、拉 trace，用例里
+	// 既慢又依赖外网，而且「DNS 解不出但 TCP 能通」这种中间态根本撞不上。
+	diagOptions func() diag.Options
 
 	// legacyRoot 返回旧版数据可能在的目录；为 nil 时用程序目录。
 	//
