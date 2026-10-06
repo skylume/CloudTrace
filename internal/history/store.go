@@ -22,6 +22,7 @@ const (
 	ActionRestore = "restore"
 	ActionMeta    = "meta"
 	ActionCleanup = "cleanup"
+	ActionClear   = "clear"
 )
 
 // TopicChanged 是历史发生变更时发布的事件 topic。

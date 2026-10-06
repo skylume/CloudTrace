@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -526,4 +529,72 @@ func testRecords(n int) []model.IPRecord {
 		})
 	}
 	return out
+}
+
+// 清空历史：一次清掉全部，并把索引与磁盘都归零。
+//
+// 这里断言的是「列表空了 + 磁盘上没剩记录文件」两件事：只清索引的话，下次
+// 启动的一致性校验会把它们从磁盘重新捡回来，用户会以为清空没生效。
+func TestWSHistoryClear(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	// 三份的参数必须各不相同：同参数在 30 秒内重复存档会「删旧留新」，
+	// 那样只留得下一份，用例也就测不到「一次清掉多条」。
+	for i := 0; i < 3; i++ {
+		seedHistory(t, st, map[string]any{"workers": 50 + i}, []model.IPRecord{
+			{IP: fmt.Sprintf("1.1.1.%d", i+1), Port: 443, Latency: 40, Recv: 1},
+		})
+	}
+
+	send(t, conn, `{"type":"history/clear"}`)
+	m := readUntil(t, conn, cmdHistoryClear, 3*time.Second)
+	var cleared historyClearResp
+	decode(t, m, &cleared)
+	if cleared.Removed != 3 {
+		t.Errorf("清掉条数 = %d，期望 3", cleared.Removed)
+	}
+
+	send(t, conn, `{"type":"history/list"}`)
+	m = readUntil(t, conn, cmdHistoryList, 3*time.Second)
+	var listed historyListResp
+	decode(t, m, &listed)
+	if len(listed.Entries) != 0 {
+		t.Errorf("清空后列表仍有 %d 条", len(listed.Entries))
+	}
+
+	// 磁盘上不该再留下任何记录文件——否则重启时会被一致性校验捡回来。
+	var left int
+	root := st.svc.History.Dir()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".json") && d.Name() != "index.json" {
+			left++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历历史目录失败：%v", err)
+	}
+	if left != 0 {
+		t.Errorf("磁盘上还剩 %d 个记录文件", left)
+	}
+}
+
+// 清空是幂等的：没有历史时也不该报错。
+func TestWSHistoryClearOnEmpty(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	send(t, conn, `{"type":"history/clear"}`)
+	m := readUntil(t, conn, cmdHistoryClear, 3*time.Second)
+	var cleared historyClearResp
+	decode(t, m, &cleared)
+	if cleared.Removed != 0 {
+		t.Errorf("空历史清掉条数 = %d，期望 0", cleared.Removed)
+	}
 }

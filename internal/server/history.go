@@ -22,6 +22,7 @@ const (
 	cmdHistoryUndo    = "history/undo"
 	cmdHistoryTag     = "history/tag"
 	cmdHistoryCompare = "history/compare"
+	cmdHistoryClear   = "history/clear"
 )
 
 // historyHandlers 返回历史相关的命令表。
@@ -34,6 +35,7 @@ func (s *server) historyHandlers() map[string]commandHandler {
 		cmdHistoryUndo:    s.handleHistoryUndo,
 		cmdHistoryTag:     s.handleHistoryTag,
 		cmdHistoryCompare: s.handleHistoryCompare,
+		cmdHistoryClear:   s.handleHistoryClear,
 	}
 }
 
@@ -50,6 +52,10 @@ type historyListResp struct {
 
 type historyIDReq struct {
 	ID string `json:"id"`
+}
+
+type historyClearResp struct {
+	Removed int `json:"removed"`
 }
 
 type historyGetResp struct {
@@ -165,6 +171,19 @@ func (s *server) handleHistoryLoad(c *wsConn, data json.RawMessage) error {
 		ParamDiff:  diff,
 		AgeMinutes: s.history().AgeMinutes(rec.CreatedAt),
 	})
+	return nil
+}
+
+// handleHistoryClear 清空全部历史。
+//
+// 不走撤销窗口：撤销是给「点错了一个」准备的，而清空是用户明确要求把整个列表
+// 抹掉，再留一个窗口只会让「到底清没清干净」变得不确定。前端负责二次确认。
+func (s *server) handleHistoryClear(c *wsConn, _ json.RawMessage) error {
+	removed, err := s.history().Clear()
+	if err != nil {
+		return s.historyError(err)
+	}
+	c.sendEvent(cmdHistoryClear, historyClearResp{Removed: removed})
 	return nil
 }
 
