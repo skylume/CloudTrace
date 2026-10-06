@@ -7,6 +7,7 @@
  * 删除走软删除 + 撤销窗口，窗口长度由后端给（不写死在前端）：两端对窗口长度
  * 的认知必须一致，否则会出现「撤销按钮还在、后端已经落定」的情况。
  */
+import { CMD } from '@/api/protocol'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
@@ -82,7 +83,7 @@ export const useHistoryStore = defineStore('history', () => {
 
   /** 拉列表。这是列表页唯一会发出的请求。 */
   function refresh(): void {
-    sendCommand('history/list', { filter: filter.value })
+    sendCommand(CMD.historyList, { filter: filter.value })
   }
 
   /**
@@ -92,7 +93,7 @@ export const useHistoryStore = defineStore('history', () => {
    * 取会给出与实际不符的差异结论。
    */
   function load(id: string, current: unknown): void {
-    sendCommand('history/load', { id, current })
+    sendCommand(CMD.historyLoad, { id, current })
   }
 
   /**
@@ -102,7 +103,7 @@ export const useHistoryStore = defineStore('history', () => {
    * 明确要看某一份」之后的事。抽屉打开时才走这条路。
    */
   function get(id: string): void {
-    sendCommand('history/get', { id })
+    sendCommand(CMD.historyGet, { id })
   }
 
   function closeDetail(): void {
@@ -116,20 +117,20 @@ export const useHistoryStore = defineStore('history', () => {
    * 抹掉。确认由界面负责。
    */
   function clear(): void {
-    sendCommand('history/clear', {})
+    sendCommand(CMD.historyClear, {})
   }
 
   function remove(id: string): void {
-    sendCommand('history/delete', { id })
+    sendCommand(CMD.historyDelete, { id })
   }
 
   function undo(id: string): void {
-    sendCommand('history/undo', { id })
+    sendCommand(CMD.historyUndo, { id })
   }
 
   function saveTags(id: string, patch: { tags?: string[]; note?: string; starred?: boolean }): void {
     const entry = entries.value.find((item) => item.id === id)
-    sendCommand('history/tag', {
+    sendCommand(CMD.historyTag, {
       id,
       tags: patch.tags ?? entry?.tags ?? [],
       note: patch.note ?? entry?.note ?? '',
@@ -138,7 +139,7 @@ export const useHistoryStore = defineStore('history', () => {
   }
 
   function compare(idA: string, idB: string): void {
-    sendCommand('history/compare', { idA, idB })
+    sendCommand(CMD.historyCompare, { idA, idB })
   }
 
   return {

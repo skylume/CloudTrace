@@ -4,6 +4,7 @@
  *
  * 只做编排。表格、详情、统计都在子组件里——页面模板短，结构才会被逼着拆开。
  */
+import { CMD } from '@/api/protocol'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
@@ -222,7 +223,7 @@ function onToolbarSpeed(scope: 'single' | 'region' | 'all'): void {
  */
 function startSpeed(scope: 'single' | 'region' | 'all', targets: typeof results.all): void {
   if (targets.length === 0) return
-  sendCommand('speed/start', buildSpeedParams(settings.values, { scope, targets }))
+  sendCommand(CMD.speedStart, buildSpeedParams(settings.values, { scope, targets }))
   view.value = 'speed'
 }
 
@@ -257,7 +258,7 @@ function sourceReason(code: string): string {
 }
 
 function applyBreakerFix(patch: Record<string, unknown>): void {
-  sendCommand('settings/update', { patch: { speed: patch }, origins: {} })
+  sendCommand(CMD.settingsUpdate, { patch: { speed: patch }, origins: {} })
   speed.dismissBreaker()
 }
 </script>

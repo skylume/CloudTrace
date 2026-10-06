@@ -5,6 +5,7 @@
  * 这个文件只做编排：连 store、组装请求、把区域分给组件。具体控件一律在
  * 子组件里——页面模板保持短，才能逼着结构被拆开。
  */
+import { CMD } from '@/api/protocol'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
@@ -23,6 +24,12 @@ import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
 import { useMigrateStore } from '@/stores/migrate'
+import {
+  clearSnapshot,
+  loadSnapshot,
+  worthRestoring,
+  type SessionSnapshot,
+} from '@/utils/sessionSnapshot'
 import { usePresetsStore } from '@/stores/presets'
 import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
@@ -41,6 +48,31 @@ const ui = useUIStore()
 const rerun = useRerunStore()
 const adaptive = useAdaptiveStore()
 const migrate = useMigrateStore()
+
+/**
+ * 上次没跑完的那批结果。
+ *
+ * 只在挂载时读一次：之后这个提示要么被点掉、要么被恢复，不需要跟着变化。
+ * 值不值得提示由 worthRestoring 判断——只扫出几条的话，重扫比点「恢复」还快。
+ */
+const session = ref<SessionSnapshot | null>(null)
+const sessionOffer = computed(() =>
+  session.value ? t('session.offer', { count: session.value.records.length }) : '',
+)
+
+function restoreSession(): void {
+  const snap = session.value
+  if (!snap) return
+  results.replaceAll(snap.records)
+  clearSnapshot()
+  session.value = null
+  ui.activeView = 'result'
+}
+
+function dismissSession(): void {
+  clearSnapshot()
+  session.value = null
+}
 
 /**
  * 旧版数据那条提示的文案。
@@ -112,7 +144,7 @@ function schedulePersistSource(): void {
   if (persistTimer !== null) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
     persistTimer = null
-    sendCommand('settings/update', {
+    sendCommand(CMD.settingsUpdate, {
       patch: {
         source: { remote_urls: source.value.remote },
         scan: { custom_source: source.value.customText },
@@ -145,7 +177,7 @@ function flushParams(): void {
   persistParamsTimer = null
   const { patch, origins } = diffScanParams(params.value, synced.value)
   if (Object.keys(patch).length === 0) return
-  sendCommand('settings/update', { patch: { scan: patch }, origins })
+  sendCommand(CMD.settingsUpdate, { patch: { scan: patch }, origins })
 }
 
 watch(() => params.value, schedulePersistParams, { deep: true })
@@ -230,6 +262,8 @@ function applyRerun(): void {
 }
 
 onMounted(() => {
+  const saved = loadSnapshot()
+  if (saved && worthRestoring(saved)) session.value = saved
   unregister = actions.register('startScan', start)
   syncFromSettings()
   applyRerun()
@@ -275,12 +309,12 @@ function buildRequest(): Record<string, unknown> {
 }
 
 function start(): void {
-  if (!sendCommand('scan/start', buildRequest())) return
+  if (!sendCommand(CMD.scanStart, buildRequest())) return
   log.push(t('scan.start'))
 }
 
 function stop(): void {
-  sendCommand('scan/stop')
+  sendCommand(CMD.scanStop)
   log.push(t('scan.stop'), 'warn')
 }
 </script>
@@ -300,6 +334,18 @@ function stop(): void {
       :action-label="migrate.running ? t('migrate.running') : t('migrate.import')"
       @action="migrate.run()"
       @close="migrate.dismiss()"
+    />
+    <!--
+      上次没跑完的结果：只提示，用户点了才动。扫描要跑一分钟，这期间刷新或
+      崩掉就白跑了，而历史只保存已完成的任务——中途的结果按设计不写历史。
+    -->
+    <Banner
+      v-if="session"
+      tone="info"
+      :message="sessionOffer"
+      :action-label="t('session.restore')"
+      @action="restoreSession"
+      @close="dismissSession"
     />
     <Banner
       v-else-if="migrateResult !== ''"

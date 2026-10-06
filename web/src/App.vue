@@ -6,6 +6,7 @@
  * 而路由会带来 history 与打包拆分两处额外复杂度，对这个体量的应用不划算。
  * 当前页面记在本地，下次打开直接回到上次停留的地方。
  */
+import { CMD } from '@/api/protocol'
 import { computed, ref } from 'vue'
 
 import AppShell from '@/components/layout/AppShell.vue'
@@ -69,7 +70,7 @@ useHotkeys([
         paletteOpen.value = false
         return
       }
-      if (task.running) sendCommand('scan/stop')
+      if (task.running) sendCommand(CMD.scanStop)
     },
   },
   {

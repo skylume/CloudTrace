@@ -38,6 +38,8 @@ export const CMD = {
 
   export: 'export',
   healthCheck: 'health/check',
+  diagRun: 'diag/run',
+  diagExport: 'diag/export',
   geoStatus: 'geo/status',
   geoUpdate: 'geo/update',
 } as const
@@ -50,8 +52,15 @@ export const EVT = {
 
   progress: 'progress',
   scanResult: 'scan/result',
+  /*
+   * 完成与中止事件的 topic 由阶段名拼出（`scan` + `/done`）。
+   * 内置界面不用它们——完成与否看 `state` 的 status 就够了——但外部脚本
+   * 靠它们拿结果条数，所以协议里留着。
+   */
   scanDone: 'scan/done',
   scanAbort: 'scan/abort',
+  speedDone: 'speed/done',
+  speedAbort: 'speed/abort',
   speedPartial: 'speed/partial',
   /** 自适应静默调整了参数；界面要给徽标与「还原」。 */
   adaptiveApplied: 'adaptive/applied',
@@ -61,8 +70,10 @@ export const EVT = {
   speedSource: 'speed/source',
   /** 测速被限流熔断。带可操作的建议，与一般错误分开。 */
   speedBreaker: 'speed/breaker',
-  speedDone: 'speed/done',
-  speedAbort: 'speed/abort',
+  /** 网络诊断结果。 */
+  diag: 'diag',
+  /** 诊断包的下载地址。 */
+  diagExport: 'diag/export',
 
   historyList: 'history/list',
   historyGet: 'history/get',

@@ -4,6 +4,7 @@
  * 这些设置的**权威来源是后端配置**（`ui.*`），本地存一份只是为了首屏不闪：
  * 后端还没连上时先按上次的值渲染，连上之后以服务端下发的为准。
  */
+import { CMD } from '@/api/protocol'
 import { defineStore } from 'pinia'
 import { computed, ref, watchEffect } from 'vue'
 
@@ -222,7 +223,7 @@ export const useUIStore = defineStore('ui', () => {
   function persist(patch: Record<string, unknown>): void {
     const origins: Record<string, 'user'> = {}
     for (const key of Object.keys(patch)) origins[`ui.${key}`] = 'user'
-    sendCommand('settings/update', { patch: { ui: patch }, origins })
+    sendCommand(CMD.settingsUpdate, { patch: { ui: patch }, origins })
   }
 
   /** setTheme 切换主题并写回服务端。 */

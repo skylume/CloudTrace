@@ -149,6 +149,11 @@ export const useResultsStore = defineStore('results', () => {
    */
   const cleared = ref<{ records: Map<string, IPRecord>; sourceId: string } | null>(null)
 
+  /** snapshot 取当前结果的一份快照，供会话恢复用。 */
+  function snapshot(): { records: IPRecord[]; sourceId: string } {
+    return { records: all.value, sourceId: sourceId.value }
+  }
+
   function clearRecords(): number {
     const count = records.value.size
     if (count === 0) return 0
@@ -340,6 +345,7 @@ export const useResultsStore = defineStore('results', () => {
     all,
     visible,
     paged,
+    snapshot,
     clearRecords,
     restoreCleared,
     page,

@@ -397,3 +397,35 @@ export interface FieldIssue {
   value?: unknown
   reason: string
 }
+
+/** 一项网络检查的结论。 */
+export type DiagStatus = 'ok' | 'warn' | 'bad'
+
+/** 一项网络检查。 */
+export interface DiagItem {
+  /** dns | tcp | trace | egress，与后端 diag.Key* 一致。 */
+  key: string
+  status: DiagStatus
+  /** 「出了什么事」，一句话。 */
+  summary: string
+  /** 原始数据（耗时、地址、trace 字段）。 */
+  detail?: string
+  /** 「怎么办」。只在不是 ok 时给。 */
+  advice?: string
+}
+
+/** 一次网络诊断的完整结果。 */
+export interface DiagReport {
+  checked_at: string
+  /** 总体结论：各项里最差的那个。 */
+  status: DiagStatus
+  items: DiagItem[]
+  elapsed_ms: number
+}
+
+/** 诊断包的下载地址。 */
+export interface DiagExportResult {
+  id: string
+  url: string
+  name: string
+}

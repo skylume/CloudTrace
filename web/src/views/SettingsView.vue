@@ -5,6 +5,7 @@
  * 三件事让它不至于压人：左侧分组导航（一次只看一组）、每项带一句「为什么要调」
  * 的说明、危险操作单独成区（不与日常设置混在一起，避免误触）。
  */
+import { CMD } from '@/api/protocol'
 import { computed, onMounted, ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
@@ -12,6 +13,7 @@ import SettingsField from '@/components/settings/SettingsField.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
 import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settingsSchema'
+import DiagPanel from '@/components/settings/DiagPanel.vue'
 import { useGeoStore } from '@/stores/geo'
 import { useHistoryStore } from '@/stores/history'
 import { useSettingsStore } from '@/stores/settings'
@@ -79,8 +81,8 @@ const confirmingDir = ref(false)
 const dataDirDraft = ref('')
 
 onMounted(() => {
-  sendCommand('settings/get')
-  sendCommand('geo/status')
+  sendCommand(CMD.settingsGet)
+  sendCommand(CMD.geoStatus)
   // 危险区那条「清空历史」要显示条数，所以这里顺带拉一次索引。
   history.refresh()
 })
@@ -106,7 +108,7 @@ function warningText(item: ParamWarning): string {
 
 /** 改一项：只把这一项按点号路径拼成嵌套 patch，不动别的键。 */
 function change(path: string, value: unknown): void {
-  sendCommand('settings/update', { patch: buildPatch(path, value), origins: { [path]: 'user' } })
+  sendCommand(CMD.settingsUpdate, { patch: buildPatch(path, value), origins: { [path]: 'user' } })
 
   // 打开浏览器通知时顺手申请权限：申请需要一个用户手势，而任务结束时没有手势
   // 可借。用户之前拒绝过就不再问——反复弹窗只会让人把整个站点的通知永久关掉。
@@ -114,16 +116,16 @@ function change(path: string, value: unknown): void {
 }
 
 function resetField(path: string): void {
-  sendCommand('settings/reset', { keys: [path] })
+  sendCommand(CMD.settingsReset, { keys: [path] })
 }
 
 function resetGroupOf(id: string): void {
-  sendCommand('settings/reset', { keys: [id] })
+  sendCommand(CMD.settingsReset, { keys: [id] })
 }
 
 /** 恢复推荐设置影响面大，先确认再发。 */
 function resetAll(): void {
-  sendCommand('settings/reset', { keys: [] })
+  sendCommand(CMD.settingsReset, { keys: [] })
   confirmingReset.value = false
 }
 
@@ -165,7 +167,7 @@ function applyDataDir(): void {
 }
 
 function runHealth(): void {
-  sendCommand('health/check')
+  sendCommand(CMD.healthCheck)
 }
 
 function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
@@ -278,7 +280,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
           <h2 class="ct-card-title">
             <span>{{ t('geo.title') }}</span>
             <span class="spacer" />
-            <button type="button" class="ct-btn" @click="sendCommand('geo/update')">{{ t('geo.update') }}</button>
+            <button type="button" class="ct-btn" @click="sendCommand(CMD.geoUpdate)">{{ t('geo.update') }}</button>
           </h2>
           <dl class="facts">
             <dt>{{ t('geo.source') }}</dt>
@@ -290,6 +292,8 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
           </dl>
           <p v-if="geo.status?.status.error" class="ct-subtle error">{{ geo.status.status.error }}</p>
         </section>
+
+        <DiagPanel />
 
         <section class="ct-card danger">
           <h2 class="ct-card-title">{{ t('settings.dangerZone') }}</h2>

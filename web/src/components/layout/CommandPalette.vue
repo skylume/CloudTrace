@@ -8,6 +8,7 @@
  *
  * 键盘：↑↓ 选择、Enter 执行、Esc 关闭。
  */
+import { CMD } from '@/api/protocol'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
@@ -91,7 +92,7 @@ const commands = computed<Command[]>(() => {
       group: 'action',
       label: t('scan.stop'),
       hint: 'Esc',
-      run: () => sendCommand('scan/stop'),
+      run: () => sendCommand(CMD.scanStop),
     },
     { id: 'copy-all', group: 'action', label: t('result.copyAll'), run: () => void copyAll() },
     {
@@ -104,7 +105,7 @@ const commands = computed<Command[]>(() => {
           ui.pushToast({ kind: 'warn', message: t('result.empty') })
           return
         }
-        sendCommand('speed/start', buildSpeedParams(settings.values, { scope: 'all', targets: results.all }))
+        sendCommand(CMD.speedStart, buildSpeedParams(settings.values, { scope: 'all', targets: results.all }))
         ui.activeView = 'result'
         ui.resultView = 'speed'
       },
@@ -136,8 +137,8 @@ const commands = computed<Command[]>(() => {
       label: t('contrast.label'),
       run: () => ui.setContrast(!ui.contrast),
     },
-    { id: 'geo-update', group: 'action', label: t('geo.update'), run: () => sendCommand('geo/update') },
-    { id: 'health', group: 'action', label: t('health.run'), run: () => sendCommand('health/check') },
+    { id: 'geo-update', group: 'action', label: t('geo.update'), run: () => sendCommand(CMD.geoUpdate) },
+    { id: 'health', group: 'action', label: t('health.run'), run: () => sendCommand(CMD.healthCheck) },
   ]
 
   // 档位命令直接应用档位：命令面板的价值就是「不离开键盘把事办了」，只跳过去

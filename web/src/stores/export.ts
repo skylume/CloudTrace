@@ -8,6 +8,7 @@
  * 导出物在服务端是有期限的（内存中转，会过期），所以拿到地址就该立刻下载，
  * 不要缓存起来等用户再点一次。
  */
+import { CMD } from '@/api/protocol'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -26,7 +27,7 @@ export const useExportStore = defineStore('export', () => {
    */
   function request(options: { fields?: string[]; format?: string; id?: string; type?: string }): boolean {
     pending.value = true
-    const ok = sendCommand('export', {
+    const ok = sendCommand(CMD.export, {
       // 留空表示「最新一份」，优先测速结果——这正是结果页展示的东西。
       type: options.type ?? '',
       // 指定某一份历史时按 ID 导出，此时 type 不参与。

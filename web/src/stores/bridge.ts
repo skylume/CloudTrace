@@ -10,6 +10,7 @@ import { t } from '@/i18n'
 import { notifyTaskEnd, type NotifyOutcome, type NotifyPrefs } from '@/utils/notify'
 
 import { useAdaptiveStore, type AdaptiveNotice } from './adaptive'
+import { useDiagStore } from './diag'
 import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
@@ -17,13 +18,17 @@ import { useLogStore } from './log'
 import { useMigrateStore } from './migrate'
 import { usePresetsStore } from './presets'
 import { useResultsStore } from './results'
+import { clearSnapshot, saveSnapshot } from '@/utils/sessionSnapshot'
 import { useSettingsStore } from './settings'
 import { useSpeedStore, type BreakerNotice, type SourceDecision } from './speed'
 import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
+import { CMD } from '@/api/protocol'
 import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
 import type {
+  DiagExportResult,
+  DiagReport,
   ExportResult,
   GeoStatus,
   HealthReport,
@@ -71,7 +76,7 @@ function notifyEnd(state: TaskState, prefs: NotifyPrefs | null): void {
 
 /** refreshSettings 拉一次全量设置。重连之后必须重新拉，断线期间的改动补不回来。 */
 export function refreshSettings(): void {
-  sendCommand('settings/get')
+  sendCommand(CMD.settingsGet)
 }
 
 /** refreshHistory 拉一次历史索引。 */
@@ -82,13 +87,53 @@ export function refreshHistory(filter?: HistoryFilter): void {
 }
 
 export function refreshGeo(): void {
-  sendCommand('geo/status')
+  sendCommand(CMD.geoStatus)
+}
+
+
+/**
+ * 会话快照：任务进行中定期把结果存到本地，任务一结束就删。
+ *
+ * 写盘按 5 秒节流——结果是一批批来的，每批都写会把主线程占满，而崩溃恢复
+ * 丢几秒的结果并不致命。
+ *
+ * 只有**本会话真的跑过任务**才会去删快照。不加这个判断的话，应用一启动收到
+ * 的第一条 `state` 是 idle，会把上一会话崩溃时留下的快照当场清掉——那正是
+ * 要恢复的那一份。
+ */
+const SNAPSHOT_INTERVAL_MS = 5000
+let snapshotAt = 0
+let sawRunning = false
+
+function syncSessionSnapshot(state: TaskState): void {
+  if (state.status === 'running') {
+    sawRunning = true
+    const now = Date.now()
+    if (now - snapshotAt < SNAPSHOT_INTERVAL_MS) return
+    snapshotAt = now
+
+    const snap = useResultsStore().snapshot()
+    if (snap.records.length === 0) return
+    saveSnapshot({
+      savedAt: now,
+      phase: state.phase,
+      total: snap.records.length,
+      records: snap.records,
+    })
+    return
+  }
+
+  if (sawRunning) {
+    // 结果要么已经进了历史，要么用户已经看到了，留着快照只会在下次打开时
+    // 弹一个过时的提示。
+    clearSnapshot()
+    sawRunning = false
+  }
 }
 
 /** refreshMigrate 拉一次旧版数据的迁移状态。 */
 export function refreshMigrate(): void {
-  useMigrateStore().refresh()
-}
+  useMigrateStore().refresh()}
 
 /** refreshPresets 拉一次档位列表。 */
 export function refreshPresets(): void {
@@ -111,6 +156,7 @@ export function wireEvents(): void {
   const log = useLogStore()
   const speed = useSpeedStore()
   const exporter = useExportStore()
+  const diag = useDiagStore()
   const adaptive = useAdaptiveStore()
   const presets = usePresetsStore()
   const migrate = useMigrateStore()
@@ -136,6 +182,7 @@ export function wireEvents(): void {
   onEvent(EVT.state, (data) => {
     const next = data as TaskState
     const previous = task.state
+    syncSessionSnapshot(next)
     if (next.phase !== previous.phase || next.status !== previous.status) {
       log.push(t('task.' + next.status) + ' · ' + t('task.phase.' + next.phase))
     }
@@ -156,6 +203,8 @@ export function wireEvents(): void {
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
 
   onEvent(EVT.export, (data) => exporter.applyResult(data as ExportResult))
+  onEvent(EVT.diag, (data) => diag.applyReport(data as DiagReport))
+  onEvent(EVT.diagExport, (data) => diag.applyExport(data as DiagExportResult))
 
   onEvent(EVT.adaptiveApplied, (data) => {
     const notice = data as AdaptiveNotice

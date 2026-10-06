@@ -9,6 +9,7 @@
  * 存，迟早会有某处把建议当成已调整来处理，而那种错误是静默的——值被改了，
  * 用户不知道为什么。
  */
+import { CMD } from '@/api/protocol'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
@@ -58,7 +59,7 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
     const notice = applied.value[key]
     if (!notice) return
     // 还原之后这个值就是用户的了，标记成 user，自适应不会再动它。
-    sendCommand('settings/update', {
+    sendCommand(CMD.settingsUpdate, {
       patch: buildPatch(key, notice.from),
       origins: { [key]: 'user' },
     })
@@ -71,7 +72,7 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
   /** 应用一条建议：等同于用户自己把值改成建议值。 */
   function accept(notice: AdaptiveNotice): void {
     // 用户点了「一键应用」，这个值从此就是他的选择，自适应不再碰。
-    sendCommand('settings/update', {
+    sendCommand(CMD.settingsUpdate, {
       patch: buildPatch(notice.key, notice.to),
       origins: { [notice.key]: 'user' },
     })
