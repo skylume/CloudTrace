@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"cloudtrace/internal/config"
 )
 
 // routes 组装全部路由与中间件。
@@ -119,11 +121,14 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginRequest 是登录请求体。
+//
+// 字段名沿用 token 而不是 password：这是接口契约的一部分，外部脚本按它写。
+// 界面上它叫「访问密码」，两边说的是同一件东西。
 type loginRequest struct {
 	Token string `json:"token"`
 }
 
-// handleLogin 处理 /auth/login：GET 返回登录页，POST 校验访问 Token 并签发会话。
+// handleLogin 处理 /auth/login：GET 返回登录页，POST 校验访问密码并签发会话。
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -140,8 +145,10 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cfg := s.cfg.Get()
-		if !matchSecret(strings.TrimSpace(body.Token), cfg.Server.Token) {
-			writeError(w, http.StatusUnauthorized, CodeUnauthorized, "访问 Token 不正确")
+		// 存下来的可能是用户设的加盐哈希，也可能是升级前那版自动生成的明文
+		// Token——VerifyPassword 两种都认。
+		if !config.VerifyPassword(cfg.Server.Token, strings.TrimSpace(body.Token)) {
+			writeError(w, http.StatusUnauthorized, CodeUnauthorized, "访问密码不正确")
 			return
 		}
 
@@ -180,11 +187,18 @@ type loginInfoResponse struct {
 	//
 	// 登录页原来把「已开放局域网访问」写死在文案里，只绑回环时那句话是错的。
 	LAN bool `json:"lan"`
-	// TokenPath 是配置文件的绝对路径，用户照着它就能翻到 Token。
+	// TokenPath 是配置文件的绝对路径，用户照着它就能翻到密码。
 	//
 	// 只对本机请求给出：把服务端的目录结构发给整个网段没有道理，而站在
 	// 这台机器上的人本来就能自己打开那个文件。
 	TokenPath string `json:"token_path,omitempty"`
+	// PasswordSet 表示已经设过访问密码。
+	PasswordSet bool `json:"password_set"`
+	// LegacyToken 表示存下来的是升级前那版自动生成的明文 Token。
+	//
+	// 登录页据此换一句话：那批用户不知道该输什么，得告诉他去哪儿找；而自己
+	// 设过密码的人只需要一个输入框。
+	LegacyToken bool `json:"legacy_token"`
 }
 
 // handleLoginInfo 处理 GET /auth/login-info。
@@ -198,7 +212,12 @@ func (s *server) handleLoginInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := loginInfoResponse{LAN: s.cfg.Get().Server.Bind != "127.0.0.1"}
+	cfg := s.cfg.Get()
+	out := loginInfoResponse{
+		LAN:         !isLoopbackBind(cfg.Server.Bind),
+		PasswordSet: cfg.Server.Token != "",
+		LegacyToken: cfg.Server.Token != "" && !config.IsHashedPassword(cfg.Server.Token),
+	}
 	if isLoopbackIP(clientIP(r)) {
 		out.TokenPath = s.cfg.Path()
 	}

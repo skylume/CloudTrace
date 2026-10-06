@@ -14,6 +14,7 @@ import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
 import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settingsSchema'
 import DiagPanel from '@/components/settings/DiagPanel.vue'
+import ServerPanel from '@/components/settings/ServerPanel.vue'
 import { useGeoStore } from '@/stores/geo'
 import { useHistoryStore } from '@/stores/history'
 import { useSettingsStore } from '@/stores/settings'
@@ -139,12 +140,6 @@ function clearHistory(): void {
   history.clear()
   confirmingClear.value = false
 }
-
-/** 当前生效的数据目录。留空表示按便携模式走，这里就显示成「便携模式」。 */
-const currentDataDir = computed(() => {
-  const value = readPath(values.value, 'data.dir')
-  return typeof value === 'string' && value !== '' ? value : t('settings.dataDirPortable')
-})
 
 function openDirSwitch(): void {
   const value = readPath(values.value, 'data.dir')
@@ -293,6 +288,8 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
           <p v-if="geo.status?.status.error" class="ct-subtle error">{{ geo.status.status.error }}</p>
         </section>
 
+        <ServerPanel />
+
         <DiagPanel />
 
         <section class="ct-card danger">
@@ -304,9 +301,10 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
             这里会先把后果说清楚再让你确认——改了它，历史、缓存、ASN 库就换地方了。
           -->
           <div class="danger-row">
+            <!-- 当前值在上面「服务面板」里，这里只说这是干什么的。 -->
             <div class="danger-info">
               <span>{{ t('settings.dataDir') }}</span>
-              <span class="ct-mono ct-subtle">{{ currentDataDir }}</span>
+              <span class="ct-subtle">{{ t('settings.dataDirSwitchHint') }}</span>
             </div>
             <template v-if="confirmingDir">
               <input

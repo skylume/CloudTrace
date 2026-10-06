@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cloudtrace/internal/config"
@@ -25,7 +26,8 @@ func TestPanelURLUsesLoopbackForWildcardBind(t *testing.T) {
 	}
 }
 
-func TestIsAddrInUse(t *testing.T) {	if IsAddrInUse(nil) {
+func TestIsAddrInUse(t *testing.T) {
+	if IsAddrInUse(nil) {
 		t.Error("nil 不该被当成端口占用")
 	}
 	if !IsAddrInUse(errors.New("listen tcp 127.0.0.1:17443: bind: address already in use")) {
@@ -147,8 +149,12 @@ func TestPrepareAssemblesUsableApp(t *testing.T) {
 	}
 }
 
-// 首次运行要自动生成访问 Token：局域网访问靠它，缺了用户根本登不进去。
-func TestPrepareGeneratesToken(t *testing.T) {
+// 首次运行**不**自动生成访问密码。
+//
+// 生成的那串 64 位十六进制用户只能从控制台抄，而桌面版没有控制台；默认只绑
+// 回环时本机访问本来就不需要密码。密码由用户在设置页自己设，绑定局域网却没
+// 设密码会在配置校验那一关被拒。
+func TestPrepareLeavesPasswordUnset(t *testing.T) {
 	app, err := Prepare(Options{Flags: Flags{DataDir: t.TempDir()}, Version: "test"})
 	if err == nil {
 		t.Cleanup(app.Close)
@@ -158,8 +164,38 @@ func TestPrepareGeneratesToken(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = app.Services.Shutdown(t.Context()) })
 
-	if app.Store.Get().Server.Token == "" {
-		t.Error("没有生成访问 Token")
+	if got := app.Store.Get().Server.Token; got != "" {
+		t.Errorf("不该自动生成访问密码，实际 %q", got)
+	}
+}
+
+// 只绑回环时不给局域网地址：那种情况下局域网根本连不上，给出地址等于骗人。
+func TestLANURLsEmptyWhenBoundToLoopback(t *testing.T) {
+	if urls := LANURLs("127.0.0.1", 17443); len(urls) != 0 {
+		t.Errorf("绑回环时不该有局域网地址，实际 %v", urls)
+	}
+	if urls := LANURLs("", 17443); len(urls) != 0 {
+		t.Errorf("空绑定等于回环，不该有局域网地址，实际 %v", urls)
+	}
+}
+
+// 指定了具体网卡就只给那一个地址：枚举出来的其他地址用户访问不到。
+func TestLANURLsFollowExplicitBind(t *testing.T) {
+	urls := LANURLs("192.168.5.246", 17443)
+	if len(urls) != 1 || urls[0] != "http://192.168.5.246:17443" {
+		t.Errorf("指定绑定时的局域网地址 = %v", urls)
+	}
+}
+
+// 绑 0.0.0.0 时枚举出真实网卡地址，且不带回环。
+func TestLANURLsEnumerateInterfaces(t *testing.T) {
+	for _, url := range LANURLs("0.0.0.0", 17443) {
+		if strings.Contains(url, "127.0.0.1") || strings.Contains(url, "[::1]") {
+			t.Errorf("局域网地址里出现了回环：%s", url)
+		}
+		if !strings.HasPrefix(url, "http://") || !strings.HasSuffix(url, ":17443") {
+			t.Errorf("地址形状不对：%s", url)
+		}
 	}
 }
 

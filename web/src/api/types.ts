@@ -429,3 +429,32 @@ export interface DiagExportResult {
   url: string
   name: string
 }
+
+/** 内置来源的段数。 */
+export interface SourceStatus {
+  official_v4: number
+  official_v6: number
+}
+
+/** 面板当前的可访问地址与鉴权状态。 */
+export interface ServerStatus {
+  bind: string
+  port: number
+  /** 本机访问地址。 */
+  local_url: string
+  /** 局域网内其他设备可用的地址；只绑回环时为空。 */
+  lan_urls: string[]
+  /** 局域网访问是否需要登录。只绑回环时为 false——本机访问免鉴权。 */
+  needs_auth: boolean
+  /** 是否已经设过访问密码。 */
+  password_set: boolean
+  version: string
+  data_dir: string
+}
+
+/** 访问密码的现状。 */
+export interface AuthStatus {
+  password_set: boolean
+  /** 存的是升级前那版自动生成的明文 Token。 */
+  legacy: boolean
+}

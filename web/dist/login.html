@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>CloudTrace</title>
+    <title>CloudTrace · 登录</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       // 与主页面同一段首屏脚本：登录页也要先贴主题，否则会闪一下。
@@ -25,49 +25,58 @@
         root.dataset.fontScale = (ui && ui.fontScale) || 'medium'
       })()
     </script>
-    <script type="module" crossorigin src="/assets/login-CO5ssCGX.js"></script>
+    <script type="module" crossorigin src="/assets/login-BhdlN9G5.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/base-BVNRfvsa.js">
     <link rel="stylesheet" crossorigin href="/assets/base-CkFor0UV.css">
-    <link rel="stylesheet" crossorigin href="/assets/login-CuEuFWJb.css">
+    <link rel="stylesheet" crossorigin href="/assets/login-CX4HakaY.css">
   </head>
   <body class="login-body">
-    <form class="login-card" id="login-form" novalidate>
+    <main class="login-card">
       <header class="login-brand">
-        <svg class="login-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 8.6 4.5 4.5 0 0 0 7 18z" />
-        </svg>
-        <div>
+        <!-- 品牌标记与侧栏里那个一致：三条递减的横线 + 一个轨迹点。 -->
+        <span class="login-mark" aria-hidden="true">
+          <i class="bar b1"></i>
+          <i class="bar b2"></i>
+          <i class="bar b3"></i>
+          <i class="dot"></i>
+        </span>
+        <span class="login-names">
           <h1>CloudTrace</h1>
           <p class="login-tagline">挑出当前网络下最好用的 Cloudflare 节点</p>
-        </div>
+        </span>
       </header>
 
       <!--
-        提示内容由脚本按服务端的实际情况填：绑没绑局域网、配置文件在哪。
-        写死在 HTML 里只能二选一，而这两件事本来就因机器而异。
+        提示内容由脚本按服务端的实际情况填：开没开局域网、存的是不是旧版 Token、
+        配置文件在哪。写死在 HTML 里只能二选一，而这几件事本来就因机器而异。
       -->
       <section class="login-note" id="login-note" hidden>
-        <svg class="login-note-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 8v4M12 16h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" />
-        </svg>
-        <div class="login-note-text">
-          <p id="login-note-main"></p>
-          <p id="login-note-sub"></p>
-          <code id="login-note-path" hidden></code>
-        </div>
+        <p id="login-note-main"></p>
+        <p id="login-note-sub"></p>
+        <code id="login-note-path" hidden></code>
       </section>
 
-      <label class="login-label" for="login-token">访问 Token</label>
-      <input
-        id="login-token"
-        type="password"
-        placeholder="粘贴访问 Token"
-        autocomplete="off"
-        spellcheck="false"
-        autofocus
-      />
-      <button type="submit" id="login-submit">进入面板</button>
-      <p class="login-error" id="login-error" role="alert"></p>
-    </form>
+      <form id="login-form" novalidate>
+        <label class="login-label" for="login-token" id="login-label">访问密码</label>
+        <div class="login-field">
+          <input
+            id="login-token"
+            type="password"
+            placeholder="请输入访问密码"
+            autocomplete="current-password"
+            spellcheck="false"
+            autofocus
+          />
+          <!-- 旧版 Token 有 64 位，看不见没法确认抄对了没有。 -->
+          <button type="button" class="login-reveal" id="login-reveal" aria-label="显示密码">显示</button>
+        </div>
+        <p class="login-error" id="login-error" role="alert"></p>
+        <button type="submit" id="login-submit">进入面板</button>
+      </form>
+
+      <footer class="login-foot">
+        <p>忘记密码？在运行面板的这台机器上打开面板，到设置页重设即可——本机访问不需要密码。</p>
+      </footer>
+    </main>
   </body>
 </html>

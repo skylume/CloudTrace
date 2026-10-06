@@ -24,6 +24,7 @@ import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
 import { useMigrateStore } from '@/stores/migrate'
+import { useSystemStore } from '@/stores/system'
 import {
   clearSnapshot,
   loadSnapshot,
@@ -48,6 +49,7 @@ const ui = useUIStore()
 const rerun = useRerunStore()
 const adaptive = useAdaptiveStore()
 const migrate = useMigrateStore()
+const system = useSystemStore()
 
 /**
  * 上次没跑完的那批结果。
@@ -115,8 +117,13 @@ function toggleDetails(): void {
 const params = ref<Record<string, number | boolean>>({})
 const presetId = ref(CUSTOM_PRESET)
 const source = ref<ScanSource>({ official: true, remote: [], customText: '' })
-/** 官方网段条数。后端还没提供这个数字时显示 0，不假装知道。 */
-const officialCount = ref(0)
+/**
+ * 官方网段条数。由后端下发（见 stores/system）。
+ *
+ * 这里曾经是一个从不赋值的 `ref(0)`——界面上永远显示「共 0 段」，看起来像
+ * 没有数据。清单是随二进制固化的，前端不该自己算。
+ */
+const officialCount = computed(() => system.officialV4)
 
 const running = computed(() => task.running)
 const showEmpty = computed(() => !running.value && results.total === 0)

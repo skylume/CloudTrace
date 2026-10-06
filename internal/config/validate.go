@@ -149,9 +149,13 @@ func (c Config) Validate() error {
 	if c.Server.SessionTTLMin < 1 || c.Server.SessionTTLMin > 10080 {
 		add("server.session_ttl_min", c.Server.SessionTTLMin, "必须在 1–10080 分钟之间")
 	}
-	// 局域网暴露必须要有 Token，否则等于把面板完全敞开。
+	// 局域网暴露必须要有访问密码，否则等于把面板完全敞开。
+	//
+	// 这条挡在**保存**这一关，而不是等启动时再拒绝：用户是在设置页把绑定改成
+	// 0.0.0.0 的，那就该在那里告诉他「先设个密码」，而不是让他改完、重启、
+	// 然后发现进不去了。
 	if c.Server.Bind == "0.0.0.0" && strings.TrimSpace(c.Server.Token) == "" {
-		add("server.token", "", "bind = 0.0.0.0 时必须设置访问 Token")
+		add("server.token", "", "开放局域网访问前必须先设置访问密码")
 	}
 
 	// ---- advanced.* ----

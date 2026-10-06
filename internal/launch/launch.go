@@ -154,15 +154,15 @@ func Prepare(opts Options) (*App, error) {
 		logger.Warn(w)
 	}
 
-	// 首次运行自动生成访问 Token（局域网访问时使用）。
+	// 访问密码由用户自己在设置页设，这里不再自动生成。
+	//
+	// 自动生成的那串 64 位十六进制，用户只能从控制台抄——而桌面版用
+	// -H=windowsgui 构建，压根没有控制台。默认只绑回环时本机访问本来就不需要
+	// 密码，自动生成一个只会在用户想开局域网时逼他去找一串他永远记不住的东西。
+	//
+	// 绑定到局域网却还没设密码会在配置校验那一关被拒（见 config.Validate），
+	// 设置页也会在开这个开关之前先把密码要出来。
 	cfg := store.Get()
-	if generated, gerr := (&cfg.Server).EnsureToken(); gerr != nil {
-		logger.Warn("生成访问 Token 失败，局域网访问将不可用", "err", gerr)
-	} else if generated {
-		if _, serr := store.Set(cfg); serr != nil {
-			return nil, fmt.Errorf("保存配置失败：%w", serr)
-		}
-	}
 
 	if patch, origins := flagOverrides(opts.Flags, rootDir); len(patch) > 0 {
 		if _, perr := store.Patch(patch, origins); perr != nil {
@@ -211,14 +211,26 @@ func Prepare(opts Options) (*App, error) {
 func (a *App) Listen() (net.Listener, error) {
 	cfg := a.Store.Get()
 	addr := net.JoinHostPort(cfg.Server.Bind, strconv.Itoa(cfg.Server.Port))
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		if IsAddrInUse(err) {
+
+	// 被重启拉起时要等一会儿再放弃。
+	//
+	// 重启的流程是「先拉新进程、旧进程再退出」，中间那几十毫秒里监听套接字
+	// 还在旧进程手上。不等的话新进程会判定「端口被占用」，然后走成「打开已有
+	// 面板后退出」——用户点了重启，看到的是窗口闪一下又回到原来那个。
+	deadline := time.Now().Add(restartBindWait)
+	for {
+		listener, err := net.Listen("tcp", addr)
+		if err == nil {
+			return listener, nil
+		}
+		if !IsAddrInUse(err) {
+			return nil, fmt.Errorf("监听 %s 失败：%w", addr, err)
+		}
+		if !Restarting() || time.Now().After(deadline) {
 			return nil, ErrAddrInUse{Addr: addr, URL: a.URL}
 		}
-		return nil, fmt.Errorf("监听 %s 失败：%w", addr, err)
+		time.Sleep(100 * time.Millisecond)
 	}
-	return listener, nil
 }
 
 // HTTPServer 组装一个带合理超时的 http.Server。
@@ -274,21 +286,70 @@ func PeekPanelURL(flags Flags) string {
 
 // LogAccess 输出「面板起在哪儿、怎么进去」。
 //
-// 访问 Token 必须把值打出来：登录页让用户「输入启动时控制台打印的访问 Token」，
-// 那就得真的打印。只写一句「已生成访问 Token」等于什么也没给——用户只能去翻
-// 配置文件，而配置文件在哪个目录取决于数据目录，那正是他不知道的东西。
+// 本机地址与局域网地址都要打出来：用户开了局域网访问之后，最想知道的就是
+// 「手机该输什么地址」，而那个地址取决于本机网卡，他自己查不出来。
+//
+// 密码只在**还是明文**的时候打出来。用户自己设的密码落盘是加盐哈希，打一串
+// 哈希给他看毫无意义（他也输入不进去）；而升级前那版自动生成的明文 Token
+// 仍然要打——那批用户没有别的途径知道它。
 //
 // 两个入口共用一份，不在各自的 main 里各写一遍：只绑回环时该不该提示、
 // 局域网时该说什么，两版必须一致，而各写一遍正是一致性最先被破坏的地方。
 func (a *App) LogAccess() {
 	cfg := a.Store.Get()
 	a.Logger.Info("面板已启动", "url", a.URL, "data_dir", a.DataDir)
-	if cfg.Server.Token != "" {
+
+	for _, url := range LANURLs(cfg.Server.Bind, cfg.Server.Port) {
+		a.Logger.Info("局域网访问地址（同一网络下的设备用这个）", "url", url)
+	}
+
+	switch {
+	case cfg.Server.Token == "":
+		// 只绑回环时这是正常状态，不必提示。
+		if cfg.Server.Bind != "127.0.0.1" && cfg.Server.Bind != "" {
+			a.Logger.Warn("面板绑定了非回环地址却还没有访问密码，请在设置页设置后再重启")
+		}
+	case config.IsHashedPassword(cfg.Server.Token):
+		a.Logger.Info("已设置访问密码（局域网访问时需要，忘记可在设置页重设）")
+	default:
+		// 升级前那版自动生成的明文 Token。
 		a.Logger.Info("访问 Token（局域网访问面板时需要）", "token", cfg.Server.Token)
 	}
-	if cfg.Server.Bind != "127.0.0.1" {
+
+	if cfg.Server.Bind != "127.0.0.1" && cfg.Server.Bind != "" {
 		a.Logger.Warn("面板已开放局域网访问，同一网络下的设备都能打开它")
 	}
+}
+
+// LANURLs 列出局域网内其他设备可用的访问地址；只绑回环时为空。
+//
+// 与 internal/server 里那份是同一套规则。放在这里是因为启动日志要用它，而
+// server 包反过来依赖 launch（PanelURL），不能互相引。
+func LANURLs(bind string, port int) []string {
+	if bind == "" || bind == "127.0.0.1" || bind == "localhost" || bind == "::1" {
+		return nil
+	}
+	if bind != "0.0.0.0" && bind != "::" {
+		return []string{"http://" + net.JoinHostPort(bind, strconv.Itoa(port))}
+	}
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		ip4 := ipNet.IP.To4()
+		if ip4 == nil || ip4.IsLinkLocalUnicast() {
+			continue
+		}
+		out = append(out, "http://"+net.JoinHostPort(ip4.String(), strconv.Itoa(port)))
+	}
+	return out
 }
 
 // ErrAddrInUse 表示端口已经被占用。

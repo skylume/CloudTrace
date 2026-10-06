@@ -79,6 +79,22 @@ func run() error {
 		app.Logger.Warn("同步开机自启失败", "err", err)
 	}
 
+	// 重启：拉起新进程，然后走与收到退出信号同一条清理路径。
+	//
+	// 不复用「直接 os.Exit」：那样会跳过日志落盘与服务的优雅关闭，而重启恰恰
+	// 是最不该丢数据的时候——用户刚改完配置。
+	restarting := make(chan struct{}, 1)
+	app.Services.Restart = func() error {
+		if err := launch.RestartSelf(); err != nil {
+			return err
+		}
+		select {
+		case restarting <- struct{}{}:
+		default:
+		}
+		return nil
+	}
+
 	listener, err := app.Listen()
 	if err != nil {
 		var inUse launch.ErrAddrInUse
@@ -125,6 +141,8 @@ func run() error {
 			return fmt.Errorf("HTTP 服务异常退出：%w", err)
 		}
 		return nil
+	case <-restarting:
+		app.Logger.Info("正在重启…")
 	case <-ctx.Done():
 		app.Logger.Info("收到退出信号，正在关闭…")
 	}

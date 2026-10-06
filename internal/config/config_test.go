@@ -265,24 +265,71 @@ func TestDangerousValuesWarnButPass(t *testing.T) {
 	}
 }
 
-func TestEnsureTokenGeneratesOnce(t *testing.T) {
-	s := ServerConfig{}
-	generated, err := s.EnsureToken()
+// 访问密码：落盘的是加盐哈希，同一个密码两次哈希不同，但都能校验通过。
+func TestHashPasswordRoundTrip(t *testing.T) {
+	first, err := HashPassword("correct horse battery")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("哈希失败：%v", err)
 	}
-	if !generated {
-		t.Fatal("空 Token 应触发生成")
-	}
-	if len(s.Token) != 64 {
-		t.Fatalf("Token 应为 32 字节 hex（64 字符），实际 %d 字符", len(s.Token))
-	}
-	again, err := s.EnsureToken()
+	second, err := HashPassword("correct horse battery")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("哈希失败：%v", err)
 	}
-	if again {
-		t.Fatal("已有 Token 不应重复生成")
+
+	if first == second {
+		t.Error("同一个密码两次哈希应当不同（盐不同）")
+	}
+	if !IsHashedPassword(first) {
+		t.Errorf("落盘格式认不出来：%q", first)
+	}
+	if strings.Contains(first, "correct horse") {
+		t.Error("哈希里出现了明文")
+	}
+	if !VerifyPassword(first, "correct horse battery") {
+		t.Error("正确密码未通过")
+	}
+	if VerifyPassword(first, "wrong password") {
+		t.Error("错误密码通过了")
+	}
+	if VerifyPassword(first, "") {
+		t.Error("空密码通过了")
+	}
+}
+
+// 空密码不生成哈希。
+func TestHashPasswordRejectsEmpty(t *testing.T) {
+	if _, err := HashPassword("   "); err == nil {
+		t.Error("空密码应当被拒")
+	}
+}
+
+// 升级前那版自动生成的明文 Token 必须继续可用。
+func TestVerifyPasswordAcceptsLegacyPlaintext(t *testing.T) {
+	legacy := strings.Repeat("ab", 32)
+	if !VerifyPassword(legacy, legacy) {
+		t.Error("旧版明文 Token 未通过")
+	}
+	if VerifyPassword(legacy, legacy+"x") {
+		t.Error("旧版明文 Token 的错误值通过了")
+	}
+	if IsHashedPassword(legacy) {
+		t.Error("明文不该被认成哈希")
+	}
+}
+
+// 坏掉或空掉的存储值一律不通过，不能因为解析失败就放行。
+func TestVerifyPasswordRejectsMalformed(t *testing.T) {
+	cases := []string{
+		"",
+		"pbkdf2-sha256$notanumber$c2FsdA$aGFzaA",
+		"pbkdf2-sha256$1000$!!!$aGFzaA",
+		"pbkdf2-sha256$1000$c2FsdA",
+		"pbkdf2-sha256$0$c2FsdA$aGFzaA",
+	}
+	for _, stored := range cases {
+		if VerifyPassword(stored, "anything") {
+			t.Errorf("存储值 %q 不该通过校验", stored)
+		}
 	}
 }
 

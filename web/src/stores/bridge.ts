@@ -18,6 +18,7 @@ import { useLogStore } from './log'
 import { useMigrateStore } from './migrate'
 import { usePresetsStore } from './presets'
 import { useResultsStore } from './results'
+import { useSystemStore } from './system'
 import { clearSnapshot, saveSnapshot } from '@/utils/sessionSnapshot'
 import { useSettingsStore } from './settings'
 import { useSpeedStore, type BreakerNotice, type SourceDecision } from './speed'
@@ -27,6 +28,7 @@ import { useUIStore } from './ui'
 import { CMD } from '@/api/protocol'
 import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
 import type {
+  AuthStatus,
   DiagExportResult,
   DiagReport,
   ExportResult,
@@ -36,6 +38,8 @@ import type {
   MigrateStatus,
   PresetsPayload,
   SettingsPayload,
+  ServerStatus,
+  SourceStatus,
   TaskState,
 } from '@/api/types'
 
@@ -157,6 +161,7 @@ export function wireEvents(): void {
   const speed = useSpeedStore()
   const exporter = useExportStore()
   const diag = useDiagStore()
+  const system = useSystemStore()
   const adaptive = useAdaptiveStore()
   const presets = usePresetsStore()
   const migrate = useMigrateStore()
@@ -177,6 +182,7 @@ export function wireEvents(): void {
     refreshMigrate()
     refreshHistory()
     refreshGeo()
+    system.refresh()
   })
 
   onEvent(EVT.state, (data) => {
@@ -203,6 +209,14 @@ export function wireEvents(): void {
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
 
   onEvent(EVT.export, (data) => exporter.applyResult(data as ExportResult))
+  onEvent(EVT.source, (data) => system.applySource(data as SourceStatus))
+  onEvent(EVT.server, (data) => system.applyServer(data as ServerStatus))
+  onEvent(EVT.auth, (data) => system.applyAuth(data as AuthStatus))
+  onEvent(EVT.serverRestart, () => {
+    // 回执到了就说明新进程正在起来，连接随后会断——这里不做别的，
+    // 重连之后 system.refresh 会把新状态拉回来。
+    log.push(t('settings.restarting'))
+  })
   onEvent(EVT.diag, (data) => diag.applyReport(data as DiagReport))
   onEvent(EVT.diagExport, (data) => diag.applyExport(data as DiagExportResult))
 

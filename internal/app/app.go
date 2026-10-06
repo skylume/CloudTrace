@@ -45,6 +45,13 @@ type Services struct {
 	Region *geo.InfoCache
 	// Version 是构建版本号。
 	Version string
+	// Restart 由入口装配注入：拉起一份参数相同的新进程。
+	//
+	// 放在这里而不是让 server 包自己去做：重启要拿到命令行参数、要处理进程
+	// 分离，那些只有入口知道；而 server 包反过来被 launch 依赖，不能互相引。
+	//
+	// 为 nil 表示当前入口不支持自动重启（比如测试里）。
+	Restart func() error
 	// Logger 是结构化日志器。
 	Logger *slog.Logger
 

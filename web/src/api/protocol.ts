@@ -38,6 +38,11 @@ export const CMD = {
 
   export: 'export',
   healthCheck: 'health/check',
+  sourceStatus: 'source/status',
+  serverStatus: 'server/status',
+  serverRestart: 'server/restart',
+  authStatus: 'auth/status',
+  authSetPassword: 'auth/set-password',
   diagRun: 'diag/run',
   diagExport: 'diag/export',
   geoStatus: 'geo/status',
@@ -70,6 +75,14 @@ export const EVT = {
   speedSource: 'speed/source',
   /** 测速被限流熔断。带可操作的建议，与一般错误分开。 */
   speedBreaker: 'speed/breaker',
+  /** 内置来源的段数。 */
+  source: 'source',
+  /** 面板的可访问地址与鉴权状态。 */
+  server: 'server',
+  /** 重启命令的回执（连接随后会断开）。 */
+  serverRestart: 'server/restart',
+  /** 访问密码的现状。 */
+  auth: 'auth',
   /** 网络诊断结果。 */
   diag: 'diag',
   /** 诊断包的下载地址。 */

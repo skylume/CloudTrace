@@ -1,12 +1,14 @@
 /*
  * 登录页样式。
  *
- * 单独一份而不是塞进 base.css：它只服务一个页面，放进基础样式里会让每个
- * 页面都多背几条用不到的规则。
+ * 单独一份而不是塞进 base.css：它只服务一个页面，放进基础样式里会让每个页面
+ * 都多背几条用不到的规则。
  *
- * 这一屏是局域网用户见到的第一眼，而它出现在「程序已经在跑了、用户却不知道
- * 该填什么」的时刻——所以版式上多花一点：品牌、说明、字段、按钮四段清楚分开，
- * 说明那块还要能放下一段路径。
+ * 这一屏是局域网用户见到的第一眼，而且出现在「程序已经在跑、用户却不知道要
+ * 输什么」的时刻。所以版式上多花一点：品牌、说明、字段、按钮四段清楚分开，
+ * 说明那块还要能放下一段可能很长的文件路径。
+ *
+ * 仍然守设计约定：不引远程字体与图标，颜色只表达状态，不做装饰性渐变。
  */
 
 .login-body {
@@ -15,6 +17,8 @@
   justify-content: center;
   min-height: 100vh;
   padding: var(--space-4);
+  /* 画布比卡片深一档，卡片才能浮起来——与站内其它页面的分层手段一致。 */
+  background: var(--color-bg);
 }
 
 .login-card {
@@ -28,7 +32,7 @@
   box-shadow: var(--elevation-2);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 /* ---- 品牌 ---- */
@@ -39,28 +43,71 @@
   gap: var(--space-3);
 }
 
+/*
+ * 品牌标记：圆角方块底 + 三条递减横线 + 一个轨迹点。
+ *
+ * 与侧栏里的 BrandMark 同一个形状，只是尺寸大一档——登录页上它是唯一的视觉
+ * 锚点，太小会显得整张卡片没有落点。
+ */
 .login-mark {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  padding: 6px;
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   border-radius: var(--radius-md);
-  background: var(--color-primary-soft);
-  fill: none;
-  stroke: var(--color-primary);
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  background: var(--color-surface-sunken);
+}
+
+.login-mark .bar {
+  position: absolute;
+  left: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
+}
+
+.login-mark .b1 {
+  top: 11px;
+  width: 20px;
+  /* 最上面那条用品牌橙：它是标记里唯一的彩色，面积小、位置固定。 */
+  background: var(--color-brand);
+}
+
+.login-mark .b2 {
+  top: 18px;
+  width: 14px;
+}
+
+.login-mark .b3 {
+  top: 25px;
+  width: 8px;
+}
+
+.login-mark .dot {
+  position: absolute;
+  right: 9px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text);
+}
+
+.login-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .login-brand h1 {
   margin: 0;
-  font-size: var(--font-size-lg);
-  line-height: 1.3;
+  font-size: var(--font-size-xl);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .login-tagline {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
@@ -69,7 +116,8 @@
 
 .login-note {
   display: flex;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   padding: var(--space-3);
   border: 1px solid var(--color-info-border);
   border-radius: var(--radius-md);
@@ -78,31 +126,13 @@
   font-size: var(--font-size-sm);
 }
 
-.login-note-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  margin-top: 2px;
-  fill: none;
-  stroke: currentcolor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.login-note-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.login-note-text p {
+.login-note p {
   margin: 0;
 }
 
 /* 路径可能很长（含用户名与多级目录），折行而不是把卡片撑破。 */
-.login-note-text code {
+.login-note code {
+  margin-top: var(--space-1);
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -115,30 +145,76 @@
 
 /* ---- 字段与按钮 ---- */
 
+#login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .login-label {
-  margin-bottom: calc(var(--space-1) - var(--space-4));
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
 
-.login-card input {
-  width: 100%;
+/* 输入框与「显示」按钮共用一个描边：按钮是框内的一部分，不是第二个控件。 */
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   height: var(--control-height-lg);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-bg);
+}
+
+.login-field:focus-within {
+  border-color: var(--color-primary);
+}
+
+.login-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
   color: var(--color-text);
+  font-size: var(--font-size-md);
+}
+
+.login-field input:focus {
+  outline: none;
+}
+
+/*
+ * 旧版 Token 是一串 64 位十六进制，等宽才好逐段核对；用户自己设的密码按
+ * 普通文本渲染更自然。这个类由脚本按服务端给的形态加上去。
+ */
+.login-field.mono input {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
 }
 
-.login-card input:focus-visible {
-  border-color: var(--color-primary);
+.login-reveal {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
 }
 
-.login-card button {
+.login-reveal:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+#login-submit {
   height: var(--control-height-lg);
+  margin-top: var(--space-1);
   border: 0;
   border-radius: var(--radius-md);
   background: var(--color-primary);
@@ -148,11 +224,11 @@
   cursor: pointer;
 }
 
-.login-card button:hover:not(:disabled) {
+#login-submit:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
 
-.login-card button:disabled {
+#login-submit:disabled {
   opacity: 0.6;
   cursor: progress;
 }
@@ -162,4 +238,18 @@
   margin: 0;
   color: var(--color-bad);
   font-size: var(--font-size-sm);
+}
+
+/* ---- 页脚 ---- */
+
+.login-foot {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.login-foot p {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
 }
