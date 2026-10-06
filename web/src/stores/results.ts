@@ -8,6 +8,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 import { UNREACHABLE, type IPRecord, type Summary } from '@/api/types'
+import { readPath } from '@/i18n/settingsSchema'
+import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 
 export type GroupBy = 'none' | 'colo' | 'region' | 'asn'
@@ -82,6 +84,13 @@ export const useResultsStore = defineStore('results', () => {
   const selected = ref(new Set<string>())
   const regionFilter = ref<string[]>([])
   const maxLatency = ref<number | null>(null)
+  /**
+   * 只看测速达标的节点。
+   *
+   * 合格线取自配置里的 `speed.min_speed`，不在前端写死：用户调过合格线之后，
+   * 这里筛出来的必须与后端「合格数」的口径一致，否则同一个数字在两处对不上。
+   */
+  const qualifiedOnly = ref(false)
   const sortKey = ref<SortKey>('loss')
   const sortDesc = ref(false)
   const groupBy = ref<GroupBy>('none')
@@ -126,6 +135,36 @@ export const useResultsStore = defineStore('results', () => {
     selected.value = new Set()
     regionFilter.value = []
     maxLatency.value = null
+    touch()
+  }
+
+  /**
+   * 清空当前结果，但保留筛选条件。
+   *
+   * 与 `clear()` 的区别：那个是「换一批数据」时的整体重置，连筛选一起清掉；
+   * 这个是用户主动丢掉眼前这批，而筛选是他的意图，不该跟着一起没。
+   *
+   * 快照留下来供撤销——结果只活在内存里，清掉就真的没了，而清空又是个
+   * 一眼看不出后果的动作（表格没了、统计卡归零），值得给一次后悔的机会。
+   */
+  const cleared = ref<{ records: Map<string, IPRecord>; sourceId: string } | null>(null)
+
+  function clearRecords(): number {
+    const count = records.value.size
+    if (count === 0) return 0
+    cleared.value = { records: records.value, sourceId: sourceId.value }
+    records.value = new Map()
+    selected.value = new Set()
+    touch()
+    return count
+  }
+
+  function restoreCleared(): void {
+    const snapshot = cleared.value
+    if (!snapshot) return
+    records.value = snapshot.records
+    sourceId.value = snapshot.sourceId
+    cleared.value = null
     touch()
   }
 
@@ -175,7 +214,21 @@ export const useResultsStore = defineStore('results', () => {
       list = list.filter((record) => !reachable(record) || record.latency <= limit)
     }
 
+    if (qualifiedOnly.value) {
+      const floor = minSpeed.value
+      // 0 表示「没测出来」，不算达标——与后端的合格判定同一条规则。
+      list = list.filter((record) => record.speed_mbps > 0 && record.speed_mbps >= floor)
+    }
+
     return sortRecords(list, sortKey.value, sortDesc.value)
+  })
+
+  /** 合格线（MB/s）。配置还没到之前按 0 处理，此时「仅显示达标」等价于「只看测过的」。 */
+  const minSpeed = computed(() => {
+    const values = useSettingsStore().values
+    if (!values) return 0
+    const value = readPath(values as unknown as Record<string, unknown>, 'speed.min_speed')
+    return typeof value === 'number' && value > 0 ? value : 0
   })
 
   // ---- 分页 ----
@@ -287,6 +340,8 @@ export const useResultsStore = defineStore('results', () => {
     all,
     visible,
     paged,
+    clearRecords,
+    restoreCleared,
     page,
     pageCount,
     currentPage,
@@ -302,6 +357,7 @@ export const useResultsStore = defineStore('results', () => {
     selectedRecords,
     regionFilter,
     maxLatency,
+    qualifiedOnly,
     sortKey,
     sortDesc,
     addChunk,

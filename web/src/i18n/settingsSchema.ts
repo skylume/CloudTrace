@@ -62,7 +62,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'ui.time_format', kind: 'enum', options: ['local', 'utc'] },
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
       { path: 'ui.table_density', kind: 'enum', options: ['compact', 'normal', 'comfortable'] },
-      // 结果表目前一次渲染全部结果，还没有翻页。
       { path: 'ui.page_size', kind: 'int', min: 20, max: 500 },
       { path: 'ui.animation', kind: 'bool', primary: true },
       { path: 'ui.contrast', kind: 'bool', primary: true },
@@ -331,7 +330,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.table_density': { label: 'Table density', hint: 'Changes row height only, never the font size' },
     'ui.page_size': {
       label: 'Rows per page',
-      hint: 'How many rows the result table shows per page. The table does not paginate yet, so this has no effect',
+      hint: 'How many rows the result table shows per page. Pager controls appear below the table when there is more than one page',
     },
     'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
     'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },

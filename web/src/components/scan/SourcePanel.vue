@@ -153,7 +153,7 @@ async function onDrop(event: DragEvent): Promise<void> {
       />
       <div class="preview">
         <span :class="invalidCount > 0 ? 'warn' : 'ok'">
-          {{ t('source.preview', { cidrs: preview.cidrs, single: preview.single, hosts: preview.hosts }) }}
+          {{ t('source.preview', { cidrs: preview.cidrs, single: preview.single, hosts: preview.hosts, comments: preview.comments }) }}
         </span>
         <span v-if="invalidCount > 0" class="warn">
           · {{ t('source.preview.invalid', { count: invalidCount }) }}

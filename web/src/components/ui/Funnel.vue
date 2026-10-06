@@ -17,7 +17,16 @@ export interface FunnelStep {
   tone?: 'default' | 'ok'
 }
 
-const props = defineProps<{ steps: FunnelStep[] }>()
+const props = defineProps<{
+  steps: FunnelStep[]
+  /**
+   * 紧凑版：数字降到与正文同级。
+   *
+   * 扫描页右栏是「过程面板」，漏斗是主角，数字用 2xl 撑起来；结果页的漏斗只是
+   * 一行说明「这些数字是怎么筛出来的」，用同样的字号会把统计卡压下去。
+   */
+  compact?: boolean
+}>()
 
 /** 下划线长度按段序递减，表达收窄。 */
 const WIDTHS = ['100%', '72%', '54%', '26%']
@@ -28,7 +37,7 @@ const items = computed(() =>
 </script>
 
 <template>
-  <div class="funnel">
+  <div class="funnel" :class="{ compact: props.compact }">
     <div v-for="item in items" :key="item.label" class="step">
       <div class="lbl">{{ item.label }}</div>
       <div class="num tnum" :class="{ ok: item.tone === 'ok' }">{{ item.value }}</div>
@@ -42,6 +51,15 @@ const items = computed(() =>
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+/* 紧凑版：数字与标签同一量级，整块高度降到一半左右。 */
+.funnel.compact .num {
+  font-size: var(--font-size-lg);
+}
+
+.funnel.compact .bar {
+  margin-top: var(--space-1);
 }
 
 .step {

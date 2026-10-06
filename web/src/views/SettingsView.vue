@@ -75,6 +75,8 @@ const healthChecked = computed(() => settings.health !== null)
 const healthIssues = computed(() => settings.health?.issues ?? [])
 const confirmingReset = ref(false)
 const confirmingClear = ref(false)
+const confirmingDir = ref(false)
+const dataDirDraft = ref('')
 
 onMounted(() => {
   sendCommand('settings/get')
@@ -134,6 +136,32 @@ function resetAll(): void {
 function clearHistory(): void {
   history.clear()
   confirmingClear.value = false
+}
+
+/** 当前生效的数据目录。留空表示按便携模式走，这里就显示成「便携模式」。 */
+const currentDataDir = computed(() => {
+  const value = readPath(values.value, 'data.dir')
+  return typeof value === 'string' && value !== '' ? value : t('settings.dataDirPortable')
+})
+
+function openDirSwitch(): void {
+  const value = readPath(values.value, 'data.dir')
+  dataDirDraft.value = typeof value === 'string' ? value : ''
+  confirmingDir.value = true
+}
+
+/**
+ * 切数据目录。
+ *
+ * 只写配置，不搬数据：搬迁要跨盘复制整个目录，中途失败会把两边的数据都搞成
+ * 半截状态，那是另一个功能。所以确认文案里把「原目录不会自动搬」说清楚——
+ * 用户以为搬了、实际没搬，比直接告诉他没搬糟得多。
+ */
+function applyDataDir(): void {
+  const next = dataDirDraft.value.trim()
+  if (next === '') return
+  change('data.dir', next)
+  confirmingDir.value = false
 }
 
 function runHealth(): void {
@@ -266,6 +294,35 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
         <section class="ct-card danger">
           <h2 class="ct-card-title">{{ t('settings.dangerZone') }}</h2>
           <p class="ct-subtle">{{ t('settings.dangerHint') }}</p>
+
+          <!--
+            数据目录切换。这条与设置页里那个普通输入框是同一个配置项，区别在于
+            这里会先把后果说清楚再让你确认——改了它，历史、缓存、ASN 库就换地方了。
+          -->
+          <div class="danger-row">
+            <div class="danger-info">
+              <span>{{ t('settings.dataDir') }}</span>
+              <span class="ct-mono ct-subtle">{{ currentDataDir }}</span>
+            </div>
+            <template v-if="confirmingDir">
+              <input
+                v-model="dataDirDraft"
+                class="ct-input dir-input"
+                type="text"
+                spellcheck="false"
+                :placeholder="t('settings.dataDirPlaceholder')"
+              />
+              <button type="button" class="ct-btn danger-btn" @click="applyDataDir">
+                {{ t('common.confirm') }}
+              </button>
+              <button type="button" class="ct-btn" @click="confirmingDir = false">{{ t('common.cancel') }}</button>
+            </template>
+            <button v-else type="button" class="ct-btn" @click="openDirSwitch">
+              {{ t('settings.dataDirSwitch') }}
+            </button>
+          </div>
+          <p v-if="confirmingDir" class="ct-subtle warn-text">{{ t('settings.dataDirWarn') }}</p>
+
           <div class="danger-actions">
             <template v-if="confirmingReset">
               <button type="button" class="ct-btn danger-btn" @click="resetAll">{{ t('common.confirm') }}</button>
@@ -421,6 +478,37 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 
 .danger {
   border-color: var(--color-bad-border);
+}
+
+/* 危险区的每一行：左边是说明，右边是动作。 */
+.danger-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.danger-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  flex: 1;
+  font-size: var(--font-size-sm);
+}
+
+.dir-input {
+  flex: 1 1 240px;
+  font-family: var(--font-mono);
+}
+
+.warn-text {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-warn);
 }
 
 .danger-actions {

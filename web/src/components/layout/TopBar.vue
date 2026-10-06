@@ -85,9 +85,22 @@ function toggleLang(): void {
 
     <h1 class="title">{{ props.title }}</h1>
 
-    <div v-if="task.running" class="task-strip">
+    <!--
+      进度用 aria-live 播报：读屏用户看不到进度条，只能靠播报知道任务在动。
+      用 polite 而不是 assertive——它每 250ms 变一次，assertive 会把其他内容全压掉。
+    -->
+    <div v-if="task.running" class="task-strip" role="status" aria-live="polite" aria-atomic="false">
       <span class="task-phase">{{ t(`task.phase.${task.phase}`) }}</span>
-      <span class="track"><span class="fill" :style="{ width: `${task.percent}%` }" /></span>
+      <span
+        class="track"
+        role="progressbar"
+        :aria-valuenow="task.percent"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-label="t(`task.phase.${task.phase}`)"
+      >
+        <span class="fill" :style="{ width: `${task.percent}%` }" />
+      </span>
       <span class="task-num tnum">
         {{ task.state.done }} / {{ task.state.total }}
         <template v-if="task.state.eta_s > 0">

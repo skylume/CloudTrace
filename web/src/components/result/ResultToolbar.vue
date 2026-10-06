@@ -78,6 +78,13 @@ const latencyLimit = computed({
         :placeholder="t('result.filter.unlimited')"
       />
     </label>
+    <!--
+      「仅显示达标」只在测速视图下出现：结果视图里还没有速度，勾了只会得到一张空表。
+    -->
+    <label v-if="view === 'speed'" class="filter">
+      <input v-model="results.qualifiedOnly" type="checkbox" class="ct-check" />
+      <span>{{ t('result.filter.qualified') }}</span>
+    </label>
     <span class="spacer" />
     <SegmentedControl
       :segments="presetSegments"

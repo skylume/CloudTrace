@@ -11,12 +11,12 @@
 import { computed } from 'vue'
 
 import Funnel, { type FunnelStep } from '@/components/ui/Funnel.vue'
+import RegionChips from '@/components/result/RegionChips.vue'
+import RadarPulse from '@/components/ui/RadarPulse.vue'
 import { durationText, t } from '@/i18n'
-import { useResultsStore } from '@/stores/results'
 import { useTaskStore } from '@/stores/task'
 
 const task = useTaskStore()
-const results = useResultsStore()
 
 const funnelSteps = computed<FunnelStep[]>(() => [
   { label: t('funnel.generated'), value: task.funnel.generated },
@@ -25,25 +25,18 @@ const funnelSteps = computed<FunnelStep[]>(() => [
   { label: t('funnel.usable'), value: task.funnel.usable, tone: 'ok' },
 ])
 
-/** 地区芯片：点一下把该地区加进筛选。 */
-const regions = computed(() => results.regionCounts.slice(0, 12))
-
 const eta = computed(() => {
   const seconds = task.state.eta_s
   return seconds > 0 ? durationText(seconds) : ''
 })
-
-function toggleRegion(code: string): void {
-  const current = results.regionFilter
-  results.regionFilter = current.includes(code)
-    ? current.filter((item) => item !== code)
-    : [...current, code]
-}
 </script>
 
 <template>
   <section class="ct-card">
-    <h2 class="ct-card-title">{{ t('scan.progress') }}</h2>
+    <h2 class="ct-card-title">
+      <RadarPulse v-if="task.running" :size="22" />
+      <span>{{ t('scan.progress') }}</span>
+    </h2>
     <div class="row">
       <span class="ct-subtle">{{ t(`task.phase.${task.phase}`) }}</span>
       <span class="spacer" />
@@ -64,30 +57,20 @@ function toggleRegion(code: string): void {
   </section>
 
   <section class="ct-card">
-    <h2 class="ct-card-title">
-      <span>{{ t('scan.regions') }}</span>
-      <span class="spacer" />
-      <button v-if="results.regionFilter.length > 0" type="button" class="ct-link" @click="results.regionFilter = []">
-        {{ t('result.filter.clear') }}
-      </button>
-    </h2>
-    <p v-if="regions.length === 0" class="ct-subtle">{{ t('common.empty') }}</p>
-    <div v-else class="chips">
-      <button
-        v-for="[code, count] in regions"
-        :key="code"
-        type="button"
-        class="chip"
-        :class="{ on: results.regionFilter.includes(code) }"
-        @click="toggleRegion(code)"
-      >
-        {{ code }} <span class="tnum">{{ count }}</span>
-      </button>
-    </div>
+    <h2 class="ct-card-title">{{ t('scan.regions') }}</h2>
+    <!-- 与结果页共用同一个组件与同一个筛选状态，两处不会各说各话。 -->
+    <RegionChips :limit="12" />
   </section>
 </template>
 
 <style scoped>
+/* 标题里的雷达贴着文字左边，不额外占高度。 */
+.ct-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .spacer {
   flex: 1;
 }
@@ -114,25 +97,6 @@ function toggleRegion(code: string): void {
   transition: width var(--duration-normal) var(--ease);
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
 
-.chip {
-  padding: 3px var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  cursor: pointer;
-}
 
-.chip.on {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-  color: var(--color-primary-text);
-}
 </style>

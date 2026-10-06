@@ -10,9 +10,11 @@ import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
 import MobileActionBar from '@/components/result/MobileActionBar.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
+import RegionChips from '@/components/result/RegionChips.vue'
 import ResultToolbar from '@/components/result/ResultToolbar.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import Funnel, { type FunnelStep } from '@/components/ui/Funnel.vue'
 import Pager from '@/components/ui/Pager.vue'
 import { t } from '@/i18n'
 import type { IPRecord } from '@/api/types'
@@ -95,7 +97,13 @@ async function refreshResults(): Promise<void> {
 const ui = useUIStore()
 
 const narrow = useNarrow()
-const view = ref<'result' | 'speed'>('result')
+/**
+ * 视图状态放在 ui store：命令面板的「完全测速」要能直接把用户带到测速视图。
+ */
+const view = computed({
+  get: () => ui.resultView,
+  set: (next: 'result' | 'speed') => (ui.resultView = next),
+})
 const expanded = ref<string[]>([])
 
 /**
@@ -138,6 +146,34 @@ const stats = computed(() => {
 
 const showEmpty = computed(() => results.total === 0 && !task.running)
 const selectedCount = computed(() => results.selected.size)
+
+/** 漏斗条：与扫描页右栏同一份数据，这里用紧凑版。 */
+const funnelSteps = computed<FunnelStep[]>(() => [
+  { label: t('funnel.generated'), value: task.funnel.generated },
+  { label: t('funnel.latencyOk'), value: task.funnel.latency_ok },
+  { label: t('funnel.regionOk'), value: task.funnel.region_ok },
+  { label: t('funnel.usable'), value: task.funnel.usable, tone: 'ok' },
+])
+
+/** 有本次任务的过程数据、且看的不是历史那一份，漏斗才有意义。 */
+const showFunnel = computed(() => results.sourceId === '' && task.funnel.generated > 0)
+
+/**
+ * 清空当前结果。
+ *
+ * 不弹确认框，走 Toast 撤销：结果只在内存里、清掉就真没了，所以必须给后悔的
+ * 机会；但为它打断一次点击不划算——撤销入口比确认框更轻，也更难点错。
+ */
+function clearResults(): void {
+  const count = results.clearRecords()
+  if (count === 0) return
+  ui.pushToast({
+    kind: 'warn',
+    message: t('result.cleared', { count }),
+    action: { label: t('common.undo'), run: () => results.restoreCleared() },
+    timeout: 8000,
+  })
+}
 
 /** 复制前几条：按当前排序取，与用户看到的顺序一致。 */
 async function copyTop(count: number): Promise<void> {
@@ -269,6 +305,17 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         </div>
       </div>
 
+      <!--
+        漏斗条只在「本次任务刚跑过、而且看的就是它的结果」时出现。
+        从历史加载的那一份没有过程数据；而刷新后从 /latest 拉回来的结果虽然有
+        数据，但漏斗是空的——两种情况显示出来都是一排没有意义的 0。
+      -->
+      <section v-if="showFunnel" class="ct-card funnel-card">
+        <Funnel :steps="funnelSteps" compact />
+      </section>
+
+      <RegionChips />
+
       <ResultToolbar
         v-model:view="view"
         @copy="copyTop"
@@ -278,7 +325,12 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 
       <RecordCardList v-if="narrow" :records="results.paged" />
       <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.paged" @speed="onGroupSpeed" />
-      <p class="ct-subtle foot">{{ results.visible.length }} / {{ results.total }}</p>
+      <p class="ct-subtle foot">
+        {{ results.visible.length }} / {{ results.total }}
+        <button v-if="results.total > 0" type="button" class="ct-link" @click="clearResults">
+          {{ t('result.clear') }}
+        </button>
+      </p>
       <!--
         只有一页时不显示分页控件：一个「第 1 / 1 页」的工具栏只是占地方，
         而绝大多数扫描的结果本来就只有一页。
@@ -355,6 +407,11 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
   color: var(--color-ok);
 }
 
+/* 漏斗条：一行说明「这些数字是怎么筛出来的」，比统计卡矮一档。 */
+.funnel-card {
+  padding: var(--space-3) var(--space-4);
+}
+
 .spacer {
   flex: 1;
 }
@@ -364,7 +421,17 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
   overflow-wrap: anywhere;
 }
 
+@media (max-width: 768px) {
+  /* 给固定的底部操作栏让位，否则最后一行结果会被压在它下面。 */
+  .page {
+    padding-bottom: 76px;
+  }
+}
+
 .foot {
-  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
 }
 </style>

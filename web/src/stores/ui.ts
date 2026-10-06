@@ -85,6 +85,14 @@ export const useUIStore = defineStore('ui', () => {
   const density = ref<Density>(saved.density)
   const animation = ref(saved.animation)
   const contrast = ref(saved.contrast)
+
+  /**
+   * 结果页当前是「结果」还是「测速」视图。
+   *
+   * 放在 store 而不是页面里：命令面板的「完全测速」要能直接把用户带到测速视图，
+   * 而它拿不到页面的局部状态。不持久化——每次打开都从「结果」开始是合理的默认。
+   */
+  const resultView = ref<'result' | 'speed'>('result')
   const lang = ref<Locale>(saved.lang)
   const navCollapsed = ref(saved.navCollapsed)
   const activeView = ref(saved.activeView)
@@ -280,6 +288,7 @@ export const useUIStore = defineStore('ui', () => {
     density,
     animation,
     contrast,
+    resultView,
     lang,
     navCollapsed,
     activeView,

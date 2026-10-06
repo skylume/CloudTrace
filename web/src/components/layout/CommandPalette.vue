@@ -14,9 +14,13 @@ import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
 import { usePresetsStore } from '@/stores/presets'
 import { useActionStore } from '@/stores/actions'
+import { useExportStore } from '@/stores/export'
+import { useFieldsStore } from '@/stores/fields'
 import { useResultsStore } from '@/stores/results'
+import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
+import { buildSpeedParams } from '@/utils/speedParams'
 
 const open = defineModel<boolean>({ required: true })
 
@@ -25,6 +29,9 @@ const task = useTaskStore()
 const results = useResultsStore()
 const actions = useActionStore()
 const presets = usePresetsStore()
+const settings = useSettingsStore()
+const fields = useFieldsStore()
+const exporter = useExportStore()
 
 interface Command {
   id: string
@@ -87,6 +94,34 @@ const commands = computed<Command[]>(() => {
       run: () => sendCommand('scan/stop'),
     },
     { id: 'copy-all', group: 'action', label: t('result.copyAll'), run: () => void copyAll() },
+    {
+      id: 'speed-all',
+      group: 'action',
+      label: t('result.speedAll'),
+      // 与工具栏走同一条路径：按配置组装整份测速参数，并把视图切到测速。
+      run: () => {
+        if (results.total === 0) {
+          ui.pushToast({ kind: 'warn', message: t('result.empty') })
+          return
+        }
+        sendCommand('speed/start', buildSpeedParams(settings.values, { scope: 'all', targets: results.all }))
+        ui.activeView = 'result'
+        ui.resultView = 'speed'
+      },
+    },
+    {
+      id: 'export',
+      group: 'action',
+      label: t('common.export'),
+      // 字段用当前可见列、来源用结果集自己的来源：与工具栏「导出」同一份口径。
+      run: () => {
+        if (results.visible.length === 0) {
+          ui.pushToast({ kind: 'warn', message: t('result.empty') })
+          return
+        }
+        exporter.request({ fields: fields.visibleKeys, id: results.sourceId })
+      },
+    },
     { id: 'theme', group: 'action', label: t('theme.label'), run: cycleTheme },
     {
       id: 'density',
