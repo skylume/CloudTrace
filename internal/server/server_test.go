@@ -398,40 +398,111 @@ func TestStaticFallsBackToIndex(t *testing.T) {
 	}
 }
 
-// 绑定 0.0.0.0 后，未登录访问页面应拿到登录页而不是空白。
+// 局域网来的请求未登录时拿到登录页，而不是一张空白页。
+//
+// 这里必须伪造来源地址：httptest 的请求全部来自回环，而回环是免鉴权的
+// （见 TestLoopbackStaysExemptWhenBoundPublicly）。不伪造的话这条用例测的是
+// 「本机」，而它想测的是「远端」。
 func TestUnauthenticatedGetsLoginPage(t *testing.T) {
 	st := newTestStack(t, func(c *config.Config) {
 		c.Server.Bind = "0.0.0.0"
 		c.Server.Token = "secret-token"
 	})
 
-	resp := get(t, st.ts.URL+"/")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("状态码 = %d，期望 200", resp.StatusCode)
+	rec := remoteRequest(t, st, http.MethodGet, "/")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望 200", rec.Code)
 	}
-	if body := bodyOf(t, resp); !strings.Contains(body, "访问 Token") {
+	// 用结构标记而不是文案：文案会随产品改动，而这条用例想验的是
+	// 「回的是登录页而不是主界面」。
+	if body := rec.Body.String(); !strings.Contains(body, `id="login-form"`) {
 		t.Errorf("未返回登录页：%s", truncate(body, 120))
 	}
 }
 
-// 绑定 0.0.0.0 后，接口类请求未登录应返回 401 + E_UNAUTHORIZED。
-func TestAPIRequiresAuthWhenBoundPublicly(t *testing.T) {
+// 局域网来的接口请求未登录应返回 401。
+func TestAPIRequiresAuthForRemoteClients(t *testing.T) {
 	st := newTestStack(t, func(c *config.Config) {
 		c.Server.Bind = "0.0.0.0"
 		c.Server.Token = "secret-token"
 	})
 
-	conn, resp, err := st.dial(t)
-	if err == nil {
-		_ = conn.Close()
-		t.Fatal("未登录时不应建立 WS 连接")
+	rec := remoteRequest(t, st, http.MethodGet, "/ws")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("状态码 = %d，期望 401", rec.Code)
 	}
-	if resp == nil {
-		t.Fatalf("期望拿到 HTTP 响应，实际为 nil（err=%v）", err)
+}
+
+// 回环来源永远免鉴权，**即使面板绑在 0.0.0.0 上**。
+//
+// 这条曾经是反的：免鉴权要求 server.bind 正好是 127.0.0.1，于是把绑定改成
+// 0.0.0.0（为了局域网访问）之后，连本机窗口自己都被要求登录——桌面版的窗口
+// 就是一个普通浏览器，走的是回环，用户看到的是「改完设置重启一次，就再也
+// 进不去了」。
+//
+// 回环来源只可能由本机发出：TCP 握手完不成源地址伪造。绑定 0.0.0.0 只是把
+// 面板暴露给局域网，不改变这一点。
+func TestLoopbackStaysExemptWhenBoundPublicly(t *testing.T) {
+	st := newTestStack(t, func(c *config.Config) {
+		c.Server.Bind = "0.0.0.0"
+		c.Server.Token = "secret-token"
+	})
+
+	rec := requestFrom(t, st, http.MethodGet, "/", "127.0.0.1:51234")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望 200", rec.Code)
 	}
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("状态码 = %d，期望 401", resp.StatusCode)
+	if body := rec.Body.String(); strings.Contains(body, `id="login-form"`) {
+		t.Error("回环来源被要求登录了")
 	}
+}
+
+// 免鉴权的判定只看来源地址。
+func TestAuthDecisionBySourceIP(t *testing.T) {
+	cases := []struct {
+		name   string
+		remote string
+		exempt bool
+	}{
+		{"回环来源", "127.0.0.1:51234", true},
+		{"回环来源（IPv6）", "[::1]:51234", true},
+		{"局域网来源", "192.168.1.9:51324", false},
+		{"公网来源", "203.0.113.7:40000", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newTestStack(t, func(c *config.Config) {
+				c.Server.Bind = "0.0.0.0"
+				c.Server.Token = "secret-token"
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tc.remote
+			if got := st.srv.localExempt(req); got != tc.exempt {
+				t.Errorf("localExempt(%q) = %v，期望 %v", tc.remote, got, tc.exempt)
+			}
+		})
+	}
+}
+
+// remoteRequest 发一个「来自局域网」的请求，绕过 httptest 的回环来源。
+func remoteRequest(t *testing.T, st *testStack, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	return requestFrom(t, st, method, path, "192.168.1.9:51324")
+}
+
+// requestFrom 以指定的来源地址发一个请求。
+//
+// 走 httptest 的 handler 而不是真实连接：只有直接构造请求才能决定 RemoteAddr，
+// 而免鉴权的判定恰恰只看它。
+func requestFrom(t *testing.T, st *testStack, method, path, remote string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	req.RemoteAddr = remote
+	rec := httptest.NewRecorder()
+	st.ts.Config.Handler.ServeHTTP(rec, req)
+	return rec
 }
 
 func TestLoginRejectsWrongToken(t *testing.T) {
@@ -526,8 +597,13 @@ func TestLogoutRevokesSession(t *testing.T) {
 		t.Fatalf("登出状态码 = %d，期望 200", out.StatusCode)
 	}
 
-	if _, _, err := st.dial(t, session); err == nil {
-		t.Fatal("登出后旧会话不应再能建立 WS")
+	// 直接验鉴权判定而不是真的去建连接：httptest 的连接一律来自回环，而回环
+	// 免鉴权，走真实连接测不出「会话被吊销」这件事。
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.RemoteAddr = "192.168.1.9:51324"
+	req.AddCookie(session)
+	if st.srv.authorized(req) {
+		t.Fatal("登出后旧会话不应再通过鉴权")
 	}
 }
 
@@ -838,29 +914,6 @@ func TestWSConnectionsAreIsolated(t *testing.T) {
 // ---------------------------------------------------------------------------
 // 单元测试：鉴权辅助函数
 // ---------------------------------------------------------------------------
-
-func TestMatchSecret(t *testing.T) {
-	cases := []struct {
-		name string
-		got  string
-		want string
-		ok   bool
-	}{
-		{"相等", "abc123", "abc123", true},
-		{"不等", "abc123", "abc124", false},
-		{"长度不同", "abc", "abc123", false},
-		{"双方为空", "", "", false},
-		{"请求为空", "", "abc", false},
-		{"配置为空", "abc", "", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := matchSecret(tc.got, tc.want); got != tc.ok {
-				t.Errorf("matchSecret(%q, %q) = %v，期望 %v", tc.got, tc.want, got, tc.ok)
-			}
-		})
-	}
-}
 
 func TestIsLoopbackIP(t *testing.T) {
 	cases := map[string]bool{

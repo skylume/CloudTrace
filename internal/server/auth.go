@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"net"
 	"net/http"
@@ -82,6 +81,17 @@ func (a *authStore) revoke(token string) {
 	a.mu.Unlock()
 }
 
+// revokeAll 作废全部会话。
+//
+// 改访问密码时用：密码换了，之前用旧密码换来的通行证就不该继续有效。
+func (a *authStore) revokeAll() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := len(a.tokens)
+	a.tokens = make(map[string]time.Time)
+	return n
+}
+
 // count 返回当前会话数（诊断用）。
 func (a *authStore) count() int {
 	a.mu.Lock()
@@ -96,14 +106,6 @@ func (a *authStore) gcLocked() {
 			delete(a.tokens, token)
 		}
 	}
-}
-
-// matchSecret 以恒定时间比较两个令牌，避免时序侧信道泄露。
-func matchSecret(got, want string) bool {
-	if got == "" || want == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 // setSessionCookie 写入会话 Cookie。
@@ -167,11 +169,15 @@ func isLoopbackIP(host string) bool {
 
 // localExempt 报告该请求是否享受「本机免鉴权」。
 //
-// 仅当面板只绑定回环地址时生效；一旦绑定 0.0.0.0，局域网访问一律鉴权。
+// 只看**来源地址**，不看绑定地址。曾经这里还要求 `server.bind` 正好是
+// 127.0.0.1，于是把绑定改成 0.0.0.0（为了局域网访问）之后，连本机窗口自己
+// 都被要求登录——而桌面版的窗口就是一个普通浏览器，走的是回环。用户看到的是
+// 「改完设置重启一次，就再也进不去了」。
+//
+// 绑定 0.0.0.0 只是把面板暴露给局域网，并不改变「来自回环的请求只能由本机
+// 发出」这件事：TCP 握手完不成源地址伪造，所以回环来源始终可信。局域网来的
+// 请求照旧一律鉴权（下面 authorized 的第二个分支）。
 func (s *server) localExempt(r *http.Request) bool {
-	if s.cfg.Get().Server.Bind != "127.0.0.1" {
-		return false
-	}
 	return isLoopbackIP(clientIP(r))
 }
 

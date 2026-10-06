@@ -169,10 +169,13 @@ func TestLatestRequiresAuthWhenBoundPublicly(t *testing.T) {
 		c.Server.Token = "test-token"
 	})
 
+	// 必须伪造来源地址：httptest 的请求都来自回环，而回环是免鉴权的
+	// （见 TestLoopbackStaysExemptWhenBoundPublicly）。不伪造的话这条用例
+	// 测的是「本机」，而它想测的是「局域网来的请求」。
 	for _, path := range []string{latestRoute, latestJSONRoute, exportFieldsRoute} {
-		resp := get(t, st.ts.URL+path)
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("%s 状态码 = %d，期望 401", path, resp.StatusCode)
+		rec := remoteRequest(t, st, http.MethodGet, path)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s 状态码 = %d，期望 401", path, rec.Code)
 		}
 	}
 }
