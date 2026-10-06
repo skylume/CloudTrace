@@ -148,6 +148,23 @@ func runUI(app *launch.App, httpServer *http.Server) error {
 		},
 	})
 
+	// 重启：拉起新进程，然后走与「托盘退出」同一条路。
+	//
+	// 用 native.Quit 而不是 os.Exit：前者会跑 OnShutdown 里的清理（关 HTTP
+	// 服务、释放日志文件），而重启恰恰是最不该丢数据的时候——用户刚改完配置。
+	app.Services.Restart = func() error {
+		if err := launch.RestartSelf(); err != nil {
+			return err
+		}
+		quitting.Store(true)
+		// 延迟一点再退：回执要先发出去，前端才知道「命令收到了」。
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			native.Quit()
+		}()
+		return nil
+	}
+
 	window := native.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "CloudTrace",
 		Width:     state.Width,
@@ -249,6 +266,19 @@ func setupTray(
 	}
 	menu.AddSeparator()
 	tray.SetMenu(menu)
+
+	// 左键点图标直接显示窗口。
+	//
+	// Wails 在 Windows 上给托盘左键的默认处理器只打一条调试日志，什么都不做；
+	// 而 defaultClickHandler 那条「切换窗口」的路径要求托盘用 AttachWindow 绑过
+	// 窗口，这里没有绑。结果是：左键点了毫无反应，用户只能去右键菜单里找
+	// 「显示主窗口」——这是托盘应用里最反直觉的一件事。
+	//
+	// 右键仍然开菜单（Wails 的默认行为），两者各司其职。
+	tray.OnClick(func() {
+		window.Show()
+		window.Focus()
+	})
 
 	// 托盘提示跟随任务状态——这就是「托盘通知」的落地：后台跑着的时候把鼠标
 	// 移到图标上就能看到进度，不必把窗口翻出来。
