@@ -597,13 +597,17 @@ func TestWSReceivesStateBroadcast(t *testing.T) {
 	}
 
 	// 收尾后是 done 快照与 scan/done 事件，后者带上结果条数。
+	//
+	// topic 由阶段名拼出来（`scan` + `/done`），所以这里问 task 要，不写字符串：
+	// 拼法改了用例会跟着红，而写死的字符串只会静默失配。
+	doneTopic := task.DoneTopic(model.PhaseScan)
 	release()
 	msgs = readStream(t, conn, 5*time.Second, "done 快照与 scan/done", func(ms []message) bool {
-		return stateIs(t, ms, model.StatusDone) && hasEvent(ms, eventScanDone)
+		return stateIs(t, ms, model.StatusDone) && hasEvent(ms, doneTopic)
 	})
 
 	var outcome task.Outcome
-	decode(t, mustEvent(t, msgs, eventScanDone), &outcome)
+	decode(t, mustEvent(t, msgs, doneTopic), &outcome)
 	if outcome.Count != 7 {
 		t.Errorf("outcome.Count = %d，期望 7", outcome.Count)
 	}
@@ -650,12 +654,13 @@ func TestWSReceivesScanAbort(t *testing.T) {
 	send(t, conn, `{"type":"scan/stop"}`)
 
 	// 中止后是 scan/abort 与 aborted 快照，两者到达顺序同样不保证。
+	abortTopic := task.AbortTopic(model.PhaseScan)
 	msgs := readStream(t, conn, 3*time.Second, "scan/abort 与 aborted 快照", func(ms []message) bool {
-		return hasEvent(ms, eventScanAbort) && stateIs(t, ms, model.StatusAborted)
+		return hasEvent(ms, abortTopic) && stateIs(t, ms, model.StatusAborted)
 	})
 
 	var outcome task.Outcome
-	decode(t, mustEvent(t, msgs, eventScanAbort), &outcome)
+	decode(t, mustEvent(t, msgs, abortTopic), &outcome)
 	if outcome.Count != 37 {
 		t.Errorf("中止时保留的结果数 = %d，期望 37", outcome.Count)
 	}
@@ -668,8 +673,9 @@ func TestWSReceivesScanAbort(t *testing.T) {
 	}
 
 	// 中止不得走完成分支：前端会把它当成功结果存档。
-	if hasEvent(msgs, eventScanDone) {
-		t.Errorf("中止后不应出现 %q 事件", eventScanDone)
+	doneTopic := task.DoneTopic(model.PhaseScan)
+	if hasEvent(msgs, doneTopic) {
+		t.Errorf("中止后不应出现 %q 事件", doneTopic)
 	}
 }
 

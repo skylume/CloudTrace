@@ -24,15 +24,18 @@ import (
 //
 // 事件名与事件总线上的 topic 是同一套字符串，不做映射：多一层映射就多
 // 一处会改漏的地方。
+//
+// 这里只列**事件**。任务的完成与中止不走独立事件：`state` 快照里的 `status`
+// 已经把 idle / running / done / aborted / failed 五种情形说全了，再发一个
+// `scan/done` 只会多一条需要同步的真相。曾经定义过 `scan/done` 与 `scan/abort`
+// 两个常量，从未被发送过。
 const (
 	cmdScanStart  = "scan/start"
 	cmdScanStop   = "scan/stop"
 	cmdSpeedStart = "speed/start"
 	cmdSpeedStop  = "speed/stop"
 
-	eventProgress  = "progress"
-	eventScanDone  = "scan/done"
-	eventScanAbort = "scan/abort"
+	eventProgress = "progress"
 )
 
 // phases 是需要向前端转发终止事件的阶段。
@@ -471,7 +474,11 @@ type speedSourcePayload struct {
 	Mode string `json:"mode"`
 }
 
-// handleSpeedStop 中止当前测速，语义与停止扫描一致。
+// handleSpeedStop 中止当前测速。
+//
+// 与 handleScanStop 是同一件事：扫描与测速共用一个任务编排器，同一时刻只有
+// 一个任务在跑，所以「停扫描」与「停测速」都只是让它停。保留两个命令名是为了
+// 让外部调用方按自己的语义发——请求里不必先判断当前跑的是哪种任务。
 func (s *server) handleSpeedStop(_ *wsConn, _ json.RawMessage) error {
 	s.svc.Tasks.Abort()
 	return nil
