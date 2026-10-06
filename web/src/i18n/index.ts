@@ -45,3 +45,19 @@ export function setLocale(next: Locale): void {
 export function currentLocale(): Locale {
   return locale.value
 }
+
+/**
+ * 把秒数渲染成「N 秒」或「M 分 N 秒」。
+ *
+ * 放在文案层而不是工具层：换算可以共用，但「几秒怎么说」是文案的事。
+ * 两个地方各拼一遍的话，改一次措辞就得记得改两处。
+ */
+export function durationText(total: number): string {
+  if (!Number.isFinite(total) || total <= 0) return '—'
+  if (total < 60) return translate('time.seconds', { value: Math.round(total) })
+  const minutes = Math.floor(total / 60)
+  return translate('time.minutesSeconds', {
+    minutes,
+    seconds: Math.round(total - minutes * 60),
+  })
+}

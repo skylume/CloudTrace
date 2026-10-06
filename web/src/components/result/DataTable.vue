@@ -12,10 +12,14 @@ import { computed, ref } from 'vue'
 
 import GroupRow from './GroupRow.vue'
 import RecordRow from './RecordRow.vue'
+import ContextMenu from '@/components/ui/ContextMenu.vue'
 import { t } from '@/i18n'
 import type { FieldDef, IPRecord } from '@/api/types'
 import { recordKey, useResultsStore, type SortKey } from '@/stores/results'
+import { useFieldsStore } from '@/stores/fields'
 import { renderSpec } from '@/utils/recordFormat'
+import { useColumnResize } from '@/utils/useColumnResize'
+import { useRowContextMenu } from '@/utils/useRowContextMenu'
 
 const props = defineProps<{
   columns: FieldDef[]
@@ -23,6 +27,14 @@ const props = defineProps<{
 }>()
 
 const results = useResultsStore()
+const fields = useFieldsStore()
+
+/**
+ * 拖动列宽与右键菜单各自独立，抽成组合式函数——表格本身已经要管排序、分组、
+ * 选中、展开四件事，再往里塞这两样，读的人得在四种关注点之间来回跳。
+ */
+const { start: startResize } = useColumnResize()
+const { menu, items: menuItems, open: openMenu, close: closeMenu } = useRowContextMenu(() => props.columns)
 
 const emit = defineEmits<{ (event: 'speed', records: IPRecord[]): void }>()
 
@@ -58,8 +70,6 @@ function isSorted(key: string): 'asc' | 'desc' | '' {
   if (SORTABLE[key] !== results.sortKey) return ''
   return results.sortDesc ? 'desc' : 'asc'
 }
-
-/** 有没有推荐可标。没有时连那一列都不渲染。 */
 
 function toggleRow(record: IPRecord): void {
   const key = recordKey(record)
@@ -100,11 +110,22 @@ function selectGroup(records: IPRecord[]): void {
   results.selected = new Set(records.map(recordKey))
   emit('speed', records)
 }
+
 </script>
 
 <template>
   <div class="wrap">
     <table class="table">
+      <!--
+        列宽走 colgroup：窄列给死值（冻结列的偏移靠它算），数据列用用户拖过的
+        宽度，没拖过的留空交给浏览器按内容撑开。
+      -->
+      <colgroup>
+        <col class="col-check" />
+        <col class="col-expand" />
+        <col class="col-rank" />
+        <col v-for="column in props.columns" :key="column.key" :style="{ width: fields.widthOf(column.key) }" />
+      </colgroup>
       <thead>
         <tr>
           <th class="narrow ct-sticky ct-sticky-1">
@@ -130,6 +151,17 @@ function selectGroup(records: IPRecord[]): void {
           >
             {{ column.label }}
             <span v-if="isSorted(column.key)" class="arrow">{{ isSorted(column.key) === 'desc' ? '↓' : '↑' }}</span>
+            <!--
+              拖拽手柄。表头本身是「点一下排序」，所以手柄要吃掉自己的点击，
+              否则松手时会顺手改一次排序。
+            -->
+            <span
+              class="resizer"
+              role="separator"
+              :aria-label="t('columns.resize')"
+              @click.stop
+              @mousedown.stop.prevent="startResize(column.key, $event)"
+            />
           </th>
         </tr>
       </thead>
@@ -153,6 +185,7 @@ function selectGroup(records: IPRecord[]): void {
                 :rank="ranks.get(recordKey(record)) ?? 0"
                 :expanded="expandedRows.includes(recordKey(record))"
                 @toggle="toggleRow(record)"
+                @menu="openMenu($event.record, $event.event)"
               />
             </template>
           </template>
@@ -166,10 +199,13 @@ function selectGroup(records: IPRecord[]): void {
             :rank="ranks.get(recordKey(record)) ?? 0"
             :expanded="expandedRows.includes(recordKey(record))"
             @toggle="toggleRow(record)"
+            @menu="openMenu($event.record, $event.event)"
           />
         </template>
       </tbody>
     </table>
+
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="closeMenu" />
   </div>
 </template>
 
@@ -181,10 +217,23 @@ function selectGroup(records: IPRecord[]): void {
   background: var(--color-surface);
 }
 
+/*
+ * 宽度按内容走，容器装不下就横向滚动。
+ *
+ * 不能写 width: 100%——那会让表格被压进容器宽度里，而单元格是 nowrap 的，
+ * 压不下时文字就会互相挤在一起；min-width 保证内容比容器窄时表格仍然铺满。
+ */
 .table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
+}
+
+.col-check,
+.col-expand,
+.col-rank {
+  width: var(--table-narrow-width);
 }
 
 th,
@@ -218,6 +267,35 @@ th.sortable:hover {
 
 .arrow {
   color: var(--color-primary-text);
+}
+
+/*
+ * 列宽拖拽手柄：贴着表头右边缘的一条窄带，平时透明，指上去才显形。
+ * 加宽到 9px 是为了好点中——1px 的线好看，但没人点得中。
+ */
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.resizer:hover::after {
+  background: var(--color-primary);
 }
 
 tbody tr:hover {

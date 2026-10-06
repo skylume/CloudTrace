@@ -40,7 +40,11 @@ const emit = defineEmits<{ (event: 'toggle'): void; (event: 'speed'): void }>()
       <b>{{ group.key }}</b>
       <span class="ct-subtle">{{ group.label }}</span>
     </td>
-    <td :colspan="Math.max(1, columnCount - 1)" class="summary tnum ct-muted">
+    <!--
+      摘要跨到「除按钮之外的最后一列」。合计必须正好等于 3 + 列数：
+      多一格会让整行比表格宽一列，浏览器会把表格撑开，后面的列跟着错位。
+    -->
+    <td :colspan="Math.max(1, columnCount - 2)" class="summary tnum ct-muted">
       {{ t('result.group.summary', {
         count: group.count,
         latency: `${formatLatency(group.minLatency)}ms`,

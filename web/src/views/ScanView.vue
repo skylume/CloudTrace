@@ -18,6 +18,7 @@ import { t } from '@/i18n'
 import { CUSTOM_PRESET, PARAM_WIRE_KEYS, matchPreset, presetValues } from '@/i18n/params'
 import PresetPicker from '@/components/scan/PresetPicker.vue'
 import { useActionStore } from '@/stores/actions'
+import { useRerunStore } from '@/stores/rerun'
 import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
@@ -37,6 +38,7 @@ const settings = useSettingsStore()
 const actions = useActionStore()
 const presets = usePresetsStore()
 const ui = useUIStore()
+const rerun = useRerunStore()
 const adaptive = useAdaptiveStore()
 const migrate = useMigrateStore()
 
@@ -213,10 +215,28 @@ function syncFromSettings(): boolean {
   return true
 }
 
+/**
+ * 套用历史页送来的参数快照。
+ *
+ * 只覆盖快照里带的项，来源文本单独填——官方网段与远端地址取自当前配置：
+ * 历史里记的是「当时扫了什么」，而不是「现在该怎么配来源」。
+ */
+function applyRerun(): void {
+  const request = rerun.take()
+  if (!request) return
+  params.value = { ...params.value, ...request.params }
+  if (request.customText !== '') source.value = { ...source.value, customText: request.customText }
+  presetId.value = request.preset !== '' ? request.preset : CUSTOM_PRESET
+}
+
 onMounted(() => {
   unregister = actions.register('startScan', start)
   syncFromSettings()
+  applyRerun()
 })
+
+// 页面可能一直挂着（比如从命令面板跳回来），因此不能只在挂载时取一次。
+watch(() => rerun.pending, applyRerun)
 
 // 档位列表到达后补一次初始化。已经定下参数时只补判定档位，不重填参数——用户
 // 可能已经在改了，把参数覆盖回去比显示「自定义」更糟。

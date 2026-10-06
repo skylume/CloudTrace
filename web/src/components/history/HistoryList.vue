@@ -22,7 +22,12 @@ const props = defineProps<{
   compareIds: string[]
 }>()
 
-const emit = defineEmits<{ (event: 'load', id: string): void; (event: 'toggleCompare', id: string): void }>()
+const emit = defineEmits<{
+  (event: 'load', id: string): void
+  (event: 'toggleCompare', id: string): void
+  /** 打开详情抽屉。 */
+  (event: 'open', id: string): void
+}>()
 
 const history = useHistoryStore()
 const ui = useUIStore()
@@ -69,12 +74,13 @@ const sorted = computed(() =>
 <template>
   <ul class="list">
     <li v-for="entry in sorted" :key="entry.id" class="item" :class="{ picked: compareIds.includes(entry.id) }">
-      <div class="head">
+      <!-- 点条目头部打开详情；星标与底部按钮各自吃掉自己的点击。 -->
+      <div class="head openable" @click="emit('open', entry.id)">
         <button
           type="button"
           class="ct-link star"
           :aria-label="t('history.starred')"
-          @click="history.saveTags(entry.id, { starred: !entry.starred })"
+          @click.stop="history.saveTags(entry.id, { starred: !entry.starred })"
         >
           {{ entry.starred ? '★' : '☆' }}
         </button>
@@ -103,6 +109,7 @@ const sorted = computed(() =>
         <button type="button" class="ct-btn" @click="emit('toggleCompare', entry.id)">
           {{ t('history.compare') }}
         </button>
+        <button type="button" class="ct-btn" @click="emit('open', entry.id)">{{ t('history.detail') }}</button>
         <button type="button" class="ct-btn" @click="emit('load', entry.id)">{{ t('history.load') }}</button>
         <button type="button" class="ct-btn" @click="removeEntry(entry.id)">{{ t('common.delete') }}</button>
       </div>
@@ -118,6 +125,10 @@ const sorted = computed(() =>
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.openable {
+  cursor: pointer;
 }
 
 .item {

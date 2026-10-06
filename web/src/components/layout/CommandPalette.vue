@@ -216,9 +216,7 @@ function groupLabel(id: string): string {
       </div>
 
       <div class="foot ct-subtle">
-        <span>↑↓ 选择</span>
-        <span>Enter 执行</span>
-        <span>Esc 关闭</span>
+        <span>{{ t('palette.keys') }}</span>
         <span class="spacer" />
         <span v-if="task.running">{{ t('task.running') }}</span>
       </div>

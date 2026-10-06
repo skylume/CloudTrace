@@ -36,6 +36,13 @@ export const useHistoryStore = defineStore('history', () => {
   const loaded = ref<LoadedHistory | null>(null)
   const diff = ref<HistoryDiff | null>(null)
   /**
+   * 抽屉里正在看的那一份。
+   *
+   * 与 `loaded` 分开：`loaded` 是「已经送进结果集的那一份」，而抽屉只是看一眼。
+   * 合成一个的话，点开抽屉就等于换了结果集——用户没这个预期。
+   */
+  const detail = ref<HistoryRecord | null>(null)
+  /**
    * 撤销窗口（毫秒）。
    *
    * 由后端在删除响应里给，前端不写死：两端对窗口长度的认知必须一致，否则会
@@ -65,6 +72,10 @@ export const useHistoryStore = defineStore('history', () => {
     diff.value = next
   }
 
+  function applyDetail(record: HistoryRecord | null): void {
+    detail.value = record
+  }
+
   function applyUndoWindow(ms: number): void {
     if (ms > 0) undoWindowMs.value = ms
   }
@@ -82,6 +93,30 @@ export const useHistoryStore = defineStore('history', () => {
    */
   function load(id: string, current: unknown): void {
     sendCommand('history/load', { id, current })
+  }
+
+  /**
+   * 读一份完整记录。
+   *
+   * 列表页刻意不调它：索引里已经放够了列表要显示的字段，读记录文件是「用户
+   * 明确要看某一份」之后的事。抽屉打开时才走这条路。
+   */
+  function get(id: string): void {
+    sendCommand('history/get', { id })
+  }
+
+  function closeDetail(): void {
+    detail.value = null
+  }
+
+  /**
+   * 清空全部历史。
+   *
+   * 没有撤销窗口：撤销是给「点错了一个」准备的，而清空是明确要求把整个列表
+   * 抹掉。确认由界面负责。
+   */
+  function clear(): void {
+    sendCommand('history/clear', {})
   }
 
   function remove(id: string): void {
@@ -112,14 +147,19 @@ export const useHistoryStore = defineStore('history', () => {
     filter,
     loaded,
     diff,
+    detail,
     undoWindowMs,
     starred,
     allTags,
     applyList,
     applyLoaded,
     applyDiff,
+    applyDetail,
     applyUndoWindow,
     refresh,
+    get,
+    clear,
+    closeDetail,
     load,
     remove,
     undo,

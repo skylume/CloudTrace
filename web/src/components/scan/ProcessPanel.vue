@@ -11,7 +11,7 @@
 import { computed } from 'vue'
 
 import Funnel, { type FunnelStep } from '@/components/ui/Funnel.vue'
-import { t } from '@/i18n'
+import { durationText, t } from '@/i18n'
 import { useResultsStore } from '@/stores/results'
 import { useTaskStore } from '@/stores/task'
 
@@ -30,10 +30,7 @@ const regions = computed(() => results.regionCounts.slice(0, 12))
 
 const eta = computed(() => {
   const seconds = task.state.eta_s
-  if (!seconds || seconds <= 0) return ''
-  if (seconds < 60) return `${Math.round(seconds)} 秒`
-  const minutes = Math.floor(seconds / 60)
-  return `${minutes} 分 ${Math.round(seconds - minutes * 60)} 秒`
+  return seconds > 0 ? durationText(seconds) : ''
 })
 
 function toggleRegion(code: string): void {

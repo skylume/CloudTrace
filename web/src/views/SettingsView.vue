@@ -13,6 +13,7 @@ import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
 import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settingsSchema'
 import { useGeoStore } from '@/stores/geo'
+import { useHistoryStore } from '@/stores/history'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 import { requestWebPermission } from '@/utils/notify'
@@ -21,6 +22,7 @@ import { useNarrow } from '@/utils/useMediaQuery'
 
 const settings = useSettingsStore()
 const geo = useGeoStore()
+const history = useHistoryStore()
 const ui = useUIStore()
 
 const narrow = useNarrow()
@@ -72,10 +74,13 @@ function isOpen(id: string): boolean {
 const healthChecked = computed(() => settings.health !== null)
 const healthIssues = computed(() => settings.health?.issues ?? [])
 const confirmingReset = ref(false)
+const confirmingClear = ref(false)
 
 onMounted(() => {
   sendCommand('settings/get')
   sendCommand('geo/status')
+  // 危险区那条「清空历史」要显示条数，所以这里顺带拉一次索引。
+  history.refresh()
 })
 
 const values = computed<Record<string, unknown>>(
@@ -118,6 +123,17 @@ function resetGroupOf(id: string): void {
 function resetAll(): void {
   sendCommand('settings/reset', { keys: [] })
   confirmingReset.value = false
+}
+
+/**
+ * 清空历史。
+ *
+ * 这个操作没有撤销窗口（后端刻意不给：撤销是给「点错了一个」准备的），所以
+ * 确认按钮上带条数——「清空 37 条」比「确认」更能让人停下来看一眼。
+ */
+function clearHistory(): void {
+  history.clear()
+  confirmingClear.value = false
 }
 
 function runHealth(): void {
@@ -163,7 +179,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       </button>
     </div>
 
-    <nav v-if="!narrow" class="groups" aria-label="设置分组">
+    <nav v-if="!narrow" class="groups" :aria-label="t('settings.groups')">
       <button
         v-for="item in groupsWithFields"
         :key="item.id"
@@ -251,12 +267,28 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
           <h2 class="ct-card-title">{{ t('settings.dangerZone') }}</h2>
           <p class="ct-subtle">{{ t('settings.dangerHint') }}</p>
           <div class="danger-actions">
-            <button v-if="!confirmingReset" type="button" class="ct-btn" @click="confirmingReset = true">
-              {{ t('settings.resetAll') }}
-            </button>
-            <template v-else>
+            <template v-if="confirmingReset">
               <button type="button" class="ct-btn danger-btn" @click="resetAll">{{ t('common.confirm') }}</button>
               <button type="button" class="ct-btn" @click="confirmingReset = false">{{ t('common.cancel') }}</button>
+            </template>
+            <template v-else-if="confirmingClear">
+              <button type="button" class="ct-btn danger-btn" @click="clearHistory">
+                {{ t('settings.clearHistoryConfirm', { count: history.total }) }}
+              </button>
+              <button type="button" class="ct-btn" @click="confirmingClear = false">{{ t('common.cancel') }}</button>
+            </template>
+            <template v-else>
+              <button type="button" class="ct-btn" @click="confirmingReset = true">
+                {{ t('settings.resetAll') }}
+              </button>
+              <button
+                type="button"
+                class="ct-btn"
+                :disabled="history.total === 0"
+                @click="confirmingClear = true"
+              >
+                {{ t('settings.clearHistory') }}
+              </button>
             </template>
           </div>
         </section>

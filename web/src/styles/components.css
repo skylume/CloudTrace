@@ -234,6 +234,17 @@
   left: calc(var(--table-narrow-width) * 3);
 }
 
+/*
+ * 拖动列宽期间贴在 body 上的状态类。
+ *
+ * 指针会滑出表头甚至滑出表格，光标和文本选择都得由 body 兜住——只写在表头上
+ * 的话，指针一离开表头就恢复成普通箭头，用户会以为拖动断了。
+ */
+body.ct-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
 thead .ct-sticky {
   z-index: 3;
   background-color: var(--color-surface-sunken);

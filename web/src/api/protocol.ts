@@ -21,6 +21,7 @@ export const CMD = {
   historyUndo: 'history/undo',
   historyTag: 'history/tag',
   historyCompare: 'history/compare',
+  historyClear: 'history/clear',
 
   settingsGet: 'settings/get',
   settingsUpdate: 'settings/update',
@@ -70,6 +71,7 @@ export const EVT = {
   historyUndo: 'history/undo',
   historyTag: 'history/tag',
   historyCompare: 'history/compare',
+  historyClear: 'history/clear',
   historyChanged: 'history/changed',
 
   settings: 'settings',

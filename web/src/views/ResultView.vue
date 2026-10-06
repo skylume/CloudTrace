@@ -4,19 +4,19 @@
  *
  * 只做编排。表格、详情、统计都在子组件里——页面模板短，结构才会被逼着拆开。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
 import MobileActionBar from '@/components/result/MobileActionBar.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
+import ResultToolbar from '@/components/result/ResultToolbar.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pager from '@/components/ui/Pager.vue'
-import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
 import type { IPRecord } from '@/api/types'
-import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
+import { useFieldsStore } from '@/stores/fields'
 import { useExportStore } from '@/stores/export'
 import { useHistoryStore } from '@/stores/history'
 import { useResultsStore } from '@/stores/results'
@@ -98,11 +98,24 @@ const narrow = useNarrow()
 const view = ref<'result' | 'speed'>('result')
 const expanded = ref<string[]>([])
 
-onMounted(() => void fields.load())
+/**
+ * 切视图时换排序维度。
+ *
+ * 两个视图回答的是不同的问题：结果视图问「哪个延迟低」，测速视图问「哪个真的
+ * 快」。切到测速就按评分降序——没测过的节点没有评分，会按「无值恒排最后」沉到
+ * 后面，于是「哪些测过了、测出来怎么样」一眼就能看到，不必自己一页页翻。
+ */
+watch(view, (next) => {
+  if (next === 'speed') {
+    results.sortKey = 'score'
+    results.sortDesc = true
+    return
+  }
+  results.sortKey = 'latency'
+  results.sortDesc = false
+})
 
-const presetSegments = computed(() =>
-  COLUMN_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey as never) })),
-)
+onMounted(() => void fields.load())
 
 /** 统计卡：结果视图看延迟，测速视图看速度——同一批数据，两个关注点。 */
 const stats = computed(() => {
@@ -125,20 +138,6 @@ const stats = computed(() => {
 
 const showEmpty = computed(() => results.total === 0 && !task.running)
 const selectedCount = computed(() => results.selected.size)
-
-/**
- * 延迟上限的输入值。
- *
- * 存储侧用 `null` 表示「不限」，而输入框清空时给的是空串——两边直接绑会在
- * 「清空 = 变成 0」上出错，而 0 会滤掉所有节点。
- */
-const latencyLimit = computed({
-  get: () => (results.maxLatency === null ? '' : String(results.maxLatency)),
-  set: (value: string) => {
-    const parsed = Number.parseInt(value, 10)
-    results.maxLatency = Number.isFinite(parsed) && parsed > 0 ? parsed : null
-  },
-})
 
 /** 复制前几条：按当前排序取，与用户看到的顺序一致。 */
 async function copyTop(count: number): Promise<void> {
@@ -166,14 +165,16 @@ function onGroupSpeed(records: typeof results.all): void {
 }
 
 /**
- * 按范围发起测速。
+ * 工具栏的三种测速范围。
  *
- * 三个入口对应三种目标集。`scope` 不只是给后端看的标签：分地区 TopN 只在
- * `all` 时生效（地区测速是用户点名要测这个地区的全部节点，再截断就等于把
- * 用户要的东西砍掉），所以范围必须如实上报，不能一律报 `single`。
+ * 三个入口对应三种目标集。`scope` 不只是给后端看的标签：分地区 TopN 与提前
+ * 收敛都只在 `all` 时生效（地区测速是用户点名要测这个地区的全部节点，再截断
+ * 或提前收工就等于把用户要的东西砍掉），所以范围必须如实上报。
  */
-function speedByScope(scope: 'region' | 'all'): void {
-  startSpeed(scope, scope === 'region' ? results.visible : results.all)
+function onToolbarSpeed(scope: 'single' | 'region' | 'all'): void {
+  const targets =
+    scope === 'single' ? results.selectedRecords : scope === 'region' ? results.visible : results.all
+  startSpeed(scope, targets)
 }
 
 /**
@@ -187,10 +188,6 @@ function startSpeed(scope: 'single' | 'region' | 'all', targets: typeof results.
   if (targets.length === 0) return
   sendCommand('speed/start', buildSpeedParams(settings.values, { scope, targets }))
   view.value = 'speed'
-}
-
-function applyPreset(id: string): void {
-  fields.applyPreset(id as ColumnPresetId)
 }
 
 /**
@@ -272,71 +269,12 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         </div>
       </div>
 
-      <div class="toolbar">
-        <SegmentedControl
-          v-model="view"
-          :segments="[
-            { value: 'result', label: t('result.view.result') },
-            { value: 'speed', label: t('result.view.speed') },
-          ]"
-        />
-        <input
-          id="ct-result-search"
-          v-model="results.keyword"
-          class="ct-input search"
-          type="search"
-          :placeholder="t('common.search')"
-        />
-        <label class="filter">
-          <span class="ct-subtle">{{ t('result.filter.latency') }}</span>
-          <input
-            v-model="latencyLimit"
-            class="ct-input filter-input"
-            type="number"
-            min="0"
-            step="10"
-            inputmode="numeric"
-            :placeholder="t('result.filter.unlimited')"
-          />
-        </label>
-        <span class="spacer" />
-        <SegmentedControl :segments="presetSegments" :model-value="fields.presetId" @update:model-value="applyPreset" />
-        <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
-          <option value="none">{{ t('result.group.none') }}</option>
-          <option value="colo">{{ t('result.group.colo') }}</option>
-          <option value="region">{{ t('result.group.region') }}</option>
-          <option value="asn">{{ t('result.group.asn') }}</option>
-        </select>
-        <button type="button" class="ct-btn" @click="copyTop(3)">{{ t('result.copyTop') }}</button>
-        <button type="button" class="ct-btn" @click="copyTop(results.visible.length)">{{ t('result.copyAll') }}</button>
-        <button type="button" class="ct-btn" :disabled="exporter.pending" @click="exportResult">
-          {{ t('common.export') }}
-        </button>
-        <!--
-          三种测速范围并排给出，各自的可用条件写在按钮的禁用状态上：
-          没勾选就没法「测速选中」，没筛地区就没法「测速所选地区」。
-          合成一个下拉会把「这次到底要测哪些」藏起来，而那是发起前唯一要确认的事。
-
-          三个包在一个不换行的组里：工具栏本身会换行，拆散的话窄屏上会出现
-          「一个在上一行、两个在下一行」这种断法。
-        -->
-        <div class="speed-group">
-          <button type="button" class="ct-btn ct-btn--primary" :disabled="selectedCount === 0" @click="speedSelected">
-            {{ t('result.speedSelected', { count: selectedCount }) }}
-          </button>
-          <button
-            type="button"
-            class="ct-btn"
-            :disabled="results.regionFilter.length === 0 || results.visible.length === 0"
-            @click="speedByScope('region')"
-          >
-            {{ t('result.speedRegion') }}
-          </button>
-          <button type="button" class="ct-btn" :disabled="results.total === 0" @click="speedByScope('all')">
-            {{ t('result.speedAll') }}
-          </button>
-        </div>
-      </div>
+      <ResultToolbar
+        v-model:view="view"
+        @copy="copyTop"
+        @export="exportResult"
+        @speed="onToolbarSpeed"
+      />
 
       <RecordCardList v-if="narrow" :records="results.paged" />
       <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.paged" @speed="onGroupSpeed" />
@@ -417,41 +355,8 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
   color: var(--color-ok);
 }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.filter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--font-size-sm);
-}
-
-.filter-input {
-  width: 84px;
-}
-
-/* 三个测速入口要么都在这一行、要么整体挪到下一行，不拆散。 */
-.speed-group {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-2);
-}
-
 .spacer {
   flex: 1;
-}
-
-.toolbar select {
-  width: auto;
-}
-
-.search {
-  width: 180px;
 }
 
 .source-line {

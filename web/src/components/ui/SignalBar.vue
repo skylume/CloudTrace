@@ -7,6 +7,8 @@
  */
 import { computed } from 'vue'
 
+import { t } from '@/i18n'
+
 import { formatLatency, latencyTier, tierBars, tierColorVar } from '@/utils/latency'
 
 const props = withDefaults(
@@ -39,7 +41,7 @@ const dead = computed(() => text.value === '—')
       {{ text }}<template v-if="!dead">{{ unit }}</template>
     </span>
     <!-- 格数是给眼睛的，屏幕阅读器读数值就够。 -->
-    <span class="sr-only">{{ dead ? '不可达' : `${text} ${unit}` }}</span>
+    <span class="sr-only">{{ dead ? t('common.unreachable') : `${text} ${unit}` }}</span>
   </span>
 </template>
 

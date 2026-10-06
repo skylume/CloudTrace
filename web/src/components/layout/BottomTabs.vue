@@ -27,7 +27,7 @@ const ICONS: Record<string, string> = {
 </script>
 
 <template>
-  <nav class="tabs" aria-label="主导航">
+  <nav class="tabs" :aria-label="t('nav.main')">
     <button
       v-for="item in props.items"
       :key="item.id"

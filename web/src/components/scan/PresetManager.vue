@@ -44,7 +44,7 @@ function startRename(preset: { id: string; name: string; note?: string }): void 
 
 /** 存副本：名字先填一个「原名 + 副本」，用户想改再改。 */
 function startCopy(preset: { id: string; name: string; note?: string }): void {
-  form.value = { mode: 'copy', id: preset.id, name: preset.name + ' 副本', note: preset.note ?? '' }
+  form.value = { mode: 'copy', id: preset.id, name: `${preset.name} ${t('preset.copySuffix')}`, note: preset.note ?? '' }
   deletingID.value = ''
 }
 
