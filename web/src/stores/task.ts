@@ -19,23 +19,9 @@ function idleState(): TaskState {
     total: 0,
     elapsed_s: 0,
     eta_s: 0,
-    funnel: emptyFunnel(),
+    funnel: { generated: 0, latency_ok: 0, region_ok: 0, usable: 0 },
     preset: '',
     started_at: 0,
-  }
-}
-
-function emptyFunnel(): TaskState['funnel'] {
-  return {
-    funnel: { generated: 0, latency_ok: 0, region_ok: 0, usable: 0 },
-    region_dist: {},
-    asn_dist: {},
-    min_latency: 0,
-    avg_latency: 0,
-    best_speed: 0,
-    avg_speed: 0,
-    qualified: 0,
-    total: 0,
   }
 }
 
@@ -48,7 +34,7 @@ export const useTaskStore = defineStore('task', () => {
 
   const running = computed(() => state.value.status === 'running')
   const phase = computed(() => state.value.phase)
-  const funnel = computed<Funnel>(() => state.value.funnel.funnel)
+  const funnel = computed<Funnel>(() => state.value.funnel)
 
   const percent = computed(() => {
     const total = state.value.total

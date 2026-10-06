@@ -50,6 +50,11 @@
   --row-height: calc(var(--font-size-md) + 14px + var(--density-extra));
   --sidebar-width: 196px;
   --topbar-height: 48px;
+  /*
+   * 底部标签栏的总高度：48px 触摸目标 + 1px 上边框 + 安全区。
+   * 固定元素要贴在它上面时必须用这个值，写死一个数会在刘海屏上错位。
+   */
+  --bottom-tabs-height: calc(49px + env(safe-area-inset-bottom, 0px));
   --content-max: 1440px;
 
   /* ---- 动效：可关闭，见 base.css 里的 [data-animation='off'] ---- */
@@ -59,6 +64,7 @@
 
   /* ---- 层级 ---- */
   --z-sticky: 10;
+
   --z-dropdown: 100;
   --z-dialog: 200;
   --z-toast: 300;

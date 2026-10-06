@@ -73,7 +73,15 @@ export interface TaskState {
   total: number
   elapsed_s: number
   eta_s: number
-  funnel: Summary
+  /**
+   * 当前任务的实时漏斗。
+   *
+   * 是**扁平的 Funnel**，不是 `Summary`——后端 `model.TaskState.Funnel` 就是
+   * 这个形状。这里曾经写成 `Summary` 并让调用方读 `state.funnel.funnel`，
+   * 于是每一次服务端 state 事件之后 `task.funnel` 都是 undefined，读它的
+   * 组件直接抛错（扫描页的过程面板与结果页的漏斗条都中过）。
+   */
+  funnel: Funnel
   preset: string
   started_at: number
   error?: string

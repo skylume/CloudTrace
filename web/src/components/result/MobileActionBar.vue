@@ -65,11 +65,20 @@ const speedLabel = computed(() =>
 <style scoped>
 .bar {
   display: none;
-  position: sticky;
-  bottom: 0;
+  /*
+   * 固定在底部标签栏**之上**。
+   *
+   * 原来是 `position: sticky; bottom: 0`，而标签栏也是 sticky 且同层——两者
+   * 贴在同一个位置，后出现的标签栏把操作栏整块盖住，手机上根本点不到它。
+   * 而它是移动端唯一能「复制全部 / 测速 / 导出」的入口，被盖住等于这些动作
+   * 在手机上不存在。
+   */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--bottom-tabs-height);
   z-index: var(--z-sticky);
   gap: var(--space-1);
-  margin: 0 calc(-1 * var(--space-4));
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
