@@ -68,14 +68,23 @@ jobs:
             exit 1
           }
 
-      # 检查序列（格式、静态、构建、测试、覆盖率）放在脚本里，与本地跑的
-      # 是**同一份命令**。
+      # staticcheck 比 vet 查得深。装在这里而不是塞进 ci-check.ps1：脚本要能在
+      # 本机没装时跳过（见脚本里的说明），CI 上则必须真的跑到。
+      - name: 安装 staticcheck
+        shell: pwsh
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          "$(go env GOPATH)\bin" | Add-Content -Path $env:GITHUB_PATH
+
+      # 检查序列（格式、静态、构建、测试、覆盖率、前端 lint/类型/测试）放在
+      # 脚本里，与本地跑的是**同一份命令**。
       #
       # 不把命令直接写在这里，是因为「改了 workflow 却没法在本地验证」这件事
       # 已经让 CI 红过两次：一次是跨步骤依赖磁盘上的 coverage.out，一次是
       # PowerShell 把包路径整串当成一个模式传给 go。抽成脚本之后，
       # `pwsh -File scripts/ci-check.ps1 -SkipRace` 跑的就是 CI 会跑的东西。
-      - name: 检查（格式 / 静态 / 构建 / 测试 / 覆盖率）
+      - name: 检查（格式 / 静态 / 构建 / 测试 / 覆盖率 / 前端）
         shell: pwsh
         run: ./scripts/ci-check.ps1 -CoverageThreshold 70
 

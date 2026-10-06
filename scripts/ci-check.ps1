@@ -54,6 +54,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go vet 未通过' }
     Write-Host '    vet 通过'
 
+    # staticcheck 比 vet 查得深（无效代码、可疑比较、无用分支等）。
+    #
+    # 本地没装就跳过并说一声，CI 上必装（workflow 里 `go install`）——它是门禁
+    # 的一部分，不该因为「我这台机器上没有」就静默不跑。
+    Write-Host '==> staticcheck'
+    $staticcheck = Get-Command staticcheck -ErrorAction SilentlyContinue
+    if ($null -eq $staticcheck) {
+        Write-Host '    未安装 staticcheck，已跳过（本地可 go install honnef.co/go/tools/cmd/staticcheck@2025.1.1）'
+    }
+    else {
+        staticcheck @Packages
+        if ($LASTEXITCODE -ne 0) { throw 'staticcheck 未通过' }
+        Write-Host '    staticcheck 通过'
+    }
+
     Write-Host '==> go build（panel）'
     go build -tags panel @Packages
     if ($LASTEXITCODE -ne 0) { throw 'panel 构建失败' }
@@ -92,6 +107,36 @@ try {
             -Threshold $CoverageThreshold `
             -Package cloudtrace/internal/probe, cloudtrace/internal/source, cloudtrace/internal/scan, cloudtrace/internal/speed, cloudtrace/internal/history, cloudtrace/internal/score, cloudtrace/internal/geo
         if ($LASTEXITCODE -ne 0) { throw '覆盖率门禁未通过' }
+    }
+
+    # ---- 前端 ----
+    #
+    # 这几步以前只在本地跑，CI 里一步都没有：改了 store 或工具函数，CI 全绿也
+    # 可能带着坏掉的前端逻辑合并。前端产物是 go:embed 进二进制的，它坏掉就是
+    # 整个界面坏掉。
+    Write-Host '==> 前端检查'
+    Push-Location (Join-Path $root 'web')
+    try {
+        if (-not (Test-Path 'node_modules')) {
+            Write-Host '    web/node_modules 不存在，先 npm ci'
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'npm ci 失败' }
+        }
+
+        Write-Host '    lint'
+        npm run lint
+        if ($LASTEXITCODE -ne 0) { throw '前端 lint 未通过' }
+
+        Write-Host '    type-check'
+        npm run typecheck
+        if ($LASTEXITCODE -ne 0) { throw '前端类型检查未通过' }
+
+        Write-Host '    test'
+        npm test
+        if ($LASTEXITCODE -ne 0) { throw '前端测试未通过' }
+    }
+    finally {
+        Pop-Location
     }
 
     Write-Host ''
