@@ -34,7 +34,16 @@ func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages
 	var started atomic.Int64
 	var tripped atomic.Bool
 
-	goal := int64(r.params.TargetQualified)
+	// 提前收敛只对「完全测速」生效，与分地区 TopN 同一条规则。
+	//
+	// 它的本意是「别为了凑够十个合格节点把上千个目标全测一遍」。而用户勾选的
+	// 单点、点名的整个地区，都是他明确要测的集合——收够 N 个就停下等于把剩下的
+	// 悄悄丢掉，界面上不会留下任何「这些没测」的痕迹，用户只会看到一大片空白
+	// 然后以为测速坏了。0 表示不收敛。
+	goal := int64(0)
+	if r.params.Scope == model.SpeedScopeAll {
+		goal = int64(r.params.TargetQualified)
+	}
 	interval := time.Duration(r.params.IntervalMS) * time.Millisecond
 	duration := time.Duration(r.params.DownloadDurationS) * time.Second
 	// 0 表示不限；换算成字节交给下载层，到量即停。
@@ -110,7 +119,8 @@ func (r *Runner) measureOne(
 	}
 
 	pusher.add(rec)
-	if qualified.Add(1) >= goal {
+	// goal 为 0 表示本次不收敛（只测用户点名的那批，测完为止）。
+	if goal > 0 && qualified.Add(1) >= goal {
 		r.logger.Info("已收够合格结果，提前收敛", "qualified", qualified.Load(), "goal", goal)
 		return measured{rec: rec, ok: true}, true
 	}

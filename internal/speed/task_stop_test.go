@@ -28,7 +28,7 @@ func TestRunEarlyConvergenceStopsDispatching(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		targets = append(targets, target("1.1.1."+strconv.Itoa(i+1), 443))
 	}
-	params := baseParams(targets...)
+	params := convergeParams(targets...)
 	params.TargetQualified = 2
 
 	rep := newFakeReporter(context.Background())
@@ -79,7 +79,7 @@ func TestRunEarlyConvergenceCancelsInFlight(t *testing.T) {
 		target(convergeIP, 443), target("1.1.1.2", 443), target("1.1.1.3", 443),
 		target("1.1.1.4", 443), target("1.1.1.5", 443), target("1.1.1.6", 443),
 	}
-	params := baseParams(targets...)
+	params := convergeParams(targets...)
 	params.Concurrency = 4
 	params.TargetQualified = 1
 
@@ -101,7 +101,7 @@ func TestRunConvergesOnFirstQualifiedResult(t *testing.T) {
 	d := newDeps()
 	d.downloader.fn = func(context.Context, model.IPRecord) (float64, error) { return 10, nil }
 
-	params := baseParams(target("1.1.1.1", 443), target("1.1.1.2", 443), target("1.1.1.3", 443))
+	params := convergeParams(target("1.1.1.1", 443), target("1.1.1.2", 443), target("1.1.1.3", 443))
 	params.TargetQualified = 1
 
 	if _, err := d.run(t, params, newFakeReporter(context.Background())); err != nil {
@@ -117,7 +117,7 @@ func TestRunConvergenceIgnoresUnqualifiedResults(t *testing.T) {
 	d := newDeps()
 	d.downloader.fn = speedByIP(map[string]float64{"1.1.1.1": 0, "1.1.1.2": 0, "1.1.1.3": 5})
 
-	params := baseParams(target("1.1.1.1", 443), target("1.1.1.2", 443), target("1.1.1.3", 443))
+	params := convergeParams(target("1.1.1.1", 443), target("1.1.1.2", 443), target("1.1.1.3", 443))
 	params.TargetQualified = 1
 
 	rep := newFakeReporter(context.Background())
@@ -130,6 +130,44 @@ func TestRunConvergenceIgnoresUnqualifiedResults(t *testing.T) {
 	}
 	if got := d.downloader.count(); got != 3 {
 		t.Errorf("下载次数 = %d，期望 3（前两个不触发收敛）", got)
+	}
+}
+
+// convergeParams 造一组「完全测速」的参数。
+//
+// 提前收敛只在这个范围下生效，所以收敛相关的用例都得用它。
+func convergeParams(targets ...model.IPRecord) model.SpeedParams {
+	params := baseParams(targets...)
+	params.Scope = model.SpeedScopeAll
+	return params
+}
+
+// 用户点名要测的集合不收敛。
+//
+// 勾选的单点、点名的整个地区都是用户明确要测的集合：收够 N 个就停下等于把
+// 剩下的悄悄丢掉，而界面上不会留下任何「这些没测」的痕迹——用户只会看到
+// 一大片空白，然后以为测速坏了。
+func TestRunNoConvergenceOutsideFullScope(t *testing.T) {
+	for _, scope := range []string{model.SpeedScopeSingle, model.SpeedScopeRegion} {
+		t.Run(scope, func(t *testing.T) {
+			d := newDeps()
+			d.downloader.fn = func(context.Context, model.IPRecord) (float64, error) { return 10, nil }
+
+			targets := make([]model.IPRecord, 0, 8)
+			for i := 0; i < 8; i++ {
+				targets = append(targets, target("1.1.1."+strconv.Itoa(i+1), 443))
+			}
+			params := baseParams(targets...)
+			params.Scope = scope
+			params.TargetQualified = 2
+
+			if _, err := d.run(t, params, newFakeReporter(context.Background())); err != nil {
+				t.Fatalf("测速失败：%v", err)
+			}
+			if got := d.downloader.count(); got != 8 {
+				t.Errorf("下载次数 = %d，期望 8（这个范围不该提前收敛）", got)
+			}
+		})
 	}
 }
 
