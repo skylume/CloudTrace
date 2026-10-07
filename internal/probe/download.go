@@ -184,6 +184,9 @@ func measure(
 	nextBoundary := start.Add(slice)
 
 	var total, settled int64
+	// cancelErr 记下「因为取消而提前收尾」。带回去而不是吞掉：调用方据此
+	// 知道这个速率来自一段被截断的窗口，而不是一次完整的测量。
+	var cancelErr error
 	settledAt := start
 
 	// settle 把「上次结算之后新读到的字节」按实际耗时折算成瞬时速率。
@@ -224,6 +227,13 @@ func measure(
 			settle(at)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				if meter.count() > 0 {
+					// 已经测到东西了，速率照给，但**错误也一起给**。
+					//
+					// 只给速率、错误置 nil 会让上层以为这是一次完整测量：窗口
+					// 被截断等于换了把尺子（TCP 慢启动还没走完），拿它当「这个
+					// 节点有多快」是错的。给错误则由上层决定怎么用——现在它按
+					// 「中止」处理，不当作合格结果。
+					cancelErr = ctxErr
 					break
 				}
 				return 0, ctxErr
@@ -247,5 +257,5 @@ func measure(
 			break
 		}
 	}
-	return meter.valueMBps(), nil
+	return meter.valueMBps(), cancelErr
 }

@@ -110,6 +110,13 @@ func (r *Runner) measureOne(
 		return measured{rec: rec}, false
 	}
 
+	// 走到这里说明下载层认为这是一次完整的测量。
+	//
+	// 被取消的那条路不会走到这儿：下载层会把 context 的错误一起带回来
+	// （见 probe.Download），于是它落进上面 `err != nil` 的分支——记录保留、
+	// 但不标合格、也不计入收敛。这与「中止保留已产出」不冲突：那条原则对
+	// **延迟**成立（一个样本就是一次有效测量），而**速率**是从一段窗口里算
+	// 出来的，窗口被截断等于换了把尺子。
 	breaker.Success()
 	rec.SpeedMBps = mbps
 	rec.Score = score.Score(mbps, rec.LatencyAvg, rec.Jitter, r.weights())

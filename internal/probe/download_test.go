@@ -227,19 +227,23 @@ func TestMeasureStopsAtDeadline(t *testing.T) {
 	}
 }
 
+// 中途被取消时，已经读到的数据要结算出来——半截速率比 0 有用。
+//
+// 但它**必须连错误一起返回**。只给速率、错误置 nil 会让上层以为这是一次完整
+// 测量：窗口被截断等于换了把尺子（TCP 慢启动还没走完），算出来的值系统性偏低，
+// 拿它当「这个节点有多快」是错的。给错误则由上层决定怎么用——测速层按「中止」
+// 处理，保留记录但不标合格。
 func TestMeasureKeepsPartialResultWhenCancelled(t *testing.T) {
-	// 中途被取消时，已经读到的数据要结算出来并返回：半截结果好过零，
-	// 零会被上层当成「没测过」。
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	reader := &pacedReader{remaining: 4 * 1024, chunk: 1024}
 	speed, err := measure(ctx, reader, time.Second, 0, steppingClock(11*time.Millisecond))
-	if err != nil {
-		t.Fatalf("已有样本时不应返回错误：%v", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("取消时应当把错误一起返回，实际 err=%v", err)
 	}
 	if speed <= 0 {
-		t.Fatalf("speed = %v，期望为正", speed)
+		t.Fatalf("speed = %v，期望为正（半截数据仍要结算）", speed)
 	}
 }
 

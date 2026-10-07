@@ -35,6 +35,17 @@ type poolResult struct {
 	RemoteFailed []string // 拉取失败的远程源
 }
 
+// remoteHost 是远程源里的一条域名记录。
+//
+// 元信息（colo / loc）跟着条目走：域名解析成多个地址时，每个地址都继承它，
+// 否则远程源里标好的地区就白写了。
+type remoteHost struct {
+	host string
+	port int
+	colo string
+	loc  string
+}
+
 // buildPool 生成候选池：官方段 + 自定义来源 + 远程源 → 合并 → 去重 → 采样。
 //
 // 顺序是有讲究的：网段要先合并去重再采样，否则同一个网段既出现在官方段
@@ -50,6 +61,7 @@ func buildPool(ctx context.Context, opts poolOptions, remote RemoteFunc, resolve
 	// 域名按「条目自带的端口」分组：同一段来源文本里可能出现
 	// example.com:8443 与 example.com，两者的候选不是一回事。
 	hostsByPort := make(map[int][]string)
+	var remoteHosts []remoteHost
 
 	if opts.Params.UsesOfficial() {
 		cidrs = append(cidrs, assets.OfficialRanges(opts.Params.IPVersion)...)
@@ -109,10 +121,65 @@ func buildPool(ctx context.Context, opts poolOptions, remote RemoteFunc, resolve
 		}
 		out.RemoteFailed = failed
 		for _, rec := range records {
-			cand := makeCandidate(rec.IP, rec.Port, opts)
-			cand.Colo = rec.Colo
-			cand.Loc = rec.Loc
-			explicit = append(explicit, cand)
+			// 远程源里也可能写域名（`edge.example.com:443#JP`），而解析层是
+			// 支持它的（parseNodeLine 对主机名返回 KindHost）。
+			//
+			// 此前这里一律当 IP 用，域名随后在 matchesIPVersion 里因为
+			// netip.ParseAddr 失败被**静默丢掉**——用户只看到候选莫名变少，
+			// 界面上没有任何提示。自定义来源那条路一直是解析的，两条路径
+			// 行为不一致。
+			if addr, addrErr := netip.ParseAddr(strings.TrimSpace(rec.IP)); addrErr == nil && addr.IsValid() {
+				cand := makeCandidate(rec.IP, rec.Port, opts)
+				cand.Colo = rec.Colo
+				cand.Loc = rec.Loc
+				explicit = append(explicit, cand)
+				continue
+			}
+			remoteHosts = append(remoteHosts, remoteHost{
+				host: strings.TrimSpace(rec.IP),
+				port: rec.Port,
+				colo: rec.Colo,
+				loc:  rec.Loc,
+			})
+		}
+	}
+
+	// 远程源里的域名逐个解析。
+	//
+	// 一个域名一次调用，而不是按端口合并成一批：解析出来的地址要继承该条目
+	// 自带的 colo / loc，合并之后就分不清哪个地址来自哪条记录了。域名条数
+	// 本来就不多（用户手写的来源清单），多几次调用换「元信息不串」值得。
+	if len(remoteHosts) > 0 {
+		// 排序保证同一份输入每次得到同一批候选：map 与切片的遍历顺序都不可靠，
+		// 而采样结果要可复现。
+		sort.Slice(remoteHosts, func(i, j int) bool {
+			if remoteHosts[i].port != remoteHosts[j].port {
+				return remoteHosts[i].port < remoteHosts[j].port
+			}
+			return remoteHosts[i].host < remoteHosts[j].host
+		})
+
+		seen := make(map[string]bool, len(remoteHosts))
+		for _, item := range remoteHosts {
+			key := item.host + ":" + strconv.Itoa(item.port) + "|" + item.colo + "|" + item.loc
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			ips, failed, err := source.ResolveHosts(ctx, resolver, []string{item.host})
+			if err != nil {
+				return out, err
+			}
+			// 解析不出来的记进 DroppedHosts，与自定义来源那条路一致
+			// （它最终进日志的 hosts_failed 计数，界面上暂时没有对应展示）。
+			out.DroppedHosts = append(out.DroppedHosts, failed...)
+			for _, ip := range ips {
+				cand := makeCandidate(ip, item.port, opts)
+				cand.Colo = item.colo
+				cand.Loc = item.loc
+				explicit = append(explicit, cand)
+			}
 		}
 	}
 	out.Explicit = len(explicit)

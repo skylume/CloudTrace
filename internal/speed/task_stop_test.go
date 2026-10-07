@@ -367,3 +367,58 @@ func TestRunPanicInDownloadDoesNotCrash(t *testing.T) {
 		t.Errorf("下载次数 = %d，期望其余目标照常执行", got)
 	}
 }
+
+// 被截断的下载不算合格结果，哪怕它带回来的速率远超合格线。
+//
+// 下载层在取消时会带着部分速率返回，同时把 context 的错误一起带回来
+// （见 probe.Download）。那条速率来自一段被截断的窗口——TCP 慢启动还没走完，
+// 系统性偏低，拿它当「这个节点有多快」是错的。
+//
+// 这条用例用「不低的速率 + ctx 错误」这个组合来钉住行为：只看 err != nil 的
+// 实现会正确丢弃，而「只要拿到速率就当成功」的实现会把它当合格结果收下。
+func TestRunTruncatedDownloadIsNotQualified(t *testing.T) {
+	d := newDeps()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+
+	d.downloader.fn = func(ctx context.Context, _ model.IPRecord) (float64, error) {
+		// 模拟「跑到一半被取消」：速率已经测出来了一部分，但这次测量不完整。
+		once.Do(cancel)
+		return 30, ctx.Err()
+	}
+
+	params := baseParams(target("1.1.1.1", 443))
+	rep := newFakeReporter(ctx)
+
+	count, err := d.run(t, params, rep)
+	if err == nil {
+		t.Fatal("中止应当以错误结束，交给编排层判定为 Aborted")
+	}
+	if count != 0 {
+		t.Errorf("被截断的下载不该算合格结果，实际 count=%d", count)
+	}
+	if got := len(rep.partials()); got != 0 {
+		t.Errorf("被截断的结果不该被推送，实际 %d 条", got)
+	}
+}
+
+// 反过来：一次正常结束的下载（err == nil）照旧算合格。
+//
+// 与上一条成对——只有两条一起才说明「丢弃」针对的是「被截断」，
+// 而不是把所有结果都丢了。
+func TestRunCompleteDownloadIsQualified(t *testing.T) {
+	d := newDeps()
+	d.downloader.fn = func(context.Context, model.IPRecord) (float64, error) { return 30, nil }
+
+	params := baseParams(target("1.1.1.1", 443))
+	rep := newFakeReporter(context.Background())
+
+	count, err := d.run(t, params, rep)
+	if err != nil {
+		t.Fatalf("测速失败：%v", err)
+	}
+	if count != 1 {
+		t.Errorf("正常结束的下载应当算合格，实际 count=%d", count)
+	}
+}

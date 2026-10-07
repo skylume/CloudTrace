@@ -445,3 +445,78 @@ func diffKeys(got, want []string) string {
 	}
 	return b.String()
 }
+
+// 远程源里写的域名要解析，不能静默丢掉。
+//
+// 解析层本来就支持域名（parseNodeLine 对主机名返回 KindHost），但候选池此前
+// 一律把它当 IP 用，随后在 IP 版本过滤里因为 netip.ParseAddr 失败被丢掉——
+// 用户只看到候选莫名变少，界面上没有任何提示。自定义来源那条路一直是解析的。
+func TestBuildPoolRemoteHostnamesAreResolved(t *testing.T) {
+	params := baseParams()
+	params.SourceMode = "custom"
+	params.CustomSource = ""
+
+	remote := func(context.Context, []string) ([]model.IPRecord, []string, error) {
+		return []model.IPRecord{
+			// 域名带地区标注，解析出来的地址要继承它。
+			{IP: "edge.example.com", Port: 8443, Colo: "NRT", Loc: "JP"},
+			// 解析不出来的那个要进「跳过的域名」，让用户看得见。
+			{IP: "gone.example.com", Port: 443},
+		}, nil, nil
+	}
+	resolver := &fakeResolver{answers: map[string][]string{
+		"edge.example.com": {"9.9.9.9", "9.9.9.10"},
+	}}
+
+	got, err := buildPool(context.Background(), poolOptions{
+		Params:     params,
+		Host:       "edge.example.com",
+		SampleMax:  100,
+		RemoteURLs: []string{"https://a.example.com"},
+	}, remote, resolver)
+	if err != nil {
+		t.Fatalf("buildPool 返回错误：%v", err)
+	}
+
+	want := []string{"9.9.9.9:8443", "9.9.9.10:8443"}
+	if diff := diffKeys(candidateKeys(got.Candidates), want); diff != "" {
+		t.Errorf("候选集合不符：%s", diff)
+	}
+	for _, c := range got.Candidates {
+		if c.Colo != "NRT" || c.Loc != "JP" {
+			t.Errorf("解析出的地址没继承地区：ip=%s colo=%q loc=%q", c.IP, c.Colo, c.Loc)
+		}
+	}
+	if len(got.DroppedHosts) != 1 || got.DroppedHosts[0] != "gone.example.com" {
+		t.Errorf("跳过清单 = %v，期望记下解析不出来的那个域名", got.DroppedHosts)
+	}
+}
+
+// 同一个域名在同一端口下重复出现时只解析一次，且不会产生重复候选。
+func TestBuildPoolRemoteHostnamesAreDeduped(t *testing.T) {
+	params := baseParams()
+	params.SourceMode = "custom"
+	params.CustomSource = ""
+
+	remote := func(context.Context, []string) ([]model.IPRecord, []string, error) {
+		return []model.IPRecord{
+			{IP: "edge.example.com", Port: 443, Loc: "JP"},
+			{IP: "edge.example.com", Port: 443, Loc: "JP"},
+		}, nil, nil
+	}
+	resolver := &fakeResolver{answers: map[string][]string{"edge.example.com": {"9.9.9.9"}}}
+
+	got, err := buildPool(context.Background(), poolOptions{
+		Params: params, Host: "edge.example.com", SampleMax: 100,
+		RemoteURLs: []string{"https://a.example.com"},
+	}, remote, resolver)
+	if err != nil {
+		t.Fatalf("buildPool 返回错误：%v", err)
+	}
+	if len(resolver.queried) != 1 {
+		t.Errorf("解析次数 = %d，期望 1（重复条目只查一次）", len(resolver.queried))
+	}
+	if len(got.Candidates) != 1 {
+		t.Errorf("候选数 = %d，期望 1（去重后）", len(got.Candidates))
+	}
+}
