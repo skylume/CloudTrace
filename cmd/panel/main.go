@@ -52,7 +52,7 @@ func run() error {
 	// **必须在 Prepare 之前**：那个函数会生成访问 Token 并把配置写回磁盘。
 	// 第二个实例在退出前重写一遍配置，正在运行的那份内存里的 Token 就与磁盘
 	// 对不上了——控制台打印新的、登录校验用旧的，用户怎么输都进不去。
-	lock, first, lockErr := platform.AcquireLock(platform.SingleInstanceName)
+	lock, first, lockErr := launch.AcquireSingleInstance()
 	if lockErr != nil {
 		// 拿不到锁不算致命：宁可多开一个实例，也不要因为一个辅助能力让程序起不来。
 		fmt.Fprintln(os.Stderr, "警告：单实例检查失败，继续启动："+lockErr.Error())

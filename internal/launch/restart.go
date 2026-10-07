@@ -57,11 +57,49 @@ func workingDir() string {
 	return dir
 }
 
-// restartBindWait 是重启后等待旧进程释放端口的时长。
+// 重启后等待旧进程让出资源的上限。
 //
-// 5 秒远大于实际需要（旧进程退出是毫秒级的），留宽一点是为了覆盖磁盘慢、
-// 杀进程被系统延迟这类情况。
-const restartBindWait = 5 * time.Second
+// 取 15 秒而不是「够用就好」：旧进程走的是**优雅关闭**，里面有一个 5 秒的
+// HTTP Shutdown 超时（等正在跑的请求收尾）。实测一次重启里旧进程从收到请求到
+// 真正退出约 5.7 秒——用 5 秒做上限就是擦边，一旦旧进程关得慢一点，新进程会
+// 等到超时、把自己当成「第二个实例」然后退出，用户看到的还是「点了重启程序
+// 就没了」。
+//
+// 代价只是「旧进程真的卡死时，新进程要多等十几秒才走兜底路径」，
+// 而那条路径本来就不是正常情况。
+const (
+	restartBindWait = 15 * time.Second
+	restartLockWait = 15 * time.Second
+)
+
+// AcquireSingleInstance 取单实例锁。
+//
+// 被重启拉起时**必须等一会儿再放弃**：重启的做法是先拉新进程、旧进程再退出，
+// 那几十毫秒里锁还在旧进程手上。不等的话新进程会把自己当成「第二个实例」——
+// 打开旧面板然后退出，而旧进程随后也退了，结果是用户点了重启之后什么都不剩。
+//
+// 等锁而不是「重启时跳过检查」：跳过的话新旧两份会短暂同时持有配置与历史，
+// 而那正是单实例锁要防的事。
+func AcquireSingleInstance() (*platform.Lock, bool, error) {
+	if !Restarting() {
+		return platform.AcquireLock(platform.SingleInstanceName)
+	}
+
+	deadline := time.Now().Add(restartLockWait)
+	for {
+		lock, first, err := platform.AcquireLock(platform.SingleInstanceName)
+		if err != nil || first {
+			return lock, first, err
+		}
+		if time.Now().After(deadline) {
+			// 等超了还拿不到，说明确实还有另一个实例在跑。按「不是第一个」
+			// 返回，让调用方走「打开已有面板」那条路——总比硬起第二份去写
+			// 同一份配置安全。
+			return lock, false, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
 
 // Restarting 报告这一份是不是被重启拉起来的。
 func Restarting() bool {
