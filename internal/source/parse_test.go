@@ -241,10 +241,16 @@ type fakeResolver struct {
 	results map[string][]net.IPAddr
 	failed  map[string]bool
 	calls   []string
+	// err 非空时所有查询都返回它，用来模拟「查询过程中被取消」这类
+	// 与域名本身无关的失败。
+	err error
 }
 
 func (r *fakeResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
 	r.calls = append(r.calls, host)
+	if r.err != nil {
+		return nil, r.err
+	}
 	if r.failed[host] {
 		return nil, errors.New("解析失败")
 	}
@@ -297,5 +303,20 @@ func TestResolveHostsStopsWhenContextCancelled(t *testing.T) {
 func TestDefaultResolverIsUsable(t *testing.T) {
 	if DefaultResolver() == nil {
 		t.Error("DefaultResolver 不应为 nil")
+	}
+}
+
+// 解析被取消时返回错误，而不是把域名记进「解析失败」。
+//
+// 记成失败会让界面把它显示成「域名有问题」，而用户只是点了停止。
+func TestResolveHostsReportsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// 解析器原样回传 ctx 的错误，模拟「查询过程中被取消」。
+	resolver := &fakeResolver{err: context.Canceled}
+	_, _, err := ResolveHosts(ctx, resolver, []string{"edge.example.com"})
+	if err == nil {
+		t.Fatal("取消后应当返回错误，而不是把域名记成解析失败")
 	}
 }

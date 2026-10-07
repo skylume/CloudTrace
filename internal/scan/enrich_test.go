@@ -106,3 +106,32 @@ func TestRunSurvivesEnrichPanic(t *testing.T) {
 		t.Fatalf("panic 的节点应当被丢弃，实际 count=%d records=%d", count, len(got))
 	}
 }
+
+// 关掉明细采集那条路径同样要兜住补齐回调的 panic。
+//
+// 上面那条用例把 VerifyNodes 又改回了 true，只覆盖了明细采集那条路；而
+// collectWithoutTrace 此前没有兜底，panic 会冒到任务编排器，被当成「任务内部
+// 异常」——整轮结果全丢，而实际上只是某一条记录的归属地没补上。
+func TestRunWithoutTraceSurvivesEnrichPanic(t *testing.T) {
+	params := scanParams("1.1.1.1")
+	params.VerifyNodes = false
+
+	d := &deps{
+		prober: &fakeProber{fallback: 50},
+		enrich: func(*model.IPRecord) { panic("补齐炸了") },
+	}
+	runner := newRunnerForTest(t, params, d)
+
+	var got []model.IPRecord
+	runner.SetOnDone(func(res model.TaskResult) { got = res.Records })
+
+	count, err, _ := runScan(t, runner, context.Background())
+	if err != nil {
+		t.Fatalf("补齐回调 panic 不该让整轮扫描失败：%v", err)
+	}
+	// 记录照旧保留，只是没有归属地——关掉明细采集本来就拿不到地区，
+	// 因此这里不该像明细采集那条路一样把记录丢掉。
+	if count == 0 || len(got) == 0 {
+		t.Fatalf("记录不该因为补齐失败被丢掉，实际 count=%d records=%d", count, len(got))
+	}
+}

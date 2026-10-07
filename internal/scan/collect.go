@@ -68,7 +68,7 @@ func (r *Runner) collect(ctx context.Context, rep task.Reporter, st *task.Stages
 		return nil, nil
 	}
 	if !r.params.VerifyNodes {
-		return collectWithoutTrace(items, sink, r.enrich), nil
+		return r.collectWithoutTrace(items, sink), nil
 	}
 
 	st.Begin(len(items))
@@ -133,18 +133,34 @@ func (r *Runner) verifyItem(ctx context.Context, item probed) (out verified) {
 // 这里一次网络请求都不发。HTTPing 顺带拿到的 colo 是唯一的地区信息，
 // TCPing 模式下地区就是空的——这是关掉明细采集的必然代价，界面按
 // 「地区未解析」显示即可，不能因此把结果丢掉。
-func collectWithoutTrace(items []probed, sink *resultSink, enrich func(*model.IPRecord)) []model.IPRecord {
+func (r *Runner) collectWithoutTrace(items []probed, sink *resultSink) []model.IPRecord {
 	out := make([]model.IPRecord, 0, len(items))
 	for _, item := range items {
 		rec := recordOf(item)
 		fillRegion(&rec, item.cand, item.res, nil)
-		if enrich != nil {
-			enrich(&rec)
-		}
+		r.enrichOne(item.cand.IP, &rec)
 		sink.add(rec)
 		out = append(out, rec)
 	}
 	return out
+}
+
+// enrichOne 调一次归属地补齐，并兜住 panic。
+//
+// 兜底是必须的：这个回调由外部注入（见 server.geoEnrich），它抛出来会一路冒到
+// 任务编排器，被当成「任务内部异常」——整轮扫描的结果全丢，而实际上只是某一条
+// 记录的归属地没补上。明细采集那条路径（verifyItem）一直有这层兜底，这条没有，
+// 于是「关掉明细采集」这个开关顺带把整轮任务的健壮性也关掉了。
+func (r *Runner) enrichOne(ip string, rec *model.IPRecord) {
+	if r.enrich == nil {
+		return
+	}
+	defer func() {
+		if panicked := recover(); panicked != nil {
+			r.logger.Warn("补齐归属地异常", "ip", ip, "err", panicked)
+		}
+	}()
+	r.enrich(rec)
 }
 
 // enrichRecord 调用外部注入的归属地补齐；没有注入时什么都不做。

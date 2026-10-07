@@ -266,4 +266,3 @@ func findItem(t *testing.T, report Report, key string) Item {
 	t.Fatalf("报告里没有 %q 这一项", key)
 	return Item{}
 }
-

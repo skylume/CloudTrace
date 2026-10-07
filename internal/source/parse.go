@@ -301,7 +301,17 @@ func ResolveHosts(ctx context.Context, resolver Resolver, hosts []string) (ips [
 			return ips, failed, ctxErr
 		}
 		addrs, lookupErr := resolver.LookupIPAddr(ctx, host)
-		if lookupErr != nil || len(addrs) == 0 {
+		if lookupErr != nil {
+			// 取消不是「这个域名解析不了」：记成失败会让界面把它显示成
+			// 「域名有问题」，而用户只是点了停止。立刻返回，让调用方按
+			// 中止处理。
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ips, failed, ctxErr
+			}
+			failed = append(failed, host)
+			continue
+		}
+		if len(addrs) == 0 {
 			failed = append(failed, host)
 			continue
 		}
