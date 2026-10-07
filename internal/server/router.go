@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -144,13 +145,24 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// 限流挡在验密之前：密码比对是这里最贵的一步，被锁的来源不该还能
+		// 拿它当免费的哈希计算器用。
+		ip := clientIP(r)
+		if wait := s.auth.lockedFor(ip); wait > 0 {
+			writeError(w, http.StatusTooManyRequests, CodeUnauthorized,
+				fmt.Sprintf("密码错误次数过多，请 %d 秒后再试", int(wait.Seconds())+1))
+			return
+		}
+
 		cfg := s.cfg.Get()
 		// 存下来的可能是用户设的加盐哈希，也可能是升级前那版自动生成的明文
 		// Token——VerifyPassword 两种都认。
 		if !config.VerifyPassword(cfg.Server.Token, strings.TrimSpace(body.Token)) {
+			s.auth.recordFailure(ip)
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized, "访问密码不正确")
 			return
 		}
+		s.auth.resetFailures(ip)
 
 		token, expires, err := s.auth.issue()
 		if err != nil {

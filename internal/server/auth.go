@@ -13,15 +13,38 @@ import (
 // sessionCookieName 是会话 Cookie 名。
 const sessionCookieName = "session_id"
 
+// 登录失败限流参数。
+//
+// 凭据从「256 位随机 Token」换成「用户自己设的密码」之后，暴力破解的成本一下
+// 低了几个数量级——八位密码在局域网里跑字典是分钟级的事，而登录接口此前完全
+// 不限速。这里按来源地址计数：不做全局锁，因为一个人猜错不该把所有人挡在门外，
+// 而这里防的本来就是「从某一台机器上猛试」。
+const (
+	loginMaxFailures = 5
+	// loginFailureWindow 是失败计数的统计窗口：隔了很久再错一次不该累计。
+	loginFailureWindow = 10 * time.Minute
+	// loginLockout 是触发之后的锁定时长。
+	loginLockout = 5 * time.Minute
+)
+
+// loginAttempt 是某个来源地址的失败记录。
+type loginAttempt struct {
+	count   int
+	firstAt time.Time
+	// until 非零表示正在锁定，到点才允许再试。
+	until time.Time
+}
+
 // authStore 是内存会话表。
 //
 // 会话只存在于内存、不落盘：进程重启即全部失效，用户重新登录即可。
-// 会话令牌与「访问 Token」是两回事——后者用于登录，前者用于后续请求。
+// 会话令牌与「访问密码」是两回事——后者用于登录，前者用于后续请求。
 type authStore struct {
-	mu     sync.Mutex
-	ttl    time.Duration
-	tokens map[string]time.Time // 会话令牌 → 过期时间
-	now    func() time.Time
+	mu       sync.Mutex
+	ttl      time.Duration
+	tokens   map[string]time.Time // 会话令牌 → 过期时间
+	attempts map[string]loginAttempt
+	now      func() time.Time
 }
 
 func newAuthStore(ttl time.Duration) *authStore {
@@ -29,10 +52,55 @@ func newAuthStore(ttl time.Duration) *authStore {
 		ttl = 12 * time.Hour
 	}
 	return &authStore{
-		ttl:    ttl,
-		tokens: make(map[string]time.Time),
-		now:    time.Now,
+		ttl:      ttl,
+		tokens:   make(map[string]time.Time),
+		attempts: make(map[string]loginAttempt),
+		now:      time.Now,
 	}
+}
+
+// lockedFor 返回该来源还要被锁多久；0 表示现在可以尝试登录。
+func (a *authStore) lockedFor(ip string) time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	attempt, ok := a.attempts[ip]
+	if !ok || attempt.until.IsZero() {
+		return 0
+	}
+	remain := attempt.until.Sub(a.now())
+	if remain <= 0 {
+		// 锁定期已过，从头开始计数。
+		delete(a.attempts, ip)
+		return 0
+	}
+	return remain
+}
+
+// recordFailure 记一次登录失败。
+//
+// 计数超出窗口就重新起算：隔了十分钟才错一次的人不该被累积到锁定。
+func (a *authStore) recordFailure(ip string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	now := a.now()
+	attempt := a.attempts[ip]
+	if attempt.firstAt.IsZero() || now.Sub(attempt.firstAt) > loginFailureWindow {
+		attempt = loginAttempt{firstAt: now}
+	}
+	attempt.count++
+	if attempt.count >= loginMaxFailures {
+		attempt.until = now.Add(loginLockout)
+	}
+	a.attempts[ip] = attempt
+}
+
+// resetFailures 在登录成功后清掉该来源的失败记录。
+func (a *authStore) resetFailures(ip string) {
+	a.mu.Lock()
+	delete(a.attempts, ip)
+	a.mu.Unlock()
 }
 
 // issue 生成新的会话令牌（32 字节随机 hex）。
@@ -101,6 +169,16 @@ func (a *authStore) count() int {
 
 func (a *authStore) gcLocked() {
 	now := a.now()
+	for ip, attempt := range a.attempts {
+		// 锁定已过、且最后一次失败也在窗口之外，这条记录就没有意义了。
+		if !attempt.until.IsZero() && now.After(attempt.until) {
+			delete(a.attempts, ip)
+			continue
+		}
+		if attempt.until.IsZero() && now.Sub(attempt.firstAt) > loginFailureWindow {
+			delete(a.attempts, ip)
+		}
+	}
 	for token, expires := range a.tokens {
 		if now.After(expires) {
 			delete(a.tokens, token)
