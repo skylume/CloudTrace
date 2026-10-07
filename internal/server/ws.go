@@ -338,8 +338,9 @@ func (s *server) handleWS(w http.ResponseWriter, r *http.Request) {
 // 未出现在这里的命令一律由 readPump 回复 E_UNKNOWN。
 func (s *server) commands() map[string]commandHandler {
 	handlers := map[string]commandHandler{
-		// 给外部脚本的轻量存活探测。内置界面不用它：连接保活走的是
-		// WebSocket 协议级的 ping/pong 帧（见 readPump 里的 pongWait）。
+		// 轻量存活探测。内置界面每 30 秒发一次（见 web/src/api/ws.ts 的心跳），
+		// 外部脚本也可以用；WebSocket 协议级的 ping/pong 帧另有 readPump 里
+		// 那套读超时在管，两者不冲突。
 		"ping": func(c *wsConn, _ json.RawMessage) error {
 			c.sendEvent(eventPong, nil)
 			return nil

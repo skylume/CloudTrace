@@ -8,7 +8,7 @@
  *   - 重连成功后由上层重新拉一次全量状态。这里只负责把「连上了」这件事
  *     播出去，不替上层决定要拉什么。
  */
-import { EVT, type Envelope } from './protocol'
+import { CMD, EVT, type Envelope } from './protocol'
 
 export type ConnectionState = 'connecting' | 'open' | 'closed'
 
@@ -161,7 +161,7 @@ export class WSClient {
   private startHeartbeat(): void {
     this.stopHeartbeat()
     this.heartbeatTimer = setInterval(() => {
-      this.send('ping')
+      this.send(CMD.ping)
     }, HEARTBEAT_MS)
   }
 

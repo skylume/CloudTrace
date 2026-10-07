@@ -175,7 +175,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
     fields: [
       { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
       { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], primary: true },
-      { path: 'server.token', kind: 'text' },
       { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
       { path: 'server.open_browser', kind: 'bool', primary: true },
       { path: 'server.autostart', kind: 'bool', pending: true },
@@ -263,9 +262,8 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'export.default_format': { label: '默认导出格式', hint: 'CSV 带 BOM，Excel 打开不乱码' },
 
     'server.port': { label: '面板端口', hint: '改完需要重启才生效。旧版本用过 18543，当前统一为 17443' },
-    'server.bind': { label: '监听地址', hint: '仅本机时只有这台电脑能访问；局域网会让同网段的设备都能打开，此时务必设好访问 Token' },
-    'server.token': { label: '访问 Token', hint: '开放局域网访问时的口令。留空表示不校验，仅本机访问时可以这样' },
-    'server.session_ttl_min': { label: '会话有效期（分钟）', hint: '登录后多久需要重新输入 Token' },
+    'server.bind': { label: '监听地址', hint: '仅本机时只有这台电脑能访问；局域网会让同网段的设备都能打开，所以要先在下面的「服务面板」里设好访问密码' },
+    'server.session_ttl_min': { label: '会话有效期（分钟）', hint: '登录后多久需要重新输入密码' },
     'server.open_browser': { label: '启动后打开浏览器', hint: '双击运行时省去手动输地址。开发时可用 --no-browser 跳过' },
     'server.autostart': { label: '开机自启', hint: '仅桌面版有效' },
 
@@ -380,9 +378,8 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'export.default_format': { label: 'Default format', hint: 'CSV includes a BOM so Excel opens it correctly' },
 
     'server.port': { label: 'Panel port', hint: 'Requires a restart. Older builds used 18543; this one standardises on 17443' },
-    'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in — set an access token first' },
-    'server.token': { label: 'Access token', hint: 'The password for LAN access. Empty disables the check, which is fine for loopback only' },
-    'server.session_ttl_min': { label: 'Session lifetime (minutes)', hint: 'How long a sign-in lasts before the token is needed again' },
+    'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in, so set an access password in the service panel below first' },
+    'server.session_ttl_min': { label: 'Session lifetime (minutes)', hint: 'How long a sign-in lasts before the password is needed again' },
     'server.open_browser': { label: 'Open browser on start', hint: 'Saves typing the address when double-clicking. Use --no-browser during development' },
     'server.autostart': { label: 'Start on login', hint: 'Desktop build only' },
 
