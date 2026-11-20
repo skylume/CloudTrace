@@ -97,18 +97,3 @@ func VerifyPassword(stored, password string) bool {
 	}
 	return subtle.ConstantTimeCompare(want, got) == 1
 }
-
-// PasswordHint 返回配置里那个密码的形态，供界面显示。
-//
-// 界面不该把哈希原样摆出来（既没意义又容易被误当成密码本身），也不该假装
-// 知道密码是什么。它只需要回答「设过没有、是不是老格式」。
-func PasswordHint(stored string) string {
-	switch {
-	case stored == "":
-		return ""
-	case IsHashedPassword(stored):
-		return "hashed"
-	default:
-		return "legacy"
-	}
-}

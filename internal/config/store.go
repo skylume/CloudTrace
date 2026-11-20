@@ -82,9 +82,6 @@ func OpenStore(path, exeDir string) (*Store, error) {
 // Path 返回配置文件路径。
 func (s *Store) Path() string { return s.path }
 
-// ExeDir 返回可执行文件所在目录。
-func (s *Store) ExeDir() string { return s.exeDir }
-
 // Warnings 返回启动期的非致命问题（如配置文件损坏已回退）。
 func (s *Store) Warnings() []string {
 	s.mu.RLock()

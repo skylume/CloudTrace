@@ -55,8 +55,3 @@ func IdleState() TaskState {
 		Status: StatusIdle,
 	}
 }
-
-// IsRunning 报告任务是否正在执行。
-func (s TaskState) IsRunning() bool {
-	return s.Status == StatusRunning
-}

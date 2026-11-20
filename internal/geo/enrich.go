@@ -95,14 +95,6 @@ func (m *Manager) Enrich(rec *model.IPRecord) {
 	}
 }
 
-// CachedRegion 返回缓存里记着的归属地。
-func (m *Manager) CachedRegion(ip string) (loc, colo string, ok bool) {
-	if m.cache == nil {
-		return "", "", false
-	}
-	return m.cache.Get(ip)
-}
-
 // SaveCache 把归属地缓存落盘。
 func (m *Manager) SaveCache() error {
 	if m.cache == nil {

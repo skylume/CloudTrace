@@ -211,11 +211,3 @@ func tailLog(dataDir string, now time.Time, n int) ([]string, error) {
 	}
 	return all, nil
 }
-
-// SectionKeys 返回诊断项的顺序。
-//
-// 顺序有意义：DNS → TCP → trace → 出口，正是「一层套一层」的排查顺序。
-// 前端按这个顺序渲染，用户顺着往下看就知道最早断在哪一层。
-func SectionKeys() []string {
-	return []string{KeyDNS, KeyTCP, KeyTrace, KeyEgress}
-}

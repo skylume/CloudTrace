@@ -300,13 +300,6 @@ func (s *Services) Snapshot() model.TaskState {
 	return s.Tasks.Snapshot()
 }
 
-// Started 报告服务是否已启动。
-func (s *Services) Started() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.started
-}
-
 // Uptime 返回服务已运行时长；未启动时返回 0。
 func (s *Services) Uptime() time.Duration {
 	s.mu.RLock()

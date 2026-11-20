@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 
 	"cloudtrace/internal/model"
@@ -121,7 +119,7 @@ type UIConfig struct {
 type ServerConfig struct {
 	Port          int    `json:"port"`
 	Bind          string `json:"bind"`            // 127.0.0.1 | 0.0.0.0
-	Token         string `json:"token"`           // 访问 Token（首次启动自动生成）
+	Token         string `json:"token"`           // 访问密码（存哈希；留空表示不校验）
 	SessionTTLMin int    `json:"session_ttl_min"` // 会话 TTL（分钟）
 	OpenBrowser   bool   `json:"open_browser"`
 	Autostart     bool   `json:"autostart"`
@@ -298,21 +296,6 @@ func (c *Config) normalize() {
 	if c.Origins == nil {
 		c.Origins = model.ParamOrigins{}
 	}
-}
-
-// EnsureToken 在 Token 为空时生成一个 32 字节随机 hex 的访问令牌。
-//
-// 返回是否发生了生成。首次启动时调用。
-func (c *ServerConfig) EnsureToken() (bool, error) {
-	if c.Token != "" {
-		return false, nil
-	}
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return false, err
-	}
-	c.Token = hex.EncodeToString(buf)
-	return true, nil
 }
 
 // Clone 返回深拷贝，避免调用方意外共享切片与 map。
