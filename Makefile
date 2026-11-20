@@ -16,18 +16,29 @@ SHELL := pwsh
 VERSION ?= dev
 OUTDIR  ?= dist
 
-# 显式列出包路径，而不是 `./...`：web/node_modules 里有个 npm 包夹带了 Go 源码
-# （flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率。
+# ---- 共享清单 ------------------------------------------------------------
 #
-# 权威清单在 scripts/ci-check.ps1 里（CI 用的是那一份）；这里这份是给下面几个
-# 轻量目标用的，改动时两边要一起改。
-PACKAGES ?= ./assets/... ./cmd/... ./internal/...
+# PACKAGES / GOFMT_PATHS / COVERAGE_PACKAGES 只在 scripts/packages.mk 里定义
+# 一次：本文件 include 它，scripts/ci-check.ps1 解析同一份文件。以前两边各存
+# 一份、注释写着「改动时两边要一起改」，现在只改那一份。
+include ./scripts/packages.mk
+
+# 清单被改坏时立刻停下：空清单会让 go test/vet 退化成「只测当前目录」，
+# 那种失败比直接报错难查得多。
+ifeq ($(strip $(PACKAGES)),)
+$(error scripts/packages.mk 未提供 PACKAGES：包清单为空)
+endif
 
 .DEFAULT_GOAL := help
-.PHONY: help dev web build build-panel build-desktop build-win7 release ci test lint fmt clean
+.PHONY: help pkgs dev web build build-panel build-desktop build-win7 release ci test lint fmt fmt-check clean
 
 ci: ## 跑一遍 CI 的检查项（与 workflow 同一份命令）
 	pwsh -NoProfile -File scripts/ci-check.ps1
+
+pkgs: ## 打印当前的包清单（来自 scripts/packages.mk）
+	@Write-Host "PACKAGES=$(PACKAGES)"
+	@Write-Host "GOFMT_PATHS=$(GOFMT_PATHS)"
+	@Write-Host "COVERAGE_PACKAGES=$(COVERAGE_PACKAGES)"
 
 help: ## 显示所有可用目标
 	@Write-Host 'CloudTrace 构建目标：'
@@ -43,6 +54,7 @@ help: ## 显示所有可用目标
 	@Write-Host '  make lint           格式 + 静态检查'
 	@Write-Host '  make fmt            自动格式化'
 	@Write-Host '  make clean          清理构建产物'
+	@Write-Host '  make pkgs           打印当前包清单（scripts/packages.mk）'
 	@Write-Host ''
 	@Write-Host "可选变量：VERSION=$(VERSION)  OUTDIR=$(OUTDIR)"
 
@@ -75,11 +87,12 @@ lint: ## 格式 + 静态检查
 	@$(MAKE) --no-print-directory fmt-check
 	go vet $(PACKAGES)
 
+# 注意 $$：make 会把 $o 当成变量名展开，写成 $out 传给 PowerShell 的其实是 ut。
 fmt-check:
-	@$out = gofmt -l .; if ($out) { Write-Host $out; exit 1 } else { Write-Host 'gofmt 通过' }
+	@$$out = gofmt -l $(GOFMT_PATHS); if ($$out) { Write-Host $$out; exit 1 } else { Write-Host 'gofmt 通过' }
 
 fmt: ## 自动格式化
-	gofmt -w ./cmd ./internal ./web
+	gofmt -w $(GOFMT_PATHS)
 
 clean: ## 清理构建产物
 	@Remove-Item -Recurse -Force $(OUTDIR) -ErrorAction SilentlyContinue

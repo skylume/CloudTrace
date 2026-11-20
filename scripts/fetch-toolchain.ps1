@@ -12,7 +12,9 @@
       - 在本地只打印路径，由调用方自行设置。
 
 .PARAMETER Version
-    发布版本号（对应 tag v<Version>）。缺省 1.27.1-1，与设计锁定的 go1.27.1 对应。
+    发布版本号（对应 tag v<Version>）。缺省 1.27.1-1，与设计锁定的 go1.27.1 对应，
+    也与 .github/workflows/{ci,release}.yml 的 GO_VERSION（1.27.x）同一口径：
+    主构建走官方 Go 1.27.x，Win7 线走同版本的社区分支。改版本号时两处一起看。
 
 .PARAMETER Dest
     解包目标目录。缺省用 $env:RUNNER_TEMP（CI）或仓库同级 .toolchain（本地）。

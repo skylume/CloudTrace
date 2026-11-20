@@ -26,22 +26,43 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# 显式列出包路径，而不是 `./...`：web/node_modules 里有个 npm 包夹带了 Go 源码
-# （flatted），`./...` 会把它当成本模块的包一起编译、一起算覆盖率——它和这个
-# 项目毫无关系，哪天它编译不过就会连带把 CI 弄红。
+# 包清单只在 scripts/packages.mk 里定义一次：Makefile 用 include 取它，本脚本用
+# 下面这个解析函数取它。以前两边各存一份、靠人记得同时改，现在不会漂移了。
 #
-# **新增顶层目录时记得加进这里。**
-#
-# 注意这里是 PowerShell 数组，不是「一串用空格隔开的模式」。写成字符串再直接
-# 传给 go 是不行的：PowerShell 不按空格拆环境变量，go 会收到一个带空格的整体
-# 模式，结果是 `matched no packages`——而 go 在没有包可查时返回非零，整步就红了。
-$Packages = @('./assets/...', './cmd/...', './internal/...')
+# 取出来的是 PowerShell 数组，不是「一串用空格隔开的模式」：写成字符串再直接
+# 传给 go 是不行的，PowerShell 不按空格拆参数，go 会收到一个带空格的整体模式，
+# 结果是 `matched no packages`——而 go 在没有包可查时返回非零，整步就红了。
+function Read-PackageManifest {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) { throw "包清单不存在：$Path" }
+
+    $values = @{}
+    foreach ($line in Get-Content -Path $Path -Encoding UTF8) {
+        if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -notmatch '^\s*(?<name>[A-Z][A-Z0-9_]*)\s*:?=\s*(?<value>\S.*)$') {
+            throw "包清单这一行无法解析：$Path -> $line"
+        }
+        $values[$Matches['name']] = @($Matches['value'].Trim() -split '\s+')
+    }
+    return $values
+}
+
+$manifest = Read-PackageManifest (Join-Path $PSScriptRoot 'packages.mk')
+foreach ($required in @('PACKAGES', 'GOFMT_PATHS', 'COVERAGE_PACKAGES')) {
+    if (-not $manifest.ContainsKey($required) -or -not $manifest[$required]) {
+        throw "包清单缺少 $required：$(Join-Path $PSScriptRoot 'packages.mk')"
+    }
+}
+$Packages = @($manifest['PACKAGES'])
+$gofmtPaths = @($manifest['GOFMT_PATHS'])
+$coveragePackages = @($manifest['COVERAGE_PACKAGES'])
 
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
     Write-Host '==> gofmt'
-    $unformatted = gofmt -l ./cmd ./internal ./web
+    $unformatted = gofmt -l @gofmtPaths
     if ($unformatted) {
         Write-Host '以下文件未格式化：'
         $unformatted | ForEach-Object { Write-Host "    $_" }
@@ -105,7 +126,7 @@ try {
         & (Join-Path $PSScriptRoot 'check-coverage.ps1') `
             -CoverProfile $profile `
             -Threshold $CoverageThreshold `
-            -Package cloudtrace/internal/probe, cloudtrace/internal/source, cloudtrace/internal/scan, cloudtrace/internal/speed, cloudtrace/internal/history, cloudtrace/internal/score, cloudtrace/internal/geo
+            -Package $coveragePackages
         if ($LASTEXITCODE -ne 0) { throw '覆盖率门禁未通过' }
     }
 

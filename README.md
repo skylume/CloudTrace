@@ -298,6 +298,7 @@ CloudTrace/
 ├── web/                  # 前端（Vue 3 + Vite + TS）；产物 web/dist 由 go:embed 打进二进制
 ├── assets/               # 内置的官方网段数据
 ├── scripts/              # 构建与打包脚本（本地与 CI 共用同一套）
+│   └── packages.mk       # 包清单：Makefile 与 ci-check.ps1 共用的唯一来源
 ├── .github/workflows/    # CI 与发布流水线
 └── Makefile              # 构建入口（scripts/ 的薄封装）
 ```
