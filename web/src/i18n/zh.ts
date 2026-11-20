@@ -11,7 +11,6 @@ export const zh = {
 
   'nav.scan': '扫描',
   'nav.result': '结果',
-  'nav.speed': '测速',
   'nav.history': '历史',
   'nav.settings': '设置',
   'nav.command': '命令面板',

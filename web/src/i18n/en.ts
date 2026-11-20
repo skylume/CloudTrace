@@ -18,7 +18,6 @@ export const en: Record<keyof typeof zh, string> = {
 
   'nav.scan': 'Scan',
   'nav.result': 'Results',
-  'nav.speed': 'Speed',
   'nav.history': 'History',
   'nav.settings': 'Settings',
   'nav.command': 'Command palette',
