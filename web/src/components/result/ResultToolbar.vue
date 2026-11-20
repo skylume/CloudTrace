@@ -52,82 +52,99 @@ const latencyLimit = computed({
 
 <template>
   <div class="toolbar">
-    <SegmentedControl
-      v-model="view"
-      :segments="[
-        { value: 'result', label: t('result.view.result') },
-        { value: 'speed', label: t('result.view.speed') },
-      ]"
-    />
-    <input
-      id="ct-result-search"
-      v-model="results.keyword"
-      class="ct-input search"
-      type="search"
-      :placeholder="t('common.search')"
-    />
-    <label class="filter">
-      <span class="ct-subtle">{{ t('result.filter.latency') }}</span>
-      <input
-        v-model="latencyLimit"
-        class="ct-input filter-input"
-        type="number"
-        min="0"
-        step="10"
-        inputmode="numeric"
-        :placeholder="t('result.filter.unlimited')"
+    <!--
+      三组控件：看什么（视图与筛选）、怎么呈现（列与分组）、做什么（复制 / 导出 / 测速）。
+      分组之后宽屏上这一行才有主次；窄屏上也是整组换行，而不是十几个控件等权排开。
+    -->
+    <div class="group">
+      <SegmentedControl
+        v-model="view"
+        :segments="[
+          { value: 'result', label: t('result.view.result') },
+          { value: 'speed', label: t('result.view.speed') },
+        ]"
       />
-    </label>
-    <!--
-      「仅显示达标」只在测速视图下出现：结果视图里还没有速度，勾了只会得到一张空表。
-    -->
-    <label v-if="view === 'speed'" class="filter">
-      <input v-model="results.qualifiedOnly" type="checkbox" class="ct-check" />
-      <span>{{ t('result.filter.qualified') }}</span>
-    </label>
-    <span class="spacer" />
-    <SegmentedControl
-      :segments="presetSegments"
-      :model-value="fields.presetId"
-      @update:model-value="fields.applyPreset($event as ColumnPresetId)"
-    />
-    <ColumnSettings />
-    <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
-      <option value="none">{{ t('result.group.none') }}</option>
-      <option value="colo">{{ t('result.group.colo') }}</option>
-      <option value="region">{{ t('result.group.region') }}</option>
-      <option value="asn">{{ t('result.group.asn') }}</option>
-    </select>
-    <button type="button" class="ct-btn" @click="emit('copy', 3)">{{ t('result.copyTop') }}</button>
-    <button type="button" class="ct-btn" @click="emit('copy', results.visible.length)">
-      {{ t('result.copyAll') }}
-    </button>
-    <button type="button" class="ct-btn" :disabled="exporter.pending" @click="emit('export')">
-      {{ t('common.export') }}
-    </button>
-    <!--
-      三种测速范围并排给出，各自的可用条件写在按钮的禁用状态上：
-      没勾选就没法「测速选中」，没筛地区就没法「测速所选地区」。
-      合成一个下拉会把「这次到底要测哪些」藏起来，而那是发起前唯一要确认的事。
+      <input
+        id="ct-result-search"
+        v-model="results.keyword"
+        class="ct-input search"
+        type="search"
+        :placeholder="t('common.search')"
+      />
+      <label class="filter">
+        <span class="ct-subtle">{{ t('result.filter.latency') }}</span>
+        <input
+          v-model="latencyLimit"
+          class="ct-input filter-input"
+          type="number"
+          min="0"
+          step="10"
+          inputmode="numeric"
+          :placeholder="t('result.filter.unlimited')"
+        />
+      </label>
+      <!--
+        「仅显示达标」只在测速视图下出现：结果视图里还没有速度，勾了只会得到一张空表。
+      -->
+      <label v-if="view === 'speed'" class="filter">
+        <input v-model="results.qualifiedOnly" type="checkbox" class="ct-check" />
+        <span>{{ t('result.filter.qualified') }}</span>
+      </label>
+    </div>
 
-      三个包在一个不换行的组里：工具栏本身会换行，拆散的话窄屏上会出现
-      「一个在上一行、两个在下一行」这种断法。
-    -->
-    <div class="speed-group">
-      <button type="button" class="ct-btn ct-btn--primary" :disabled="selectedCount === 0" @click="emit('speed', 'single')">
-        {{ t('result.speedSelected', { count: selectedCount }) }}
+    <div class="group push">
+      <SegmentedControl
+        :segments="presetSegments"
+        :model-value="fields.presetId"
+        @update:model-value="fields.applyPreset($event as ColumnPresetId)"
+      />
+      <ColumnSettings />
+      <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
+        <option value="none">{{ t('result.group.none') }}</option>
+        <option value="colo">{{ t('result.group.colo') }}</option>
+        <option value="region">{{ t('result.group.region') }}</option>
+        <option value="asn">{{ t('result.group.asn') }}</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <button type="button" class="ct-btn" @click="emit('copy', 3)">{{ t('result.copyTop') }}</button>
+      <!-- 窄屏下这三个是重复入口：底部固定操作栏里已经有同样的动作。 -->
+      <button type="button" class="ct-btn dup" @click="emit('copy', results.visible.length)">
+        {{ t('result.copyAll') }}
       </button>
-      <button
-        type="button"
-        class="ct-btn"
-        :disabled="results.regionFilter.length === 0 || results.visible.length === 0"
-        @click="emit('speed', 'region')"
-      >
-        {{ t('result.speedRegion') }}
+      <button type="button" class="ct-btn dup" :disabled="exporter.pending" @click="emit('export')">
+        {{ t('common.export') }}
       </button>
-      <button type="button" class="ct-btn" :disabled="results.total === 0" @click="emit('speed', 'all')">
-        {{ t('result.speedAll') }}
-      </button>
+      <!--
+        三种测速范围并排给出，各自的可用条件写在按钮的禁用状态上：
+        没勾选就没法「测速选中」，没筛地区就没法「测速所选地区」。
+        合成一个下拉会把「这次到底要测哪些」藏起来，而那是发起前唯一要确认的事。
+
+        三个包在一个不换行的组里：工具栏本身会换行，拆散的话窄屏上会出现
+        「一个在上一行、两个在下一行」这种断法。
+      -->
+      <div class="speed-group">
+        <button
+          type="button"
+          class="ct-btn ct-btn--primary dup"
+          :disabled="selectedCount === 0"
+          @click="emit('speed', 'single')"
+        >
+          {{ t('result.speedSelected', { count: selectedCount }) }}
+        </button>
+        <button
+          type="button"
+          class="ct-btn"
+          :disabled="results.regionFilter.length === 0 || results.visible.length === 0"
+          @click="emit('speed', 'region')"
+        >
+          {{ t('result.speedRegion') }}
+        </button>
+        <button type="button" class="ct-btn" :disabled="results.total === 0" @click="emit('speed', 'all')">
+          {{ t('result.speedAll') }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -137,11 +154,36 @@ const latencyLimit = computed({
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  /* 组间比组内松一档：三个组各自成块，才不会看成一排等权的按钮。 */
+  gap: var(--space-2) var(--space-3);
 }
 
-.spacer {
-  flex: 1;
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* 「怎么呈现」贴右：宽屏上这一行因此有左右两半的层次。 */
+.push {
+  margin-left: auto;
+}
+
+/*
+ * 窄屏：底部固定操作栏已经给了「复制全部 / 导出 / 测速选中」，工具栏再摆一遍
+ * 只会把表格往下顶四五行的距离。这里只收掉完全重复的三个入口；底部栏没有的
+ * 「复制前三 / 测速所选地区 / 测速全部」全部保留，窄屏不丢能力。
+ */
+@media (max-width: 768px) {
+  .push {
+    margin-left: 0;
+  }
+
+  .dup {
+    display: none;
+  }
 }
 
 .search {

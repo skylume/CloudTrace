@@ -104,7 +104,8 @@ function toggleLang(): void {
       <span class="task-num tnum">
         {{ task.state.done }} / {{ task.state.total }}
         <template v-if="task.state.eta_s > 0">
-          · {{ t('task.remaining', { value: durationText(task.state.eta_s) }) }}
+          <!-- 包一层只为窄屏能整段收掉：ETA 是这一行里最可以不要的信息。 -->
+          <span class="eta"> · {{ t('task.remaining', { value: durationText(task.state.eta_s) }) }}</span>
         </template>
       </span>
     </div>
@@ -271,5 +272,35 @@ function toggleLang(): void {
 .text-button:hover {
   background: var(--color-surface-hover);
   color: var(--color-text);
+}
+
+/*
+ * 窄屏顶栏：一行里原本要塞「标题 + 阶段 + 进度条 + 完成数 + ETA + 库文件状态 +
+ * 主题 + 语言」，48px 高的一行根本放不下，结果整条顶栏横着溢出屏幕。
+ * 按信息密度从低到高依次收起：先让标题可省略，再收 ETA 与库文件文案，
+ * 只留「进度条 + 完成数」这两项真正需要盯的东西。
+ */
+@media (max-width: 768px) {
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hint,
+  .eta {
+    display: none;
+  }
+
+  .track {
+    width: 56px;
+  }
+}
+
+/* 手机竖屏（360-390px）再窄一档：阶段文字也让位给进度条本身。 */
+@media (max-width: 480px) {
+  .task-phase {
+    display: none;
+  }
 }
 </style>

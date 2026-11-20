@@ -190,6 +190,15 @@ function select(id: string): void {
 }
 
 .content {
+  /*
+   * 内容宽度上限：面板在 2560 宽的显示器上把表格拉满整屏时，相邻两列之间隔了
+   * 大半个屏幕，眼睛得横着来回扫。给一个阅读宽度上限、超出后居中留白——
+   * 比它窄的窗口依旧是铺满的，所以笔记本上不会有任何变化。
+   * 1440 这个值就是断点表里的「大屏桌面」档，两处口径保持一致。
+   */
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
   flex: 1;
   min-height: 0;
   padding: var(--space-5) var(--space-5) var(--space-7);
