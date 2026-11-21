@@ -41,6 +41,13 @@ export interface SettingField {
 
 export interface SettingGroup {
   id: string
+  /**
+   * 这一组实际覆盖的配置前缀，用于「恢复本组默认」。
+   *
+   * 界面上的分组按用途划，配置里的前缀按模块划，两者不必一一对应：数据源与
+   * 网络是一起调的，拆成两组只会让人来回切。不给这个字段时取 id 本身。
+   */
+  members?: string[]
   fields: SettingField[]
 }
 
@@ -57,7 +64,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
     fields: [
       { path: 'ui.theme', kind: 'enum', options: ['system', 'dark', 'light'], primary: true },
       { path: 'ui.lang', kind: 'enum', options: ['zh', 'en'] },
-      { path: 'ui.density', kind: 'enum', options: ['auto', 'simple', 'advanced'] },
       { path: 'ui.start_page', kind: 'enum', options: ['scan', 'result', 'history', 'settings'] },
       { path: 'ui.time_format', kind: 'enum', options: ['local', 'utc'] },
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
@@ -117,16 +123,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
     ],
   },
   {
-    id: 'source',
-    fields: [
-      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
-      { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
-      { path: 'source.retry', kind: 'int', min: 0, max: 10, primary: true },
-      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 },
-    ],
-  },
-  {
-    id: 'net',
+    id: 'network',
+    members: ['net', 'source'],
     fields: [
       { path: 'net.use_tls', kind: 'enum', options: ['auto', 'true', 'false'], primary: true },
       { path: 'net.ip_version', kind: 'enum', options: ['auto', 'v4', 'v6'] },
@@ -136,22 +134,22 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'net.custom_dns', kind: 'list' },
       { path: 'net.dns_fallback', kind: 'bool' },
       { path: 'net.user_agent', kind: 'text' },
+      { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
+      { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
+      { path: 'source.retry', kind: 'int', min: 0, max: 10, primary: true },
+      { path: 'source.retry_interval_ms', kind: 'int', min: 0, max: 10000 },
     ],
   },
   {
-    id: 'geo',
+    id: 'data',
+    members: ['geo', 'history', 'data'],
     fields: [
       { path: 'geo.asn_source', kind: 'enum', options: ['iptoasn', 'geolite2_mmdb', 'off'], primary: true },
-      { path: 'geo.asn_db_path', kind: 'path' },
       { path: 'geo.asn_auto_update', kind: 'bool', primary: true },
       { path: 'geo.asn_update_interval_days', kind: 'int', min: 0, max: 365, primary: true },
+      { path: 'geo.asn_db_path', kind: 'path' },
       { path: 'geo.geo_warn_enabled', kind: 'bool' },
       { path: 'geo.filter_asn', kind: 'list' },
-    ],
-  },
-  {
-    id: 'history',
-    fields: [
       { path: 'history.keep_count', kind: 'int', min: 1, max: 500, primary: true },
       { path: 'history.keep_mode', kind: 'enum', options: ['count', 'days'] },
       { path: 'history.keep_days', kind: 'int', min: 1, max: 3650 },
@@ -163,26 +161,12 @@ export const SETTING_GROUPS: SettingGroup[] = [
   },
   {
     id: 'export',
+    members: ['export', 'notify'],
     fields: [
       { path: 'export.default_format', kind: 'enum', options: ['csv', 'json', 'txt'], primary: true },
       { path: 'export.csv_bom', kind: 'bool' },
       { path: 'export.default_fields', kind: 'enum', options: ['all', 'slim', 'ip_port'] },
       { path: 'export.filename_template', kind: 'text' },
-    ],
-  },
-  {
-    id: 'server',
-    fields: [
-      { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
-      { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], primary: true },
-      { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
-      { path: 'server.open_browser', kind: 'bool', primary: true },
-      { path: 'server.autostart', kind: 'bool', pending: true },
-    ],
-  },
-  {
-    id: 'notify',
-    fields: [
       { path: 'notify.on_done', kind: 'bool', primary: true },
       { path: 'notify.on_fail', kind: 'bool', primary: true },
       { path: 'notify.web', kind: 'bool' },
@@ -191,10 +175,15 @@ export const SETTING_GROUPS: SettingGroup[] = [
     ],
   },
   {
-    id: 'advanced',
+    id: 'service',
+    members: ['server', 'advanced'],
     fields: [
+      { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
+      { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], primary: true },
+      { path: 'server.open_browser', kind: 'bool', primary: true },
+      { path: 'server.autostart', kind: 'bool' },
+      { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
       { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], primary: true },
-      // 日志目前只写控制台，没有落盘的文件可清理。
       { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
       { path: 'advanced.check_update', kind: 'bool' },
     ],
@@ -274,7 +263,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.sound': { label: '提示音', hint: '默认关闭，避免在公共场合突然出声' },
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
-    'ui.density': { label: '参数密度', hint: '简单模式下参数默认折叠；一旦展开过高级模式就会永久记住' },
     'ui.start_page': {
       label: '启动页面',
       hint: '下次打开直接落在哪一页。关掉「记住界面状态」时每次都从这里开始',
@@ -390,7 +378,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.sound': { label: 'Sound', hint: 'Off by default so it does not blurt out in public' },
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
-    'ui.density': { label: 'Parameter density', hint: 'Simple hides parameters by default; expanding once is remembered' },
     'ui.start_page': {
       label: 'Start page',
       hint: 'Which page to open on next launch. Every launch starts here when "Remember UI state" is off',
@@ -449,27 +436,19 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     ui: '界面',
     scan: '扫描',
     speed: '测速',
-    source: '数据源',
-    geo: 'ASN 与地理',
-    history: '历史与数据',
-    export: '导出',
-    server: '服务面板',
-    notify: '通知',
-    net: '网络',
-    advanced: '高级与调试',
+    network: '网络与来源',
+    data: '数据与归属地',
+    export: '导出与提醒',
+    service: '服务与高级',
   },
   en: {
     ui: 'Interface',
     scan: 'Scan',
     speed: 'Speed test',
-    source: 'Sources',
-    geo: 'ASN & geo',
-    history: 'History & data',
-    export: 'Export',
-    server: 'Service panel',
-    notify: 'Notifications',
-    net: 'Network',
-    advanced: 'Advanced',
+    network: 'Network & sources',
+    data: 'Data & geo',
+    export: 'Export & alerts',
+    service: 'Service & advanced',
   },
 }
 

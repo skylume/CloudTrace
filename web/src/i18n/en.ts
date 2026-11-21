@@ -247,6 +247,7 @@ export const en: Record<keyof typeof zh, string> = {
   'preset.custom': 'Custom',
   'preset.deviated': 'Deviated from "{name}"',
   'preset.summary': 'Parameters',
+  'preset.persistHint': 'Values changed here are saved as defaults and persist between launches.',
   'preset.all': 'All parameters',
   'preset.collapse': 'Hide parameters',
   'preset.saveAs': 'Save as my preset',

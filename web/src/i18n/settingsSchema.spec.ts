@@ -55,6 +55,25 @@ describe('设置项声明', () => {
     }
   })
 
+  /**
+   * 分组成员必须覆盖组内每个字段的配置前缀。
+   *
+   * 「恢复本组默认」按 members 发重置键，漏掉一个前缀，那一项就会在用户点了
+   * 恢复之后依然保持旧值——界面上看不出原因，只会觉得这个按钮时灵时不灵。
+   */
+  it('分组成员覆盖组内所有字段前缀', () => {
+    for (const group of SETTING_GROUPS) {
+      const members = group.members ?? [group.id]
+      for (const field of group.fields) {
+        const prefix = field.path.split('.')[0] ?? ''
+        expect(
+          members.includes(prefix),
+          `${group.id} 组的 ${field.path} 不在 members 里，恢复本组会漏掉它`,
+        ).toBe(true)
+      }
+    }
+  })
+
   it('分组 id 也不重复', () => {
     const ids = SETTING_GROUPS.map((group) => group.id)
     expect(new Set(ids).size).toBe(ids.length)

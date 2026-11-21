@@ -158,6 +158,12 @@ function warningText(item: ParamWarning): string {
       />
     </div>
 
+    <!--
+      这里改的是配置本身，不是「本次运行」的临时值。说明必须写在面板上方：用户
+      默认会以为只影响这一次，等下次打开发现值还在，只会怀疑程序记错了。
+    -->
+    <p class="persist-hint">{{ t('preset.persistHint') }}</p>
+
     <PresetParams v-model:params="params" :disabled="disabled" />
 
     <PresetManager v-model:params="params" />
@@ -179,6 +185,12 @@ function warningText(item: ParamWarning): string {
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.persist-hint {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
 }
 
 .save-row {

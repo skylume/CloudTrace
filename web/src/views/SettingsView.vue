@@ -12,7 +12,7 @@ import { sendCommand } from '@/api/client'
 import SettingsField from '@/components/settings/SettingsField.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
-import { SETTING_GROUPS, buildPatch, groupText, readPath } from '@/i18n/settingsSchema'
+import { SETTING_GROUPS, buildPatch, groupText, readPath, type SettingGroup } from '@/i18n/settingsSchema'
 import DiagPanel from '@/components/settings/DiagPanel.vue'
 import ServerPanel from '@/components/settings/ServerPanel.vue'
 import { useGeoStore } from '@/stores/geo'
@@ -120,8 +120,14 @@ function resetField(path: string): void {
   sendCommand(CMD.settingsReset, { keys: [path] })
 }
 
-function resetGroupOf(id: string): void {
-  sendCommand(CMD.settingsReset, { keys: [id] })
+/**
+ * 恢复本组默认。
+ *
+ * 按 members 而不是按 id 发：界面上「网络与来源」是一组，配置里却是 net 与
+ * source 两个前缀，只发 id 会漏掉另一半，用户看到「恢复了但还有几项没变」。
+ */
+function resetGroupOf(group: SettingGroup): void {
+  sendCommand(CMD.settingsReset, { keys: group.members ?? [group.id] })
 }
 
 /** 恢复推荐设置影响面大，先确认再发。 */
@@ -232,7 +238,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
             </button>
             <span v-else>{{ groupLabel(item.id) }}</span>
             <span class="spacer" />
-            <button type="button" class="ct-link" @click="resetGroupOf(item.id)">{{ t('common.reset') }}</button>
+            <button type="button" class="ct-link" @click="resetGroupOf(item)">{{ t('common.reset') }}</button>
           </h2>
           <template v-if="isOpen(item.id)">
             <SettingsField

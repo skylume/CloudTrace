@@ -131,6 +131,10 @@ func (s *server) restartRequired(cur config.Config) []string {
 	if s.startup.Advanced.LogLevel != cur.Advanced.LogLevel {
 		out = append(out, "advanced.log_level")
 	}
+	// 自启项在桌面版启动时由 platform.SyncAutostart 落地，改完当次运行不会重读。
+	if s.startup.Server.Autostart != cur.Server.Autostart {
+		out = append(out, "server.autostart")
+	}
 	return out
 }
 
