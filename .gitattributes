@@ -20,5 +20,14 @@
 *.yml text eol=lf
 *.md text eol=lf
 
+# 构建脚本与包清单同样用 LF。
+#
+# packages.mk 会被 Makefile include，也被 PowerShell 逐行解析取包名：CRLF 检出时
+# 行尾的 \r 会粘在最后一个包名上，变成 go 看懂的另一个包。Makefile 自己也是被
+# 解析的配置，一并钉死。
+*.ps1 text eol=lf
+*.mk text eol=lf
+Makefile text eol=lf
+
 # 本文件自身也用 LF：它是要被 git 解析的配置，不该带平台相关的行尾。
 .gitattributes text eol=lf
