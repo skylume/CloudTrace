@@ -11,7 +11,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { SETTING_GROUPS, settingsText } from './settingsSchema'
+import { SETTING_GROUPS, fieldVisible, settingsText, type SettingField } from './settingsSchema'
+
+const allFields = SETTING_GROUPS.flatMap((group) => group.fields)
+
+function fieldOf(path: string): SettingField {
+  const found = allFields.find((field) => field.path === path)
+  if (found === undefined) throw new Error(`没有这一项：${path}`)
+  return found
+}
 
 const declared = SETTING_GROUPS.flatMap((group) => group.fields.map((field) => field.path))
 
@@ -86,5 +94,47 @@ describe('设置项声明', () => {
         expect(field.min, `${field.path} 的下限大于上限`).toBeLessThanOrEqual(field.max)
       }
     }
+  })
+
+  /**
+   * 显示条件必须指向真实存在的设置项。
+   *
+   * 路径拼错时那一项永远不显示，而界面上只是「少了一项」，没有任何报错。
+   */
+  it('显示条件引用的都是已声明的项', () => {
+    const known = new Set(declared)
+    for (const field of allFields) {
+      if (field.showWhen === undefined) continue
+      const conditions = Array.isArray(field.showWhen) ? field.showWhen : [field.showWhen]
+      for (const condition of conditions) {
+        expect(known.has(condition.path), `${field.path} 的条件引用了不存在的 ${condition.path}`).toBe(
+          true,
+        )
+        expect(condition.in.length, `${field.path} 的条件没有取值`).toBeGreaterThan(0)
+      }
+    }
+  })
+})
+
+describe('按取值决定是否显示', () => {
+  it('互斥项只显示生效的那一个', () => {
+    const count = fieldOf('history.keep_count')
+    const days = fieldOf('history.keep_days')
+    expect(fieldVisible(count, { history: { keep_mode: 'days' } })).toBe(false)
+    expect(fieldVisible(days, { history: { keep_mode: 'days' } })).toBe(true)
+    expect(fieldVisible(count, { history: { keep_mode: 'count' } })).toBe(true)
+    expect(fieldVisible(days, { history: { keep_mode: 'count' } })).toBe(false)
+  })
+
+  it('多项条件要同时满足', () => {
+    const field = fieldOf('geo.asn_update_interval_days')
+    expect(fieldVisible(field, { geo: { asn_source: 'iptoasn', asn_auto_update: false } })).toBe(false)
+    expect(fieldVisible(field, { geo: { asn_source: 'off', asn_auto_update: true } })).toBe(false)
+    expect(fieldVisible(field, { geo: { asn_source: 'iptoasn', asn_auto_update: true } })).toBe(true)
+  })
+
+  it('配置还没读到时条件项不显示，无条件的照常显示', () => {
+    expect(fieldVisible(fieldOf('geo.asn_db_path'), {})).toBe(false)
+    expect(fieldVisible(fieldOf('ui.theme'), {})).toBe(true)
   })
 })

@@ -12,7 +12,14 @@ import { sendCommand } from '@/api/client'
 import SettingsField from '@/components/settings/SettingsField.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
-import { SETTING_GROUPS, buildPatch, groupText, readPath, type SettingGroup } from '@/i18n/settingsSchema'
+import {
+  SETTING_GROUPS,
+  buildPatch,
+  fieldVisible,
+  groupText,
+  readPath,
+  type SettingGroup,
+} from '@/i18n/settingsSchema'
 import DiagPanel from '@/components/settings/DiagPanel.vue'
 import ServerPanel from '@/components/settings/ServerPanel.vue'
 import { useGeoStore } from '@/stores/geo'
@@ -44,21 +51,23 @@ function toggleGroup(id: string): void {
     : [...openGroups.value, id]
 }
 
-/**
- * 每一组在当前模式下实际会渲染的字段。
- *
- * 简单模式只留标了 primary 的项——一份六十多项的配置表一次全铺开，用户找一项
- * 得先读完十一组。一组里一个常用项都没有就不显示这一组，免得点进去是空的。
- */
 /** 只有桌面版窗口里才生效的项：面板版跑在浏览器里，没有托盘可收。 */
 const DESKTOP_ONLY = new Set(['ui.close_to_tray', 'notify.tray'])
 
+/**
+ * 每一组在当前模式下实际会渲染的字段。
+ *
+ * 简单模式只留标了 primary 的项——一份八十多项的配置表一次全铺开，用户找一项
+ * 得先读完七组。一组里一个常用项都没有就不显示这一组，免得点进去是空的。
+ */
 const groupsWithFields = computed(() =>
   SETTING_GROUPS.map((group) => ({
     ...group,
     fields: group.fields
       // 改了不会起作用的项不显示，比显示出来再注明「仅桌面版有效」诚实。
       .filter((field) => settings.desktop || !DESKTOP_ONLY.has(field.path))
+      // 互斥项按当前取值只显示生效的那一个。
+      .filter((field) => fieldVisible(field, values.value))
       .filter((field) => ui.showAdvanced || field.primary),
   })).filter((group) => group.fields.length > 0),
 )

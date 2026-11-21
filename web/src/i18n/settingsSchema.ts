@@ -37,6 +37,21 @@ export interface SettingField {
    * 开关更伤信任——用户会以为是自己没配对。等对应功能落地时去掉这个标记。
    */
   pending?: boolean
+  /**
+   * 只在另一项取到指定值时才显示。
+   *
+   * 互斥的几项一次只显示一个：并排摆着，用户得先判断「这项现在算数吗」。
+   * 传数组表示同时满足。
+   */
+  showWhen?: FieldCondition | FieldCondition[]
+}
+
+/** 一项显示条件：依赖项 path 的取值落在 in 里。 */
+export interface FieldCondition {
+  /** 依赖的配置项点号路径。 */
+  path: string
+  /** 取这些值之一时显示。 */
+  in: unknown[]
 }
 
 export interface SettingGroup {
@@ -107,7 +122,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'speed.target_qualified', kind: 'int', min: 1, max: 100, primary: true },
       { path: 'speed.min_speed', kind: 'int', min: 0, max: 1000 },
       { path: 'speed.url_mode', kind: 'enum', options: ['auto', 'official', 'mobile_friendly', 'mobile_only', 'custom'] },
-      { path: 'speed.custom_url', kind: 'text' },
+      { path: 'speed.custom_url', kind: 'text', showWhen: { path: 'speed.url_mode', in: ['custom'] } },
       { path: 'speed.download_duration_s', kind: 'int', min: 1, max: 60 },
       // 至少熔断一次：0 会让限速一路测下去，拿到的速度全是假的。
       { path: 'speed.breaker_429', kind: 'int', min: 1, max: 100 },
@@ -145,14 +160,43 @@ export const SETTING_GROUPS: SettingGroup[] = [
     members: ['geo', 'history', 'data'],
     fields: [
       { path: 'geo.asn_source', kind: 'enum', options: ['iptoasn', 'geolite2_mmdb', 'off'], primary: true },
-      { path: 'geo.asn_auto_update', kind: 'bool', primary: true },
-      { path: 'geo.asn_update_interval_days', kind: 'int', min: 0, max: 365, primary: true },
-      { path: 'geo.asn_db_path', kind: 'path' },
+      {
+        path: 'geo.asn_auto_update',
+        kind: 'bool',
+        primary: true,
+        showWhen: { path: 'geo.asn_source', in: ['iptoasn', 'geolite2_mmdb'] },
+      },
+      {
+        path: 'geo.asn_update_interval_days',
+        kind: 'int',
+        min: 0,
+        max: 365,
+        primary: true,
+        showWhen: [
+          { path: 'geo.asn_source', in: ['iptoasn', 'geolite2_mmdb'] },
+          { path: 'geo.asn_auto_update', in: [true] },
+        ],
+      },
+      { path: 'geo.asn_db_path', kind: 'path', showWhen: { path: 'geo.asn_source', in: ['geolite2_mmdb'] } },
       { path: 'geo.geo_warn_enabled', kind: 'bool' },
       { path: 'geo.filter_asn', kind: 'list' },
-      { path: 'history.keep_count', kind: 'int', min: 1, max: 500, primary: true },
-      { path: 'history.keep_mode', kind: 'enum', options: ['count', 'days'] },
-      { path: 'history.keep_days', kind: 'int', min: 1, max: 3650 },
+      // 保留方式必须可见：只显示其中一种数量而藏起开关，用户会以为另一项不存在。
+      { path: 'history.keep_mode', kind: 'enum', options: ['count', 'days'], primary: true },
+      {
+        path: 'history.keep_count',
+        kind: 'int',
+        min: 1,
+        max: 500,
+        primary: true,
+        showWhen: { path: 'history.keep_mode', in: ['count'] },
+      },
+      {
+        path: 'history.keep_days',
+        kind: 'int',
+        min: 1,
+        max: 3650,
+        showWhen: { path: 'history.keep_mode', in: ['days'] },
+      },
       { path: 'history.auto_save', kind: 'bool' },
       { path: 'history.auto_dedup', kind: 'bool' },
       { path: 'data.dir', kind: 'path' },
@@ -450,6 +494,18 @@ export const groupText: Record<'zh' | 'en', Record<string, string>> = {
     export: 'Export & alerts',
     service: 'Service & advanced',
   },
+}
+
+/**
+ * 一项在当前配置下是否该显示。
+ *
+ * 只依赖配置值本身，不看别的状态：条件与取值不一致时（例如保留方式已切到按
+ * 天数、条数项却还显示），用户改的值会和界面对不上。
+ */
+export function fieldVisible(field: SettingField, values: Record<string, unknown>): boolean {
+  if (field.showWhen === undefined) return true
+  const conditions = Array.isArray(field.showWhen) ? field.showWhen : [field.showWhen]
+  return conditions.every((condition) => condition.in.includes(readPath(values, condition.path)))
 }
 
 /** 读取嵌套配置里的一个值。 */
