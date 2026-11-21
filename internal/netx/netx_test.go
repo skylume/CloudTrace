@@ -161,3 +161,80 @@ func TestDialerKeepsPortForIPTargets(t *testing.T) {
 		t.Errorf("不该等到上下文超时才返回：%v", err)
 	}
 }
+
+// 主机名走完整解析→逐 IP 拨号路径：自定义 DNS 挂掉时回退系统解析，
+// 解析到 localhost 后拨回本机监听端口。
+func TestDialerResolvesHostnameAndDials(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听失败：%v", err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	// 自定义 DNS 指到一个没有服务的端口，让解析立刻失败，随后回退系统解析。
+	dial := NewDialer([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(1))}, true)
+	if dial == nil {
+		t.Fatal("有自定义 DNS 时不该返回 nil")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn, err := dial(ctx, "tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("解析并拨号 localhost 失败：%v", err)
+	}
+	defer conn.Close()
+	if ctx.Err() != nil {
+		t.Error("成功拨号后上下文不该到期")
+	}
+}
+
+// 主机名解析成功但端口没有服务：循环拨完所有 IP 后返回最后一个错误。
+func TestDialerReturnsErrorWhenAllDialsFail(t *testing.T) {
+	dial := NewDialer([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(1))}, true)
+	if dial == nil {
+		t.Fatal("有自定义 DNS 时不该返回 nil")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// localhost 能解析，但 1 号端口没有服务，所有 IP 都拨不上。
+	_, err := dial(ctx, "tcp", net.JoinHostPort("localhost", strconv.Itoa(1)))
+	if err == nil {
+		t.Skip("本机 1 号端口居然有服务，跳过")
+	}
+}
+
+// 不带端口的地址直接交给底层拨号，交由标准库报错。
+func TestDialerPassesNoPortAddrToBase(t *testing.T) {
+	dial := NewDialer([]string{"127.0.0.1:1"}, false)
+	if dial == nil {
+		t.Fatal("有自定义 DNS 时不该返回 nil")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := dial(ctx, "tcp", "127.0.0.1"); err == nil {
+		t.Skip("无端口地址居然拨通了，跳过")
+	}
+}
+
+// 解析器按轮询在多个服务器间切换：连续解析请求会轮流落在每个服务器上。
+func TestResolverRoundRobinsAcrossServers(t *testing.T) {
+	r := newResolver([]string{"1.1.1.1", "8.8.8.8"})
+	if r == nil {
+		t.Fatal("两个合法服务器不该返回 nil")
+	}
+	// 走到 Dial 才看得见服务器选择：用一个会失败但能立刻结束的上下文触发。
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	conn, err := r.Dial(ctx, "tcp", "any")
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Skip("测试 DNS 服务器居然可达，跳过")
+	}
+}

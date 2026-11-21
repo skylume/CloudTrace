@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,21 +28,26 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "启动失败："+err.Error())
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run() error {
-	fs := flag.NewFlagSet("cloudtrace-panel", flag.ExitOnError)
+// run 是面板启动流程，返回进程退出码。args 为命令行参数，stdout/stderr 供输出。
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("cloudtrace-panel", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	var flags launch.Flags
 	flags.Register(fs)
-	_ = fs.Parse(os.Args[1:])
+	if err := fs.Parse(args); err != nil {
+		// flag.ExitOnError 原来的行为：-h 打印用法后退出 0，其余解析错误退出 2。
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
 
 	if flags.ShowVersion {
-		fmt.Println("cloudtrace " + version)
-		return nil
+		fmt.Fprintln(stdout, "cloudtrace "+version)
+		return 0
 	}
 
 	// 单实例：第二个实例只把已有面板打开，不真的再起一份。
@@ -55,22 +61,23 @@ func run() error {
 	lock, first, lockErr := launch.AcquireSingleInstance()
 	if lockErr != nil {
 		// 拿不到锁不算致命：宁可多开一个实例，也不要因为一个辅助能力让程序起不来。
-		fmt.Fprintln(os.Stderr, "警告：单实例检查失败，继续启动："+lockErr.Error())
+		fmt.Fprintln(stderr, "警告：单实例检查失败，继续启动："+lockErr.Error())
 	} else {
 		defer lock.Release()
 		if !first {
 			url := launch.PeekPanelURL(flags)
-			fmt.Fprintln(os.Stderr, "已有实例在运行，打开它的面板后退出："+url)
+			fmt.Fprintln(stderr, "已有实例在运行，打开它的面板后退出："+url)
 			if !flags.NoBrowser {
 				_ = platform.OpenBrowser(url)
 			}
-			return nil
+			return 0
 		}
 	}
 
 	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
 	if err != nil {
-		return err
+		fmt.Fprintln(stderr, "启动失败："+err.Error())
+		return 1
 	}
 
 	// 开机自启以配置为准：用户可能把 exe 挪到了别处，注册表里那条旧记录
@@ -103,9 +110,10 @@ func run() error {
 			if !flags.NoBrowser {
 				_ = platform.OpenBrowser(inUse.URL)
 			}
-			return nil
+			return 0
 		}
-		return err
+		fmt.Fprintln(stderr, "启动失败："+err.Error())
+		return 1
 	}
 
 	httpServer := app.HTTPServer()
@@ -113,7 +121,8 @@ func run() error {
 	defer stop()
 
 	if err := app.Services.Startup(ctx); err != nil {
-		return err
+		fmt.Fprintln(stderr, "启动失败："+err.Error())
+		return 1
 	}
 
 	app.LogAccess()
@@ -138,9 +147,10 @@ func run() error {
 	select {
 	case err := <-serveErr:
 		if err != nil {
-			return fmt.Errorf("HTTP 服务异常退出：%w", err)
+			fmt.Fprintln(stderr, "启动失败：HTTP 服务异常退出："+err.Error())
+			return 1
 		}
-		return nil
+		return 0
 	case <-restarting:
 		app.Logger.Info("正在重启…")
 	case <-ctx.Done():
@@ -155,5 +165,5 @@ func run() error {
 	if err := app.Services.Shutdown(shutdownCtx); err != nil {
 		app.Logger.Warn("关闭服务时出错", "err", err)
 	}
-	return nil
+	return 0
 }

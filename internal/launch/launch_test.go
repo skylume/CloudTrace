@@ -1,15 +1,41 @@
 package launch
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"flag"
+	"io"
 	"io/fs"
+	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"cloudtrace/internal/config"
 )
+
+// newTestStore 建一份指向临时目录的配置存储，可按需改默认值。
+func newTestStore(t *testing.T, mutate func(*config.Config)) *config.Store {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Data.Dir = dir
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	if err := config.SaveFile(config.ConfigPath(dir), cfg); err != nil {
+		t.Fatalf("保存测试配置失败：%v", err)
+	}
+	store, err := config.OpenStore(config.ConfigPath(dir), "")
+	if err != nil {
+		t.Fatalf("打开测试配置失败：%v", err)
+	}
+	return store
+}
 
 func TestPanelURLUsesLoopbackForWildcardBind(t *testing.T) {
 	// 浏览器打不开 0.0.0.0：照搬给用户的是一个点不开的地址。
@@ -274,5 +300,176 @@ func TestPeekPanelURLPrefersFlags(t *testing.T) {
 	got := PeekPanelURL(Flags{DataDir: dir, Port: 18888})
 	if want := "http://127.0.0.1:18888"; got != want {
 		t.Errorf("= %q，期望 %q", got, want)
+	}
+}
+
+// Register 把六个参数全部挂到 FlagSet 上，并且都能被解析回来。
+func TestRegisterExposesAllFlags(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	var f Flags
+	f.Register(fs)
+
+	if err := fs.Parse([]string{
+		"-data-dir", "/tmp/data",
+		"-port", "8080",
+		"-bind", "0.0.0.0",
+		"-no-browser",
+		"-log-level", "debug",
+		"-version",
+	}); err != nil {
+		t.Fatalf("解析参数失败：%v", err)
+	}
+	if f.DataDir != "/tmp/data" || f.Port != 8080 || f.Bind != "0.0.0.0" {
+		t.Errorf("标量参数没解析对：%+v", f)
+	}
+	if !f.NoBrowser || !f.ShowVersion || f.LogLevel != "debug" {
+		t.Errorf("布尔与枚举参数没解析对：%+v", f)
+	}
+}
+
+// ErrAddrInUse 的文案要带上地址，用户才知道是哪个端口被占了。
+func TestErrAddrInUseMessage(t *testing.T) {
+	err := error(ErrAddrInUse{Addr: "127.0.0.1:17443"})
+	msg := err.Error()
+	if !strings.Contains(msg, "17443") {
+		t.Errorf("文案没带端口：%q", msg)
+	}
+}
+
+// newLogger 把级别字符串映射到 slog 级别；flag 级别优先于配置级别。
+func TestNewLoggerMapsLevels(t *testing.T) {
+	cases := map[string]slog.Level{
+		"debug": slog.LevelDebug,
+		"warn":  slog.LevelWarn,
+		"error": slog.LevelError,
+		"info":  slog.LevelInfo,
+		"":      slog.LevelInfo,
+		"bogus": slog.LevelInfo,
+	}
+	for in, want := range cases {
+		l := newLogger(in, "", io.Discard)
+		got := l.Enabled(context.Background(), want)
+		if !got {
+			t.Errorf("newLogger(%q) 应启用级别 %v", in, want)
+		}
+	}
+}
+
+// flag 级别压过配置级别：用户显式 -log-level 说了算。
+func TestNewLoggerFlagLevelWins(t *testing.T) {
+	l := newLogger("debug", "error", io.Discard)
+	if !l.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("flag=debug 时应启用 debug，配置的 error 不应压过它")
+	}
+}
+
+// HTTPServer 组装出带头部读取超时、绑定已装配 handler 的服务器。
+func TestHTTPServerBuildsConfiguredServer(t *testing.T) {
+	fs := flag.NewFlagSet("h", flag.ContinueOnError)
+	var f Flags
+	f.Register(fs)
+	app := &App{Handler: http.NotFoundHandler(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	srv := app.HTTPServer()
+	if srv.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("ReadHeaderTimeout = %v", srv.ReadHeaderTimeout)
+	}
+	if srv.Handler == nil {
+		t.Error("handler 没有挂上去")
+	}
+}
+
+// Close 对没有日志文件的 App 是无害空操作。
+func TestCloseWithoutLogFileIsNoop(t *testing.T) {
+	a := &App{}
+	a.Close() // 不应 panic
+}
+
+// LogAccess 无 Token 且绑回环：只打基础信息，不打任何密码类提示。
+func TestLogAccessLoopbackNoToken(t *testing.T) {
+	var buf bytes.Buffer
+	a := &App{
+		Store:   newTestStore(t, func(cfg *config.Config) { cfg.Server.Bind = "127.0.0.1" }),
+		Logger:  slog.New(slog.NewTextHandler(&buf, nil)),
+		URL:     "http://127.0.0.1:17443",
+		DataDir: t.TempDir(),
+	}
+	a.LogAccess()
+	msg := buf.String()
+	if !strings.Contains(msg, "http://127.0.0.1:17443") {
+		t.Errorf("没打面板地址：%s", msg)
+	}
+	// 回环绑定时不应出现两类密码/局域网提示（注意：t.TempDir 路径可能含测试名片段，
+	// 所以只断言具体提示文本，不断言裸的 token/密码 子串）。
+	for _, bad := range []string{"没有访问密码", "已设置访问密码", "访问 Token", "开放局域网访问"} {
+		if strings.Contains(msg, bad) {
+			t.Errorf("回环无 Token 时不该提示 %q：%s", bad, msg)
+		}
+	}
+}
+
+// LogAccess 有哈希密码：提示已设置密码。
+func TestLogAccessHashedPassword(t *testing.T) {
+	var buf bytes.Buffer
+	a := &App{
+		Store:   newTestStore(t, func(cfg *config.Config) { cfg.Server.Bind = "0.0.0.0" }),
+		Logger:  slog.New(slog.NewTextHandler(&buf, nil)),
+		URL:     "http://127.0.0.1:17443",
+		DataDir: t.TempDir(),
+	}
+	hash, err := config.HashPassword("secret")
+	if err != nil {
+		t.Fatalf("生成测试哈希失败：%v", err)
+	}
+	a.Store.Patch(map[string]any{"server": map[string]any{"token": hash}}, nil)
+	a.LogAccess()
+	msg := buf.String()
+	if !strings.Contains(msg, "已设置访问密码") {
+		t.Errorf("有哈希密码时该提示已设置：%s", msg)
+	}
+	if strings.Contains(msg, "没有访问密码") {
+		t.Errorf("有密码还提示没有：%s", msg)
+	}
+}
+
+// LogAccess 明文旧版 Token：把 Token 打印出来供用户抄录。
+func TestLogAccessLegacyToken(t *testing.T) {
+	var buf bytes.Buffer
+	a := &App{
+		Store:   newTestStore(t, func(cfg *config.Config) { cfg.Server.Bind = "0.0.0.0" }),
+		Logger:  slog.New(slog.NewTextHandler(&buf, nil)),
+		URL:     "http://127.0.0.1:17443",
+		DataDir: t.TempDir(),
+	}
+	a.Store.Patch(map[string]any{"server": map[string]any{"token": "deadbeef"}}, nil)
+	a.LogAccess()
+	msg := buf.String()
+	if !strings.Contains(msg, "deadbeef") {
+		t.Errorf("明文 Token 应当打出来供抄录：%s", msg)
+	}
+}
+
+// resolveRootDir 空命令行值时走默认解析（这里 exeDir 非空 → 便携模式）。
+func TestResolveRootDirDefaultsToPortable(t *testing.T) {
+	got, err := resolveRootDir("", "/exe/dir")
+	if err != nil {
+		t.Fatalf("解析失败：%v", err)
+	}
+	want := filepath.Join("/exe/dir", "data")
+	if got != want {
+		t.Errorf("resolveRootDir(空, /exe/dir) = %q，期望 %q", got, want)
+	}
+}
+
+// AcquireSingleInstance 非重启路径：我这份是第一个实例。
+func TestAcquireSingleInstanceFirstRun(t *testing.T) {
+	t.Setenv(RestartEnv, "")
+	lock, first, err := AcquireSingleInstance()
+	if err != nil {
+		t.Fatalf("取单实例锁失败：%v", err)
+	}
+	defer lock.Release()
+	if !first {
+		t.Error("首次运行应当拿到「第一个实例」标记")
 	}
 }
