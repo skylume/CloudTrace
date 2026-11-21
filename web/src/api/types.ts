@@ -381,6 +381,12 @@ export interface Settings {
 
 export interface SettingsPayload {
   values: Settings
+  /**
+   * 当前是否运行在桌面版窗口里。
+   *
+   * 托盘相关的设置只在桌面版有意义，界面据它隐藏那些改了也不起作用的项。
+   */
+  desktop?: boolean
   restart_required?: string[]
   /**
    * 值合法但可能带来麻烦的项（并发过高、阈值过低之类）。

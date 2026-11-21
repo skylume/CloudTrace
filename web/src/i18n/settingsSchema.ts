@@ -210,7 +210,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
       hint: '下次打开回到上次停留的页面，并记住参数面板是否展开。关掉之后每次都从启动页面开始；参数值本身存在配置里，与这一项无关',
     },
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
-    'ui.close_to_tray': { label: '关闭窗口时收进托盘', hint: '关掉窗口后继续在后台跑；真要退出请用托盘菜单里的「退出」。只对桌面版有效' },
+    'ui.close_to_tray': { label: '关闭窗口时收进托盘', hint: '关掉窗口后继续在后台跑；真要退出请用托盘菜单里的「退出」' },
     'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
 
     'scan.workers': {
@@ -259,7 +259,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.on_done': { label: '任务完成提醒', hint: '扫描或测速结束时提示一次' },
     'notify.on_fail': { label: '任务失败提醒', hint: '任务出错时提示' },
     'notify.web': { label: '浏览器通知', hint: '需要浏览器授权；被拒绝时不会重复询问' },
-    'notify.tray': { label: '托盘通知', hint: '仅桌面版有效' },
+    'notify.tray': { label: '托盘通知', hint: '任务结束时在托盘图标上给出提示' },
     'notify.sound': { label: '提示音', hint: '默认关闭，避免在公共场合突然出声' },
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
@@ -325,7 +325,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
       hint: 'Reopen on the last page you were on and keep the parameter panel as you left it. Turned off, every launch starts on the start page; parameter values live in the config and are unaffected',
     },
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
-    'ui.close_to_tray': { label: 'Minimise to tray on close', hint: 'Closing the window keeps it running in the background; use "Quit" in the tray menu to exit. Desktop build only' },
+    'ui.close_to_tray': { label: 'Minimise to tray on close', hint: 'Closing the window keeps it running in the background; use "Quit" in the tray menu to exit' },
     'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
 
     'scan.workers': {
@@ -374,7 +374,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'notify.on_done': { label: 'Notify on completion', hint: 'One notification when a scan or speed test finishes' },
     'notify.on_fail': { label: 'Notify on failure', hint: 'Notify when a task errors out' },
     'notify.web': { label: 'Browser notifications', hint: 'Needs browser permission; a denial is not asked for again' },
-    'notify.tray': { label: 'Tray notifications', hint: 'Desktop build only' },
+    'notify.tray': { label: 'Tray notifications', hint: 'Shows a hint on the tray icon when a task finishes' },
     'notify.sound': { label: 'Sound', hint: 'Off by default so it does not blurt out in public' },
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },

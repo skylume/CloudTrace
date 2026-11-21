@@ -55,6 +55,10 @@ type settingsResetReq struct {
 // 前端拿到 values 整体替换本地状态即可。
 type settingsPayload struct {
 	Values config.Config `json:"values"`
+	// Desktop 表示当前运行在桌面版窗口里。
+	//
+	// 托盘相关的设置只在桌面版有意义，界面据它隐藏那些改了也不起作用的项。
+	Desktop bool `json:"desktop"`
 	// RestartRequired 列出本次与启动时相比、改了要重启才生效的配置项。
 	RestartRequired []string `json:"restart_required,omitempty"`
 	// Warnings 是「值合法但可能带来麻烦」的项，如并发过高、阈值过低。
@@ -105,6 +109,7 @@ func (s *server) settingsPayload() settingsPayload {
 	cur := s.cfg.Get()
 	return settingsPayload{
 		Values:          cur,
+		Desktop:         s.desktop,
 		RestartRequired: s.restartRequired(cur),
 		Warnings:        cur.Warnings(),
 	}

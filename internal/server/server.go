@@ -68,6 +68,12 @@ type server struct {
 	// lastMigrate 是最近一次旧数据迁移的结果，供状态读取时回放。
 	lastMigrate *migrate.Report
 
+	// desktop 表示当前进程运行在桌面版窗口里。
+	//
+	// 界面据此隐藏托盘相关项：面板版跑在浏览器里，没有托盘可收，那些开关
+	// 改了也不会有任何效果。
+	desktop bool
+
 	// 体检用的可注入探测函数，为 nil 时由 health 包做真实探测。
 	portInUse       func(int) bool
 	dirWritable     func(string) error
@@ -81,8 +87,8 @@ type server struct {
 //
 // 面板版把它交给 http.ListenAndServe；桌面版把它同时交给 Wails 的
 // AssetServer 与一个本地监听，从而保证两个发行版行为完全一致。
-func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, error) {
-	s, err := newServer(cfg, svc, listenPort)
+func New(cfg *config.Store, svc *app.Services, listenPort int, desktop bool) (http.Handler, error) {
+	s, err := newServer(cfg, svc, listenPort, desktop)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +103,7 @@ func New(cfg *config.Store, svc *app.Services, listenPort int) (http.Handler, er
  * 实例。为了可测而把这些逻辑抽成包级函数会把状态拆得到处都是，不如在这里留一
  * 个入口。
  */
-func newServer(cfg *config.Store, svc *app.Services, listenPort int) (*server, error) {
+func newServer(cfg *config.Store, svc *app.Services, listenPort int, desktop bool) (*server, error) {
 	if cfg == nil {
 		return nil, errors.New("server: 配置不能为空")
 	}
@@ -126,6 +132,7 @@ func newServer(cfg *config.Store, svc *app.Services, listenPort int) (*server, e
 		),
 		downloads:  newDownloadStore(),
 		listenPort: listenPort,
+		desktop:    desktop,
 		startup:    cfg.Get(),
 	}
 	s.speedSource.SetLogger(func(format string, args ...any) {

@@ -61,6 +61,12 @@ type Options struct {
 	Version string
 	// LogWriter 是日志输出目标；为空时用标准输出。
 	LogWriter io.Writer
+	// Desktop 表示本次运行在桌面版窗口里。
+	//
+	// 两个发行版共用同一套界面，但托盘相关能力只有桌面版有：界面需要知道
+	// 当前形态，才能把改了也不起作用的项收起来，而不是留一个写着「仅桌面版
+	// 有效」的死开关。
+	Desktop bool
 }
 
 // App 是装配完成、但还没有开始对外服务的一套依赖。
@@ -186,7 +192,7 @@ func Prepare(opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler, err := server.New(store, svc, cfg.Server.Port)
+	handler, err := server.New(store, svc, cfg.Server.Port, opts.Desktop)
 	if err != nil {
 		return nil, err
 	}

@@ -24,6 +24,8 @@ export type Origin = 'default' | 'preset' | 'user'
 
 export const useSettingsStore = defineStore('settings', () => {
   const values = ref<Settings | null>(null)
+  /** 当前运行形态：桌面版窗口内为 true，浏览器面板为 false。 */
+  const desktop = ref(false)
   const restartRequired = ref<string[]>([])
   const warnings = ref<FieldIssue[]>([])
   const loaded = ref(false)
@@ -51,6 +53,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function apply(payload: SettingsPayload): void {
     values.value = payload.values
+    desktop.value = payload.desktop ?? false
     restartRequired.value = payload.restart_required ?? []
     warnings.value = payload.warnings ?? []
     loaded.value = true
@@ -81,6 +84,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     values,
+    desktop,
     ui,
     notify,
     origins,

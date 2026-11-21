@@ -80,7 +80,7 @@ func run() error {
 		}
 	}
 
-	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version})
+	app, err := launch.Prepare(launch.Options{Flags: flags, Version: version, Desktop: true})
 	if err != nil {
 		return err
 	}

@@ -50,10 +50,16 @@ function toggleGroup(id: string): void {
  * 简单模式只留标了 primary 的项——一份六十多项的配置表一次全铺开，用户找一项
  * 得先读完十一组。一组里一个常用项都没有就不显示这一组，免得点进去是空的。
  */
+/** 只有桌面版窗口里才生效的项：面板版跑在浏览器里，没有托盘可收。 */
+const DESKTOP_ONLY = new Set(['ui.close_to_tray', 'notify.tray'])
+
 const groupsWithFields = computed(() =>
   SETTING_GROUPS.map((group) => ({
     ...group,
-    fields: ui.showAdvanced ? group.fields : group.fields.filter((field) => field.primary),
+    fields: group.fields
+      // 改了不会起作用的项不显示，比显示出来再注明「仅桌面版有效」诚实。
+      .filter((field) => settings.desktop || !DESKTOP_ONLY.has(field.path))
+      .filter((field) => ui.showAdvanced || field.primary),
   })).filter((group) => group.fields.length > 0),
 )
 
