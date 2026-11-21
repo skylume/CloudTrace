@@ -1,13 +1,20 @@
 name: CI
 
-# 只在 PR 与手动触发时跑。
+# 两档门禁：
 #
-# 刻意不在 push 时跑：这个仓库的提交大多是同一个人直接推的，每次提交都起一台
-# runner 只会白烧额度，而门禁真正有价值的时机是「合并之前」那一次。需要临时
-# 验证一次，用 Actions 页面上的「Run workflow」。
+#   push 到 main —— 轻量四步（gofmt / go vet / 两个构建标签的编译 / go test），
+#                    由 ci-check.ps1 -Fast 执行，不带 -race、不跑 staticcheck、
+#                    覆盖率门禁与前端检查。
+#   PR / 手动触发 —— 全量 ci-check.ps1：staticcheck、-race、覆盖率门禁（70%）
+#                    与前端 lint / type-check / test。
+#
+# 这个仓库的提交大多是同一个人直接推的，所以 push 上只保留能快速反馈的四步；
+# 完整门禁放在合并前那一次，以及 Actions 页面上的「Run workflow」。
 #
 # 发布走 release.yml（打 tag 时触发），本文件不产出分发包。
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -36,7 +43,10 @@ jobs:
           cache: true
 
       # 竞态检测依赖 cgo，cgo 依赖 C 编译器；runner 上缺失时补装。
+      # push 的轻量档不跑 -race，这一步也就不用跑；用 if 而不是在脚本里判断，
+      # 是为了让日志上的步骤数与实际做的事一一对应。
       - name: 确保 C 工具链可用
+        if: github.event_name != 'push'
         shell: pwsh
         run: |
           if (Get-Command gcc -ErrorAction SilentlyContinue) {
@@ -50,6 +60,7 @@ jobs:
 
       # 前端产物经 go:embed 进二进制；已入库，但引入构建链后需重新生成。
       - name: 构建前端（若已引入构建链）
+        if: github.event_name != 'push'
         shell: pwsh
         run: |
           if (Test-Path web/package.json) {
@@ -68,9 +79,27 @@ jobs:
             exit 1
           }
 
+      # web/dist 是入库产物（go:embed 直接吃它）。改了 web/src 却没重新构建、
+      # 没把新的 dist 一起提交时，CI 全绿但二进制里跑的还是旧界面——这里必须
+      # 拦住。只放在本 workflow：release.yml 的 dist 由构建现场生成，而且 checkout
+      # 的是 tag，在那儿查 diff 只会误报。
+      - name: 校验前端入库产物与源码一致
+        if: github.event_name != 'push'
+        shell: pwsh
+        run: |
+          git diff --stat -- web/dist
+          git diff --exit-code -- web/dist
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'web/dist 与源码不一致：改了 web/src 却忘记重新构建并提交吗？'
+            Write-Host '修复：cd web && npm run build，然后提交 web/dist 的改动。'
+            Write-Error '入库的前端产物与源码不一致'
+            exit 1
+          }
+
       # staticcheck 比 vet 查得深。装在这里而不是塞进 ci-check.ps1：脚本要能在
       # 本机没装时跳过（见脚本里的说明），CI 上则必须真的跑到。
       - name: 安装 staticcheck
+        if: github.event_name != 'push'
         shell: pwsh
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
@@ -84,12 +113,20 @@ jobs:
       # 已经让 CI 红过两次：一次是跨步骤依赖磁盘上的 coverage.out，一次是
       # PowerShell 把包路径整串当成一个模式传给 go。抽成脚本之后，
       # `pwsh -File scripts/ci-check.ps1 -SkipRace` 跑的就是 CI 会跑的东西。
+      # push：只跑 gofmt / vet / build / test（-Fast），几分钟内给结果。
+      - name: 快速检查（格式 / 静态 / 构建 / 测试）
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: ./scripts/ci-check.ps1 -Fast
+
+      # PR 与手动触发：全量检查，含 staticcheck、-race、覆盖率门禁与前端三件套。
       - name: 检查（格式 / 静态 / 构建 / 测试 / 覆盖率 / 前端）
+        if: github.event_name != 'push'
         shell: pwsh
         run: ./scripts/ci-check.ps1 -CoverageThreshold 70
 
       - name: 上传覆盖率报告
-        if: always()
+        if: always() && github.event_name != 'push'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report

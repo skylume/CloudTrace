@@ -11,8 +11,14 @@
 
   -SkipRace 只该在本机性能不够时用；CI 上必须带竞态检测。
 
+  不带 -Fast 时的行为与引入该开关之前完全一致：全量检查。
+
 .PARAMETER SkipRace
   跳过竞态检测。本机跑不动 -race 时用，**不要**在 CI 上用它。
+
+.PARAMETER Fast
+  快速模式：只跑 gofmt、go vet、go build、go test，跳过 staticcheck、竞态检测、
+  覆盖率门禁与前端检查。用于 push 到 main 的轻量门禁；PR 与手动触发仍走全量。
 
 .PARAMETER CoverageThreshold
   覆盖率门禁阈值，0 表示不做门禁。
@@ -20,6 +26,7 @@
 [CmdletBinding()]
 param(
     [switch]$SkipRace,
+    [switch]$Fast,
     [double]$CoverageThreshold = 70
 )
 
@@ -80,14 +87,19 @@ try {
     # 本地没装就跳过并说一声，CI 上必装（workflow 里 `go install`）——它是门禁
     # 的一部分，不该因为「我这台机器上没有」就静默不跑。
     Write-Host '==> staticcheck'
-    $staticcheck = Get-Command staticcheck -ErrorAction SilentlyContinue
-    if ($null -eq $staticcheck) {
-        Write-Host '    未安装 staticcheck，已跳过（本地可 go install honnef.co/go/tools/cmd/staticcheck@2025.1.1）'
+    if ($Fast) {
+        Write-Host '    快速模式：已跳过 staticcheck'
     }
     else {
-        staticcheck @Packages
-        if ($LASTEXITCODE -ne 0) { throw 'staticcheck 未通过' }
-        Write-Host '    staticcheck 通过'
+        $staticcheck = Get-Command staticcheck -ErrorAction SilentlyContinue
+        if ($null -eq $staticcheck) {
+            Write-Host '    未安装 staticcheck，已跳过（本地可 go install honnef.co/go/tools/cmd/staticcheck@2025.1.1）'
+        }
+        else {
+            staticcheck @Packages
+            if ($LASTEXITCODE -ne 0) { throw 'staticcheck 未通过' }
+            Write-Host '    staticcheck 通过'
+        }
     }
 
     Write-Host '==> go build（panel）'
@@ -104,24 +116,37 @@ try {
     Remove-Item -Force $profile -ErrorAction SilentlyContinue
 
     $testArgs = @()
-    if ($SkipRace) {
+    if ($Fast) {
+        Write-Host '    快速模式：已跳过竞态检测'
+    }
+    elseif ($SkipRace) {
         Write-Host '    已跳过竞态检测（本机模式）'
     }
     else {
         $testArgs += '-race'
     }
-    $testArgs += @('-count=1', '-timeout', '600s', '-covermode=atomic', "-coverprofile=$profile")
+    $testArgs += @('-count=1', '-timeout', '600s')
+    if (-not $Fast) {
+        # 快速档连覆盖率埋点都不做：push 上只关心「编译得过、测试跑得过」。
+        $testArgs += @('-covermode=atomic', "-coverprofile=$profile")
+    }
 
     $env:CGO_ENABLED = '1'
     go test @Packages @testArgs
     if ($LASTEXITCODE -ne 0) { throw '测试未通过' }
 
-    if (-not (Test-Path $profile)) {
-        throw "测试跑完了却没有产出覆盖率文件：$profile"
+    if (-not $Fast) {
+        if (-not (Test-Path $profile)) {
+            throw "测试跑完了却没有产出覆盖率文件：$profile"
+        }
+        Write-Host "    覆盖率文件：$profile（$((Get-Item $profile).Length) 字节）"
     }
-    Write-Host "    覆盖率文件：$profile（$((Get-Item $profile).Length) 字节）"
 
-    if ($CoverageThreshold -gt 0) {
+    if ($Fast) {
+        Write-Host '==> 覆盖率门禁'
+        Write-Host '    快速模式：已跳过覆盖率门禁'
+    }
+    elseif ($CoverageThreshold -gt 0) {
         Write-Host '==> 覆盖率门禁'
         & (Join-Path $PSScriptRoot 'check-coverage.ps1') `
             -CoverProfile $profile `
@@ -135,29 +160,35 @@ try {
     # 这几步以前只在本地跑，CI 里一步都没有：改了 store 或工具函数，CI 全绿也
     # 可能带着坏掉的前端逻辑合并。前端产物是 go:embed 进二进制的，它坏掉就是
     # 整个界面坏掉。
-    Write-Host '==> 前端检查'
-    Push-Location (Join-Path $root 'web')
-    try {
-        if (-not (Test-Path 'node_modules')) {
-            Write-Host '    web/node_modules 不存在，先 npm ci'
-            npm ci
-            if ($LASTEXITCODE -ne 0) { throw 'npm ci 失败' }
-        }
-
-        Write-Host '    lint'
-        npm run lint
-        if ($LASTEXITCODE -ne 0) { throw '前端 lint 未通过' }
-
-        Write-Host '    type-check'
-        npm run typecheck
-        if ($LASTEXITCODE -ne 0) { throw '前端类型检查未通过' }
-
-        Write-Host '    test'
-        npm test
-        if ($LASTEXITCODE -ne 0) { throw '前端测试未通过' }
+    if ($Fast) {
+        Write-Host '==> 前端检查'
+        Write-Host '    快速模式：已跳过 lint / type-check / test'
     }
-    finally {
-        Pop-Location
+    else {
+        Write-Host '==> 前端检查'
+        Push-Location (Join-Path $root 'web')
+        try {
+            if (-not (Test-Path 'node_modules')) {
+                Write-Host '    web/node_modules 不存在，先 npm ci'
+                npm ci
+                if ($LASTEXITCODE -ne 0) { throw 'npm ci 失败' }
+            }
+
+            Write-Host '    lint'
+            npm run lint
+            if ($LASTEXITCODE -ne 0) { throw '前端 lint 未通过' }
+
+            Write-Host '    type-check'
+            npm run typecheck
+            if ($LASTEXITCODE -ne 0) { throw '前端类型检查未通过' }
+
+            Write-Host '    test'
+            npm test
+            if ($LASTEXITCODE -ne 0) { throw '前端测试未通过' }
+        }
+        finally {
+            Pop-Location
+        }
     }
 
     Write-Host ''

@@ -319,8 +319,11 @@ go test ./... -race -count=1 -timeout 600s
 cd web && npm ci && npm run typecheck && npm test
 ```
 
-CI（`.github/workflows/ci.yml`）在每个 PR 上跑同一套，另加 `gofmt`、`go vet` 与
-两个构建标签的编译检查——两个发行版都要能编过。
+CI（`.github/workflows/ci.yml`）分两档：push 到 main 跑轻量四步（`gofmt`、
+`go vet`、两个构建标签的编译、不带 `-race` 的 `go test`）；PR 与手动触发跑
+全量 `scripts/ci-check.ps1`，另加 `staticcheck`、`-race`、覆盖率门禁（按语句级
+统计，阈值 70%）与前端 `lint` / `type-check` / `test`，并在构建前端后校验入库的
+`web/dist` 与源码一致——两个发行版都要能编过。
 
 测试与被测代码放在一起（`internal/<包>/<文件>_test.go`、`web/src/**/*.spec.ts`）。
 几条守得比较紧的：

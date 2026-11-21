@@ -6,6 +6,16 @@
 .DESCRIPTION
     输入是 `go test -coverprofile` 产生的 profile，按包聚合后与阈值比较。
 
+    统计口径是**语句级**：逐行解析 profile
+        path/file.go:startLine.startCol,endLine.endCol numStmt count
+    对每个包分别累加 numStmt 作为分母、count > 0 的 numStmt 作为分子，得到
+        sum(numStmt, count > 0) / sum(numStmt)
+    这与 `go test -cover` 报出的包覆盖率是同一个口径。
+
+    不要用 `go tool cover -func` 的函数百分比再做平均：那等于让 3 行的
+    getter 和 200 行的主流程等权。实测会把 internal/history 从语句级的 87.0%
+    抬到 92.1%，阈值 70% 下实际放行了只有 65% 的包。
+
     设计要点：
       - 只对「已经存在」的核心包做硬性门禁。里程碑还没做到那里时，
         该包不存在，就不应该让流水线因为一个不存在的包变红。
@@ -47,42 +57,67 @@ if (-not (Test-Path $CoverProfile)) {
     throw "覆盖率文件不存在：$CoverProfile（在 $where 下解析为 $resolved）"
 }
 
-# ---- 1. 按包聚合 --------------------------------------------------------
-# `go tool cover -func` 每行形如：
-#   cloudtrace/internal/config/config.go:120:  Default  100.0%
+# ---- 1. 解析 profile，按包聚合 -----------------------------------------
+# 每个数据行形如：
+#   cloudtrace/internal/history/index.go:12.34,18.2 5 1
+# 字段依次为「文件:起始行.列,结束行.列」「语句数」「命中次数」。
 #
-# 注意 -func= 的值必须先拼成字符串再传：写成 `-func=$CoverProfile` 时
-# PowerShell 不会做变量展开，go 会收到字面量 "$CoverProfile" 并报文件不存在。
-$coverArg = "-func=$CoverProfile"
-$rows = & go tool cover $coverArg
-if ($LASTEXITCODE -ne 0) {
-    throw 'go tool cover 执行失败'
+# 注意：这里是语句级聚合，不是把文件或函数的百分比做算术平均。profile 里的
+# numStmt 才是权重，count 才是这一块有没有被执行到。
+$stmtTotal = @{}
+$stmtCovered = @{}
+$entries = 0
+$lineNo = 0
+
+foreach ($line in Get-Content -Path $CoverProfile -Encoding UTF8) {
+    $lineNo++
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    # 第一行是「mode: set/atomic/count」，不参与统计。
+    if ($line -match '^mode:\s*\S+$') { continue }
+
+    if ($line -notmatch '^(?<file>.+):(?<sl>\d+)\.(?<sc>\d+),(?<el>\d+)\.(?<ec>\d+)\s+(?<stmt>\d+)\s+(?<count>\d+)\s*$') {
+        throw "覆盖率文件第 $lineNo 行无法解析：$line（文件：$CoverProfile）"
+    }
+
+    # 文件名形如 cloudtrace/internal/history/index.go，去掉最后一段即包路径。
+    $file = $Matches['file'] -replace '\\', '/'
+    $pkgPath = $file -replace '/[^/]+$', ''
+    $stmt = [int]$Matches['stmt']
+    $count = [int]$Matches['count']
+
+    if (-not $stmtTotal.ContainsKey($pkgPath)) {
+        $stmtTotal[$pkgPath] = 0
+        $stmtCovered[$pkgPath] = 0
+    }
+    $stmtTotal[$pkgPath] += $stmt
+    if ($count -gt 0) {
+        $stmtCovered[$pkgPath] += $stmt
+    }
+    $entries++
+}
+
+if ($entries -eq 0) {
+    $where = (Get-Location).Path
+    $resolved = Join-Path $where $CoverProfile
+    throw "覆盖率文件为空或没有任何有效数据行：$CoverProfile（在 $where 下解析为 $resolved）"
 }
 
 $byPkg = @{}
-foreach ($line in $rows) {
-    if ($line -notmatch '^(?<file>[^:]+):\d+:\s+(?<fn>\S+)\s+(?<pct>[\d.]+)%\s*$') { continue }
-    $file = $Matches['file']
-    $pct = [double]$Matches['pct']
-
-    # 文件名形如 cloudtrace/internal/config/config.go，去掉最后一段即包路径。
-    $pkgPath = ($file -replace '\\', '/') -replace '/[^/]+$', ''
-    if (-not $byPkg.ContainsKey($pkgPath)) {
-        $byPkg[$pkgPath] = [System.Collections.Generic.List[double]]::new()
+foreach ($pkgPath in $stmtTotal.Keys) {
+    $total = $stmtTotal[$pkgPath]
+    if ($total -gt 0) {
+        $byPkg[$pkgPath] = 100.0 * $stmtCovered[$pkgPath] / $total
     }
-    $byPkg[$pkgPath].Add($pct)
-}
-
-if ($byPkg.Count -eq 0) {
-    Write-Warning '覆盖率文件中没有任何可统计的条目'
+    else {
+        $byPkg[$pkgPath] = 0.0
+    }
 }
 
 # ---- 2. 输出总览 --------------------------------------------------------
-Write-Host '==> 各包覆盖率'
+Write-Host '==> 各包覆盖率（语句级）'
 $sorted = $byPkg.GetEnumerator() | Sort-Object Name
 foreach ($entry in $sorted) {
-    $avg = ($entry.Value | Measure-Object -Average).Average
-    Write-Host ("    {0,-45} {1,6:N1}%" -f $entry.Name, $avg)
+    Write-Host ("    {0,-45} {1,6:N1}%" -f $entry.Name, $entry.Value)
 }
 
 # ---- 3. 门禁 ------------------------------------------------------------
@@ -103,9 +138,9 @@ foreach ($want in $Package) {
         $failures += "$want（存在但没有任何测试覆盖）"
         continue
     }
-    $avg = ($byPkg[$want] | Measure-Object -Average).Average
-    if ($avg -lt $Threshold) {
-        $failures += ("{0}（{1:N1}% < {2}%）" -f $want, $avg, $Threshold)
+    $pct = $byPkg[$want]
+    if ($pct -lt $Threshold) {
+        $failures += ("{0}（{1:N1}% < {2}%）" -f $want, $pct, $Threshold)
     }
 }
 
