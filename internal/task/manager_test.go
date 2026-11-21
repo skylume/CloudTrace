@@ -256,6 +256,9 @@ func TestManagerProgressThrottledButSnapshotFresh(t *testing.T) {
 		t.Fatalf("启动失败：%v", err)
 	}
 	waitStatus(t, m, model.StatusDone, waitTimeout)
+	// 任务进入 Done 只说明编排器跑完了自己的收尾，progress 事件还可能在总线的
+	// 投递队列里。这里必须先等它到达，否则断言会随机读到 0 条。
+	rec.waitCount(t, TopicProgress, 1, waitTimeout)
 
 	if got := rec.count(TopicProgress); got != 1 {
 		t.Errorf("progress 事件 %d 条，期望 1 条（节流未生效）", got)
