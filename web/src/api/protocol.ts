@@ -4,6 +4,7 @@
  * 命令名与事件名刻意用字符串字面量而不是枚举：它们就是后端 handlers 表里的
  * 键，改错一个字母时希望是运行时报「未注册的命令」，而不是编译期悄悄改名。
  */
+import type { Funnel } from './types'
 
 /** 客户端 → 服务端：命令。 */
 export const CMD = {
@@ -120,12 +121,6 @@ export interface ErrorPayload {
   msg: string
 }
 
-/** 错误事件的数据体。 */
-export interface ErrorPayload {
-  code: string
-  msg: string
-}
-
 /** 错误码。前端据它决定表现：Toast / 跳登录 / 字段高亮。 */
 export const ERROR_CODE = {
   busy: 'E_BUSY',
@@ -149,8 +144,10 @@ export interface ProgressPayload {
   phase: string
   done: number
   total: number
-  funnel: unknown
+  funnel: Funnel
   eta: number
+  /** 已耗时，秒。运行期间 state 不重发，计时器只能读这里。 */
+  elapsed: number
 }
 
 /** 任务终止事件的载荷。 */

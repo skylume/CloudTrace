@@ -133,10 +133,10 @@ function toggleLang(): void {
         <span class="fill" :style="{ width: `${task.percent}%` }" />
       </span>
       <span class="task-num tnum">
-        {{ task.state.done }} / {{ task.state.total }}
-        <template v-if="task.state.eta_s > 0">
+        {{ task.liveDone }} / {{ task.liveTotal }}
+        <template v-if="task.liveEta > 0">
           <!-- 包一层只为窄屏能整段收掉：ETA 是这一行里最可以不要的信息。 -->
-          <span class="eta"> · {{ t('task.remaining', { value: durationText(task.state.eta_s) }) }}</span>
+          <span class="eta"> · {{ t('task.remaining', { value: durationText(task.liveEta) }) }}</span>
         </template>
       </span>
     </div>

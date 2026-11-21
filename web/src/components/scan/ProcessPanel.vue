@@ -26,7 +26,7 @@ const funnelSteps = computed<FunnelStep[]>(() => [
 ])
 
 const eta = computed(() => {
-  const seconds = task.state.eta_s
+  const seconds = task.liveEta
   return seconds > 0 ? durationText(seconds) : ''
 })
 </script>
@@ -40,13 +40,13 @@ const eta = computed(() => {
     <div class="row">
       <span class="ct-subtle">{{ t(`task.phase.${task.phase}`) }}</span>
       <span class="spacer" />
-      <span class="tnum ct-subtle">{{ task.state.done }} / {{ task.state.total }}</span>
+      <span class="tnum ct-subtle">{{ task.liveDone }} / {{ task.liveTotal }}</span>
     </div>
     <div class="track">
       <div class="fill" :style="{ width: `${task.percent}%` }" />
     </div>
     <div class="row">
-      <span class="ct-subtle">{{ t('task.elapsed') }} <b class="tnum">{{ Math.round(task.state.elapsed_s) }}s</b></span>
+      <span class="ct-subtle">{{ t('task.elapsed') }} <b class="tnum">{{ Math.round(task.liveElapsed) }}s</b></span>
       <span v-if="eta" class="ct-subtle">{{ t('task.eta') }} <b class="tnum">{{ eta }}</b></span>
     </div>
   </section>

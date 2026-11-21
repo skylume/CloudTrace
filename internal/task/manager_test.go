@@ -305,6 +305,10 @@ func TestManagerProgressCarriesFunnel(t *testing.T) {
 	if last.Funnel.Generated != 100 || last.Funnel.LatencyOK != 40 {
 		t.Errorf("漏斗 = %+v，期望 100/40", last.Funnel)
 	}
+	// 运行期间只发 progress、不重发 state，界面上的计时器只能读这里。
+	if last.Elapsed <= 0 {
+		t.Errorf("已耗时 = %v，期望大于 0", last.Elapsed)
+	}
 }
 
 func TestManagerSnapshotElapsedAndETA(t *testing.T) {

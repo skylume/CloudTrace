@@ -56,12 +56,16 @@ var (
 )
 
 // Progress 是 progress 事件的载荷。
+//
+// 带上已耗时是必需的：运行期间编排层只发 progress、不重发 state，界面上的
+// 计时器若只读 state 就会整场停在 0。
 type Progress struct {
-	Phase  string       `json:"phase"`
-	Done   int          `json:"done"`
-	Total  int          `json:"total"`
-	Funnel model.Funnel `json:"funnel"`
-	ETA    float64      `json:"eta"`
+	Phase   string       `json:"phase"`
+	Done    int          `json:"done"`
+	Total   int          `json:"total"`
+	Funnel  model.Funnel `json:"funnel"`
+	ETA     float64      `json:"eta"`
+	Elapsed float64      `json:"elapsed"`
 }
 
 // Outcome 是任务结束时随终止事件下发的信息。
@@ -458,11 +462,12 @@ func (r *run) publish() {
 
 	r.progress.report(done, total, func(d, t int) {
 		r.mgr.bus.Publish(TopicProgress, Progress{
-			Phase:  r.phase,
-			Done:   d,
-			Total:  t,
-			Funnel: funnel,
-			ETA:    r.eta(),
+			Phase:   r.phase,
+			Done:    d,
+			Total:   t,
+			Funnel:  funnel,
+			ETA:     r.eta(),
+			Elapsed: r.mgr.now().Sub(r.started).Seconds(),
 		})
 	})
 }

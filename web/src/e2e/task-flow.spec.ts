@@ -223,7 +223,7 @@ describe('任务结果端到端', { timeout: 20_000 }, () => {
     expect(wrapper.find('.warn-box').exists()).toBe(false)
   })
 
-  it('progress 帧更新进度数据；界面进度条等下一次 state 帧才动', async () => {
+  it('progress 帧直接驱动进度条，不必等下一次 state 帧', async () => {
     const { wrapper, flush, task } = await boot()
 
     last().message({ type: 'state', data: stateFrame({ done: 120, total: 500, eta_s: 40 }) })
@@ -231,22 +231,33 @@ describe('任务结果端到端', { timeout: 20_000 }, () => {
 
     last().message({
       type: 'progress',
-      data: { phase: 'scan', done: 250, total: 500, eta: 40, funnel: stateFrame().funnel },
+      data: {
+        phase: 'scan',
+        done: 250,
+        total: 500,
+        eta: 40,
+        elapsed: 12.5,
+        funnel: stateFrame().funnel,
+      },
     })
     await flush()
 
-    // 进度数据确实进了 store……
-    expect(task.progress).toEqual({ done: 250, total: 500, eta: 40 })
-    // ……但当前没有任何组件消费 task.progress：顶栏读的是 state，所以仍是 24。
-    // 这是现状，不是期望行为，已在任务报告里作为发现提出。
-    expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('24')
-    expect(wrapper.text()).toContain('120 / 500')
-
-    last().message({ type: 'state', data: stateFrame({ done: 250, total: 500, eta_s: 40 }) })
-    await flush()
-
+    // 运行期间后端只发 progress、不重发 state：界面必须当场跟上，
+    // 否则进度条整场停在 0，结束时直接跳满。
+    expect(task.progress).toMatchObject({ done: 250, total: 500, eta: 40, elapsed: 12.5 })
+    expect(task.liveElapsed).toBe(12.5)
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('50')
     expect(wrapper.text()).toContain('250 / 500')
+
+    // 任务结束后回落到快照：进度事件的残留不能盖住最终结果。
+    last().message({ type: 'state', data: stateFrame({ status: 'done', done: 500, total: 500 }) })
+    await flush()
+
+    expect(task.progress).toBeNull()
+    expect(task.percent).toBe(100)
+    expect(task.state.done).toBe(500)
+    // 结束态不再挂进度条：顶栏换成结论，没有下载时页面上不该再有任何进度条。
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
   })
 
   it('结果行事件进入表格，字段按后端键名原样映射', async () => {
