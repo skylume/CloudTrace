@@ -2,6 +2,9 @@
 /dist/
 /build/
 /coverage.out
+
+# go build 把 main 包的可执行文件丢在当前目录
+/*.exe
 /.toolchain/
 /vendor/
 

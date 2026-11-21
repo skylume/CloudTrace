@@ -127,6 +127,22 @@ if ($Package.Count -eq 0) {
 }
 
 $existing = @(& go list ./...)
+if ($existing.Count -eq 0) {
+    Write-Host '==> 覆盖率门禁：go list ./... 没有返回任何包，请在模块根目录运行' -ForegroundColor Red
+    exit 1
+}
+
+# 传入的包一个都不在模块里，多半是清单写错了（例如整串被当成一个包名传进来）。
+# 那种情况下每个 want 都会落到下面的「尚未实现」分支，门禁会静默通过——门禁
+# 形同虚设比门禁报错糟糕得多，所以这里直接失败。
+$matched = @($Package | Where-Object { $existing -contains $_ })
+if ($matched.Count -eq 0) {
+    Write-Host '==> 覆盖率门禁：传入的包一个都不在模块内' -ForegroundColor Red
+    Write-Host ("    传入：{0}" -f ($Package -join ' '))
+    Write-Host ("    模块内共 {0} 个包" -f $existing.Count)
+    exit 1
+}
+
 $failures = @()
 
 foreach ($want in $Package) {

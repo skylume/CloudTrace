@@ -28,4 +28,4 @@ GOFMT_PATHS := ./cmd ./internal ./web
 #
 # 追加方式：在本行末尾补一个空格 + 完整导入路径（例如
 # cloudtrace/internal/xxx），保持单行；ci-check.ps1 只按空白切分后逐个比对。
-COVERAGE_PACKAGES := cloudtrace/internal/probe cloudtrace/internal/source cloudtrace/internal/scan cloudtrace/internal/speed cloudtrace/internal/history cloudtrace/internal/score cloudtrace/internal/geo
+COVERAGE_PACKAGES := cloudtrace/internal/probe cloudtrace/internal/source cloudtrace/internal/scan cloudtrace/internal/speed cloudtrace/internal/history cloudtrace/internal/score cloudtrace/internal/geo cloudtrace/internal/app cloudtrace/internal/netx cloudtrace/internal/launch cloudtrace/internal/platform
