@@ -162,8 +162,48 @@ func TestDialerKeepsPortForIPTargets(t *testing.T) {
 	}
 }
 
-// 主机名走完整解析→逐 IP 拨号路径：自定义 DNS 挂掉时回退系统解析，
-// 解析到 localhost 后拨回本机监听端口。
+// nxdns 起一个只会回 NXDOMAIN 的本地 DNS，返回它的地址。
+//
+// 不能用「指向一个没人监听的端口」来制造解析失败：端口不通在不同平台上
+// 有两种表现，立即拒绝或静默丢包。后者要等满 DefaultTimeout，而 DNS 客户端
+// 对 UDP 超时还会重试一次，两次超时就把调用方的预算吃光，回退根本轮不到，
+// 测试于是在一台机器上过、在另一台上挂。回 NXDOMAIN 是确定性的：解析立刻
+// 失败，回退立刻发生，与平台和网络环境无关。
+func nxdns(t *testing.T) string {
+	t.Helper()
+
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("起 DNS 桩失败：%v", err)
+	}
+	t.Cleanup(func() { pc.Close() })
+
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			n, addr, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if n < 12 {
+				continue
+			}
+			// 原样回显请求头与问题段，只改标志：QR=1、RD=1、RA=1、RCODE=3。
+			reply := append([]byte(nil), buf[:n]...)
+			reply[2] = 0x81
+			reply[3] = 0x83
+			for i := 6; i < 12; i++ {
+				reply[i] = 0
+			}
+			_, _ = pc.WriteTo(reply, addr)
+		}
+	}()
+
+	return pc.LocalAddr().String()
+}
+
+// 主机名走完整解析→逐 IP 拨号路径：自定义 DNS 明确回「查不到」时回退系统
+// 解析，解析到 localhost 后拨回本机监听端口。
 func TestDialerResolvesHostnameAndDials(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -172,15 +212,12 @@ func TestDialerResolvesHostnameAndDials(t *testing.T) {
 	defer ln.Close()
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	// 自定义 DNS 指到一个没有服务的端口，让解析立刻失败，随后回退系统解析。
-	dial := NewDialer([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(1))}, true)
+	dial := NewDialer([]string{nxdns(t)}, true)
 	if dial == nil {
 		t.Fatal("有自定义 DNS 时不该返回 nil")
 	}
 
-	// 自定义 DNS 不可达时要等满 DefaultTimeout 才会回退到系统解析，预算必须
-	// 比它长；只给 3 秒的话，测到的是「预算不够」而不是「回退之后能拨通」。
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout+5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := dial(ctx, "tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
@@ -195,12 +232,12 @@ func TestDialerResolvesHostnameAndDials(t *testing.T) {
 
 // 主机名解析成功但端口没有服务：循环拨完所有 IP 后返回最后一个错误。
 func TestDialerReturnsErrorWhenAllDialsFail(t *testing.T) {
-	dial := NewDialer([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(1))}, true)
+	dial := NewDialer([]string{nxdns(t)}, true)
 	if dial == nil {
 		t.Fatal("有自定义 DNS 时不该返回 nil")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// localhost 能解析，但 1 号端口没有服务，所有 IP 都拨不上。
