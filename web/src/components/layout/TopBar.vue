@@ -7,7 +7,7 @@
  */
 import { computed } from 'vue'
 
-import { durationText, t } from '@/i18n'
+import { durationMsText, durationText, phaseText, t } from '@/i18n'
 import { useGeoStore } from '@/stores/geo'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
@@ -48,6 +48,37 @@ const downloadLabel = computed(() =>
     ? t('geo.downloading')
     : t('geo.downloadingPercent', { percent: downloadPercent.value }),
 )
+
+/** 告警与失败各给一个形状：只靠颜色区分，色弱用户看不出差别。 */
+const WARN_ICON = 'M12 8v4M12 16h.01M10.3 4.3 2.6 17.4A2 2 0 0 0 4.3 20.4h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z'
+const BAD_ICON = 'M12 8v4M12 16h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z'
+
+/**
+ * 刚结束的任务留一行结论。
+ *
+ * 跑得顺且没有告警时不留——那是常态，挂着只是噪音；失败与告警则一直留到
+ * 下一轮开始，用户切到别的页面也能看见。
+ */
+const notice = computed<{ tone: 'warn' | 'bad'; label: string; meta: string } | null>(() => {
+  const outcome = task.outcome
+  if (!outcome) return null
+
+  const phase = phaseText(outcome.stage)
+  if (outcome.status === 'failed') {
+    return {
+      tone: 'bad',
+      label: phase === '' ? t('task.failedTitlePlain') : t('task.failedTitle', { phase }),
+      meta: outcome.durationMs > 0 ? durationMsText(outcome.durationMs) : '',
+    }
+  }
+
+  if (outcome.warnings.length === 0) return null
+  return {
+    tone: 'warn',
+    label: phase === '' ? t('task.done') : t('task.doneAt', { phase }),
+    meta: t('task.warnCount', { count: outcome.warnings.length }),
+  }
+})
 
 function cycleTheme(): void {
   const order = ['system', 'dark', 'light'] as const
@@ -109,6 +140,24 @@ function toggleLang(): void {
         </template>
       </span>
     </div>
+
+    <!--
+      任务已经结束：失败或带告警时把结论留在顶栏。结果页会展开完整细节，
+      所以在结果页不重复占一行。
+    -->
+    <button
+      v-else-if="notice && ui.activeView !== 'result'"
+      type="button"
+      class="task-strip task-outcome"
+      :class="notice.tone"
+      @click="ui.activeView = 'result'"
+    >
+      <svg class="task-outcome-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path :d="notice.tone === 'bad' ? BAD_ICON : WARN_ICON" />
+      </svg>
+      <span class="task-outcome-label">{{ notice.label }}</span>
+      <span v-if="notice.meta" class="task-num tnum task-outcome-meta">{{ notice.meta }}</span>
+    </button>
 
     <span class="spacer" />
 
@@ -274,6 +323,53 @@ function toggleLang(): void {
   color: var(--color-text);
 }
 
+/* 结束后的结论：一行、可点，点了去结果页看细节。 */
+.task-outcome {
+  min-width: 0;
+  max-width: 38vw;
+  height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.task-outcome:hover {
+  background: var(--color-surface-hover);
+}
+
+.task-outcome.bad {
+  color: var(--color-bad);
+}
+
+.task-outcome.warn {
+  color: var(--color-warn);
+}
+
+.task-outcome-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-outcome-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-outcome-meta {
+  color: var(--color-text-subtle);
+}
+
 /*
  * 窄屏顶栏：一行里原本要塞「标题 + 阶段 + 进度条 + 完成数 + ETA + 库文件状态 +
  * 主题 + 语言」，48px 高的一行根本放不下，结果整条顶栏横着溢出屏幕。
@@ -288,7 +384,8 @@ function toggleLang(): void {
   }
 
   .hint,
-  .eta {
+  .eta,
+  .task-outcome-meta {
     display: none;
   }
 

@@ -64,8 +64,11 @@ export const EVT = {
    */
   scanDone: 'scan/done',
   scanAbort: 'scan/abort',
+  /* 失败：载荷与完成事件同形，额外带阶段、耗时与告警——「卡在哪」全靠它。 */
+  scanFailed: 'scan/failed',
   speedDone: 'speed/done',
   speedAbort: 'speed/abort',
+  speedFailed: 'speed/failed',
   speedPartial: 'speed/partial',
   /** 自适应静默调整了参数；界面要给徽标与「还原」。 */
   adaptiveApplied: 'adaptive/applied',
@@ -154,6 +157,12 @@ export interface ProgressPayload {
 export interface TaskDonePayload {
   id?: string
   count: number
+  /** 失败/结束所在阶段，取值与 ProgressPayload.phase 一致。 */
+  stage?: string
+  /** 本阶段耗时，毫秒。 */
+  duration_ms?: number
+  /** 不致命、但值得说一声的问题。 */
+  warnings?: string[]
 }
 
 /** 历史变更事件的载荷。 */

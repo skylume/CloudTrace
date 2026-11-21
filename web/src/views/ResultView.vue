@@ -13,6 +13,7 @@ import MobileActionBar from '@/components/result/MobileActionBar.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
 import RegionChips from '@/components/result/RegionChips.vue'
 import ResultToolbar from '@/components/result/ResultToolbar.vue'
+import TaskOutcomeNotice from '@/components/task/TaskOutcomeNotice.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Funnel, { type FunnelStep } from '@/components/ui/Funnel.vue'
@@ -273,6 +274,9 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
     <p v-if="pullDistance > 0" class="pull ct-subtle" :style="{ height: Math.min(pullDistance, 90) + 'px' }">
       {{ pullDistance >= PULL_THRESHOLD ? t('common.retry') : '' }}
     </p>
+
+    <!-- 结局放在空态之前：失败时哪怕一条结果都没有，也要说清卡在哪。 -->
+    <TaskOutcomeNotice :outcome="task.outcome" />
 
     <EmptyState
       v-if="showEmpty"

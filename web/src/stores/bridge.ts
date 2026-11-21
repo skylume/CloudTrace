@@ -26,7 +26,12 @@ import { useTaskStore } from './task'
 import { useUIStore } from './ui'
 
 import { CMD } from '@/api/protocol'
-import type { ErrorPayload, HistoryChangePayload, ProgressPayload } from '@/api/protocol'
+import type {
+  ErrorPayload,
+  HistoryChangePayload,
+  ProgressPayload,
+  TaskDonePayload,
+} from '@/api/protocol'
 import type {
   AuthStatus,
   DiagExportResult,
@@ -204,6 +209,15 @@ export function wireEvents(): void {
     task.applyState(next)
   })
   onEvent(EVT.progress, (data) => task.applyProgress(data as ProgressPayload))
+
+  /*
+   * 任务结局单独记一份：state 只给状态，终止事件才带阶段、耗时与告警。
+   * 失败的主提示仍然由 EVT.error 负责弹，这里只补细节，不重复提醒。
+   */
+  onEvent(EVT.scanDone, (data) => task.applyOutcome('done', data as TaskDonePayload))
+  onEvent(EVT.speedDone, (data) => task.applyOutcome('done', data as TaskDonePayload))
+  onEvent(EVT.scanFailed, (data) => task.applyOutcome('failed', data as TaskDonePayload))
+  onEvent(EVT.speedFailed, (data) => task.applyOutcome('failed', data as TaskDonePayload))
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))

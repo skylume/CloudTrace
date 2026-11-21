@@ -9,6 +9,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import type { TaskDonePayload } from '@/api/protocol'
 import type { TaskState } from '@/api/types'
 import { useTaskStore } from './task'
 
@@ -55,6 +56,56 @@ describe('task store', () => {
 
     task.applyState(serverState({ done: 0, total: 0 }))
     expect(task.percent).toBe(0)
+  })
+
+  it('终止事件里的阶段、耗时与告警按后端字段名落下', () => {
+    const task = useTaskStore()
+    task.applyOutcome('failed', {
+      count: 12,
+      stage: 'speed',
+      duration_ms: 1500,
+      warnings: ['测速源限速'],
+    })
+
+    expect(task.outcome).toEqual({
+      status: 'failed',
+      stage: 'speed',
+      durationMs: 1500,
+      warnings: ['测速源限速'],
+    })
+  })
+
+  it('按线上 JSON 直接解出阶段、耗时与告警', () => {
+    // 手写后端真实下发的字段名：一旦 json tag 改名，这条会先红。
+    const payload = JSON.parse(
+      '{"id":"4b1f","count":12,"stage":"scan","duration_ms":1500,"warnings":["ASN 库不可用，结果里没有运营商"]}',
+    ) as TaskDonePayload
+
+    const task = useTaskStore()
+    task.applyOutcome('failed', payload)
+
+    expect(task.outcome).toEqual({
+      status: 'failed',
+      stage: 'scan',
+      durationMs: 1500,
+      warnings: ['ASN 库不可用，结果里没有运营商'],
+    })
+  })
+
+  it('后端没给可选字段时，告警是空数组而不是 undefined', () => {
+    const task = useTaskStore()
+    task.applyOutcome('done', { count: 3 })
+
+    expect(task.outcome?.warnings).toEqual([])
+    expect(task.outcome?.durationMs).toBe(0)
+  })
+
+  it('下一轮任务开始时清掉上一轮的结论', () => {
+    const task = useTaskStore()
+    task.applyOutcome('done', { count: 3, warnings: ['ASN 库不可用'] })
+    task.applyState(serverState({ status: 'running' }))
+
+    expect(task.outcome).toBeNull()
   })
 
   it('running 只看 status，不看阶段', () => {

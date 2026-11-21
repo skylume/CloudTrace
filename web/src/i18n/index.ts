@@ -61,3 +61,24 @@ export function durationText(total: number): string {
     seconds: Math.round(total - minutes * 60),
   })
 }
+
+/**
+ * 把毫秒渲染成「N 毫秒」或「N 秒」。
+ *
+ * 十秒以内保留一位小数：1500 毫秒说成「2 秒」会显得慢了一截，而失败时
+ * 这个数恰恰是用户拿来判断「是刚起来就挂，还是跑到一半才挂」的依据。
+ */
+export function durationMsText(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  if (ms < 1000) return translate('time.milliseconds', { value: Math.round(ms) })
+  if (ms < 10_000) return translate('time.seconds', { value: Number((ms / 1000).toFixed(1)) })
+  return durationText(ms / 1000)
+}
+
+/** 阶段名翻成人话；认不出的阶段原样返回，别让界面露出 i18n 键。 */
+export function phaseText(phase: string): string {
+  if (phase === '') return ''
+  const key = `task.phase.${phase}`
+  const translated = translate(key)
+  return translated === key ? phase : translated
+}

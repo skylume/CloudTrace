@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import type { TaskDonePayload } from '@/api/protocol'
 import type { Funnel, TaskState } from '@/api/types'
 import type { ConnectionState } from '@/api/ws'
 
@@ -25,12 +26,28 @@ function idleState(): TaskState {
   }
 }
 
+/**
+ * 一次任务的结局。
+ *
+ * 只由终止事件写入：state 只说「失败了」，而「卡在哪、跑了多久、有没有
+ * 需要提醒的问题」只在终止事件的载荷里。下一次任务开始时清空，这样界面
+ * 不会把上次的结论一直挂在上面。
+ */
+export interface TaskOutcome {
+  status: 'done' | 'failed'
+  stage: string
+  durationMs: number
+  warnings: string[]
+}
+
 export const useTaskStore = defineStore('task', () => {
   const connection = ref<ConnectionState>('connecting')
   const retryInSeconds = ref(0)
   const state = ref<TaskState>(idleState())
   /** 进度事件的载荷：比 state 更频繁，只用于进度条动画。 */
   const progress = ref<{ done: number; total: number; eta: number } | null>(null)
+  /** 上一次任务的结局；新一轮开始时清空。 */
+  const outcome = ref<TaskOutcome | null>(null)
 
   const running = computed(() => state.value.status === 'running')
   const phase = computed(() => state.value.phase)
@@ -44,8 +61,25 @@ export const useTaskStore = defineStore('task', () => {
 
   function applyState(next: TaskState): void {
     state.value = next
+    // 新任务开始了：上一轮的结论不再成立，别让它挂在这一轮上面。
+    if (next.status === 'running') outcome.value = null
     // 任务结束时清掉进度事件的残留，否则进度条会停在最后一帧。
     if (next.status !== 'running') progress.value = null
+  }
+
+  /**
+   * 写入任务结局。
+   *
+   * 字段名保持后端的 snake_case：中间多一层转换，新字段就会在转换表里
+   * 悄悄丢掉，而这类丢失在界面上只表现为「那块没显示」。
+   */
+  function applyOutcome(status: TaskOutcome['status'], payload: TaskDonePayload): void {
+    outcome.value = {
+      status,
+      stage: payload.stage ?? '',
+      durationMs: payload.duration_ms ?? 0,
+      warnings: payload.warnings ?? [],
+    }
   }
 
   function applyProgress(payload: { done?: number; total?: number; eta?: number }): void {
@@ -66,12 +100,14 @@ export const useTaskStore = defineStore('task', () => {
     retryInSeconds,
     state,
     progress,
+    outcome,
     running,
     phase,
     funnel,
     percent,
     applyState,
     applyProgress,
+    applyOutcome,
     setConnection,
   }
 })
