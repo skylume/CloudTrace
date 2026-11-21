@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +23,11 @@ const (
 	TopicError = "error"
 )
 
-// 终止事件的 topic 由阶段名拼出：`scan` → `scan/done` / `scan/abort`。
+// 终止事件的 topic 由阶段名拼出：`scan` → `scan/done` / `scan/abort` / `scan/failed`。
 const (
-	suffixDone  = "/done"
-	suffixAbort = "/abort"
+	suffixDone   = "/done"
+	suffixAbort  = "/abort"
+	suffixFailed = "/failed"
 )
 
 // DoneTopic 返回某阶段完成事件的 topic（如 scan → scan/done）。
@@ -33,6 +35,13 @@ func DoneTopic(phase string) string { return phase + suffixDone }
 
 // AbortTopic 返回某阶段中止事件的 topic（如 scan → scan/abort）。
 func AbortTopic(phase string) string { return phase + suffixAbort }
+
+// FailedTopic 返回某阶段失败事件的 topic（如 scan → scan/failed）。
+//
+// 失败同时还会发 TopicError，两者职责不同：TopicError 只承载「出错」与错误码
+// 映射，供界面弹提示；本条承载结构化结果（阶段、耗时、告警），供界面回答
+// 「卡在哪一步、跑了多久」。合并成一条会让错误提示链路被迫认识任务结构。
+func FailedTopic(phase string) string { return phase + suffixFailed }
 
 // 哨兵错误。
 //
@@ -56,10 +65,23 @@ type Progress struct {
 }
 
 // Outcome 是任务结束时随终止事件下发的信息。
+//
+// 后三个字段都是 omitempty：旧前端把它们当作未知键忽略，多出来的字段不会
+// 让解析失败；没填值的场景（例如耗时不足 1 毫秒）也不必下发空值。
 type Outcome struct {
 	Count int    `json:"count"`
 	ID    string `json:"id,omitempty"`
 	Msg   string `json:"msg,omitempty"`
+	// Stage 是任务结束时所处的阶段，取 model.PhaseScan / model.PhaseSpeed。
+	//
+	// 这里用的是**任务阶段**，不是漏斗级别：漏斗的 RegionOK 之类回答的是
+	// 「筛到哪一级」，不是「任务卡在哪一步」，混用会让提示文案没法读。
+	Stage string `json:"stage,omitempty"`
+	// DurationMs 是从任务启动到当前阶段结束的毫秒数。
+	DurationMs int64 `json:"duration_ms,omitempty"`
+	// Warnings 是任务过程中可继续的局部失败，例如部分数据源不可用但整体
+	// 仍然产出了结果。为空表示没有告警，不表示「没有检查」。
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Reporter 是任务向编排层汇报进度的入口。
@@ -79,6 +101,25 @@ type Reporter interface {
 	SetPreset(name string)
 	// Emit 发布一条业务事件（例如扫描结果增量）。
 	Emit(topic string, payload any)
+}
+
+// Warner 是 Reporter 的可选扩展：能在任务过程中记录非致命告警。
+//
+// 设为可选接口而不是往 Reporter 里加方法：Reporter 已有多个实现，只为收集
+// 告警就改接口，所有实现都得跟着改一遍，而多数实现根本不产生告警。
+type Warner interface {
+	// AddWarning 追加一条告警；空白串被忽略。
+	AddWarning(msg string)
+}
+
+// Warn 给支持告警收集的 Reporter 追加一条告警，不支持时静默忽略。
+//
+// phase 遇到「可继续的局部失败」时调用它，而不是把任务判成失败：整体结果
+// 仍然可用，用户需要知道的是哪一部分没拿到，而不是收到一句失败提示。
+func Warn(rep Reporter, msg string) {
+	if w, ok := rep.(Warner); ok {
+		w.AddWarning(msg)
+	}
 }
 
 // RunFunc 是任务主体。返回的 Outcome 随终止事件下发。
@@ -229,6 +270,9 @@ func (m *Manager) execute(r *run, runFn RunFunc, cancel context.CancelFunc) {
 	defer cancel()
 
 	outcome, err := invokeRun(r, runFn)
+	// 阶段与耗时由编排层补：任务体只关心业务结果，而「从启动到现在过了
+	// 多久」只有编排层握着起点。
+	outcome = r.decorate(outcome)
 
 	status := model.StatusDone
 	errMsg := ""
@@ -246,11 +290,14 @@ func (m *Manager) execute(r *run, runFn RunFunc, cancel context.CancelFunc) {
 
 	switch status {
 	case model.StatusAborted:
-		m.bus.Publish(r.phase+suffixAbort, outcome)
+		m.bus.Publish(AbortTopic(r.phase), outcome)
 	case model.StatusFailed:
+		// 结构化结果与错误提示是两条链路：前者回答「卡在哪、跑了多久」，
+		// 后者负责错误码映射与弹窗文案。少发前者，失败时前端就只剩一句话。
+		m.bus.Publish(FailedTopic(r.phase), outcome)
 		m.bus.Publish(TopicError, err)
 	default:
-		m.bus.Publish(r.phase+suffixDone, outcome)
+		m.bus.Publish(DoneTopic(r.phase), outcome)
 	}
 }
 
@@ -312,11 +359,12 @@ type run struct {
 	started  time.Time
 	progress *progressTracker
 
-	mu     sync.Mutex
-	done   int
-	total  int
-	funnel model.Funnel
-	preset string
+	mu       sync.Mutex
+	done     int
+	total    int
+	funnel   model.Funnel
+	preset   string
+	warnings []string
 }
 
 func (r *run) Context() context.Context { return r.ctx }
@@ -350,6 +398,42 @@ func (r *run) SetPreset(name string) {
 }
 
 func (r *run) Emit(topic string, payload any) { r.mgr.bus.Publish(topic, payload) }
+
+// AddWarning 记录一条非致命告警，随终止事件下发。
+func (r *run) AddWarning(msg string) {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return
+	}
+	r.mu.Lock()
+	r.warnings = append(r.warnings, msg)
+	r.mu.Unlock()
+}
+
+// decorate 补齐阶段、耗时与告警这三项编排层才知道的信息。
+//
+// 任务体自己返回的 Warnings 保留在前面：那是它明确要说的；编排层收集到的
+// 追加在后，顺序不影响语义，但合并时不能丢任何一边。
+func (r *run) decorate(out Outcome) Outcome {
+	out.Stage = r.phase
+	if elapsed := r.mgr.now().Sub(r.started); elapsed > 0 {
+		out.DurationMs = elapsed.Milliseconds()
+	}
+
+	r.mu.Lock()
+	collected := append([]string(nil), r.warnings...)
+	r.mu.Unlock()
+
+	if len(collected) > 0 {
+		// 重新分配再合并：直接 append 到调用方给的切片可能写进它的底层数组，
+		// 任务体若还持有那份数据就会被悄悄改掉。
+		merged := make([]string, 0, len(out.Warnings)+len(collected))
+		merged = append(merged, out.Warnings...)
+		merged = append(merged, collected...)
+		out.Warnings = merged
+	}
+	return out
+}
 
 func (r *run) counters() (done, total int, funnel model.Funnel, preset string) {
 	r.mu.Lock()

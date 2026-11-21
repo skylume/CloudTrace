@@ -156,15 +156,33 @@ func TestWSSpeedEventsAreForwarded(t *testing.T) {
 		t.Errorf("增量结果 = %+v，期望一条 12.5 MB/s 的记录", records)
 	}
 
-	// 完成与中止走各自的 topic，前端据此区分「存档」与「丢弃」。
-	for _, topic := range []string{task.DoneTopic(model.PhaseSpeed), task.AbortTopic(model.PhaseSpeed)} {
-		st.svc.Bus.Publish(topic, task.Outcome{Count: 3})
+	// 完成、中止与失败走各自的 topic，前端据此区分「存档」「丢弃」与「失败」。
+	//
+	// 三条链路都要原样透传阶段、耗时与告警：server 只做转发，不在这里重新
+	// 解释这些字段，否则前端拿到的值和任务体自己记的对不上。
+	cases := []struct {
+		topic string
+		want  task.Outcome
+	}{
+		{task.DoneTopic(model.PhaseSpeed), task.Outcome{Count: 3, Stage: model.PhaseSpeed, DurationMs: 12}},
+		{task.AbortTopic(model.PhaseSpeed), task.Outcome{Count: 2, Stage: model.PhaseSpeed, DurationMs: 30}},
+		{task.FailedTopic(model.PhaseSpeed), task.Outcome{
+			Stage:      model.PhaseSpeed,
+			DurationMs: 45,
+			Warnings:   []string{"部分数据源不可用"},
+		}},
+	}
+	for _, c := range cases {
+		st.svc.Bus.Publish(c.topic, c.want)
 
-		done := readUntil(t, conn, topic, 3*time.Second)
+		m := readUntil(t, conn, c.topic, 3*time.Second)
 		var outcome task.Outcome
-		decode(t, done, &outcome)
-		if outcome.Count != 3 {
-			t.Errorf("%s 载荷 = %+v，期望 count 3", topic, outcome)
+		decode(t, m, &outcome)
+		if outcome.Count != c.want.Count || outcome.Stage != c.want.Stage || outcome.DurationMs != c.want.DurationMs {
+			t.Errorf("%s 载荷 = %+v，期望 %+v", c.topic, outcome, c.want)
+		}
+		if len(outcome.Warnings) != len(c.want.Warnings) {
+			t.Errorf("%s warnings = %v，期望 %v", c.topic, outcome.Warnings, c.want.Warnings)
 		}
 	}
 }

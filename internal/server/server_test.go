@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -752,6 +753,56 @@ func TestWSReceivesScanAbort(t *testing.T) {
 	doneTopic := task.DoneTopic(model.PhaseScan)
 	if hasEvent(msgs, doneTopic) {
 		t.Errorf("中止后不应出现 %q 事件", doneTopic)
+	}
+}
+
+// 失败任务要发 scan/failed，载荷带阶段与耗时；错误提示另走 error 事件。
+//
+// 只发 error 的话，前端只能显示「失败 + 一句话」，说不出卡在哪一步、跑了多久。
+func TestWSReceivesScanFailureWithStage(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	ch := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+
+	if err := st.svc.Tasks.Start(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
+		rep.SetTotal(10)
+		<-ch
+		return task.Outcome{}, errors.New("候选池为空")
+	}); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	readUntil(t, conn, eventState, 3*time.Second)
+	release()
+
+	failedTopic := task.FailedTopic(model.PhaseScan)
+	msgs := readStream(t, conn, 5*time.Second, "scan/failed、error 与 failed 快照", func(ms []message) bool {
+		return hasEvent(ms, failedTopic) && hasEvent(ms, eventError) && stateIs(t, ms, model.StatusFailed)
+	})
+
+	var outcome task.Outcome
+	decode(t, mustEvent(t, msgs, failedTopic), &outcome)
+	if outcome.Stage != model.PhaseScan {
+		t.Errorf("失败事件 stage = %q，期望 %q", outcome.Stage, model.PhaseScan)
+	}
+	if outcome.DurationMs < 0 {
+		t.Errorf("失败事件 duration_ms = %d，期望 >= 0", outcome.DurationMs)
+	}
+
+	// 错误提示链路保持不变：前端仍要拿到可展示的 code/msg。
+	var p errorPayload
+	decode(t, mustEvent(t, msgs, eventError), &p)
+	if p.Msg == "" {
+		t.Error("错误信息不能为空，前端要拿它给用户看")
+	}
+
+	// 失败不是完成：出现 scan/done 会让前端把失败结果当成功存档。
+	if hasEvent(msgs, task.DoneTopic(model.PhaseScan)) {
+		t.Errorf("失败后不应出现 %q 事件", task.DoneTopic(model.PhaseScan))
 	}
 }
 

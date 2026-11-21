@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -12,6 +13,11 @@ import (
 )
 
 const waitTimeout = 3 * time.Second
+
+// knownStage 判断阶段名是否属于仓库定义的任务阶段集合。
+func knownStage(stage string) bool {
+	return stage == model.PhaseScan || stage == model.PhaseSpeed
+}
 
 func TestNewManagerValidation(t *testing.T) {
 	if _, err := NewManager(nil, nil, Options{}); err == nil {
@@ -120,6 +126,13 @@ func TestManagerAbortKeepsPartialAndSkipsDone(t *testing.T) {
 	if out.Count != 37 {
 		t.Errorf("中止事件 count = %d，期望 37", out.Count)
 	}
+	// 中止同样是终态，也要能回答「停在哪一步、跑了多久」。
+	if !knownStage(out.Stage) {
+		t.Errorf("中止事件 stage = %q，期望属于 {scan, speed}", out.Stage)
+	}
+	if out.DurationMs < 0 {
+		t.Errorf("中止事件 duration_ms = %d，期望 >= 0", out.DurationMs)
+	}
 }
 
 func TestManagerDonePublishesOutcome(t *testing.T) {
@@ -141,6 +154,12 @@ func TestManagerDonePublishesOutcome(t *testing.T) {
 	if !ok || out.Count != 10 || out.ID != "hist-1" {
 		t.Fatalf("done 事件载荷 = %+v，期望 count=10 id=hist-1", rec.last("scan"+suffixDone))
 	}
+	if !knownStage(out.Stage) {
+		t.Errorf("done 事件 stage = %q，期望属于 {scan, speed}", out.Stage)
+	}
+	if out.DurationMs < 0 {
+		t.Errorf("done 事件 duration_ms = %d，期望 >= 0", out.DurationMs)
+	}
 
 	st := m.Snapshot()
 	if st.Status != model.StatusDone || st.Preset != "fast" || st.Done != 10 {
@@ -153,7 +172,7 @@ func TestManagerDonePublishesOutcome(t *testing.T) {
 
 func TestManagerFailurePublishesError(t *testing.T) {
 	m, bus := newTestManager(t)
-	rec := newRecorder(t, bus, TopicError, "scan"+suffixDone)
+	rec := newRecorder(t, bus, TopicError, "scan"+suffixDone, FailedTopic("scan"))
 
 	run := func(Reporter) (Outcome, error) { return Outcome{}, errors.New("候选池为空") }
 	if err := m.Start("scan", run); err != nil {
@@ -170,6 +189,19 @@ func TestManagerFailurePublishesError(t *testing.T) {
 	}
 	if err, ok := rec.last(TopicError).(error); !ok || err.Error() != "候选池为空" {
 		t.Errorf("error 事件载荷 = %v", rec.last(TopicError))
+	}
+
+	// 失败还要带结构化结果：阶段必须可识别，耗时不能为负。
+	rec.waitCount(t, FailedTopic("scan"), 1, waitTimeout)
+	out, ok := rec.last(FailedTopic("scan")).(Outcome)
+	if !ok {
+		t.Fatalf("failed 事件载荷类型 = %T，期望 Outcome", rec.last(FailedTopic("scan")))
+	}
+	if !knownStage(out.Stage) {
+		t.Errorf("失败事件 stage = %q，期望属于 {scan, speed}", out.Stage)
+	}
+	if out.DurationMs < 0 {
+		t.Errorf("失败事件 duration_ms = %d，期望 >= 0", out.DurationMs)
 	}
 }
 
@@ -341,4 +373,122 @@ func TestManagerUsesBaseContext(t *testing.T) {
 
 	cancelParent()
 	waitStatus(t, m, model.StatusAborted, waitTimeout)
+}
+
+// 失败也必须下发结构化结果：只发 error 的话，前端无法回答「卡在哪一步、
+// 跑了多久」。耗时用注入时钟造出确定值，避免断言落在真实时钟的抖动上。
+func TestManagerFailurePublishesStageAndDuration(t *testing.T) {
+	var clock atomic.Int64
+	base := time.Unix(1700000000, 0)
+	clock.Store(base.UnixNano())
+
+	bus := event.New(event.DefaultQueueSize)
+	defer bus.Close()
+
+	m, err := NewManager(bus, nil, Options{
+		Now:              func() time.Time { return time.Unix(0, clock.Load()) },
+		ProgressInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("构造失败：%v", err)
+	}
+	failedTopic := FailedTopic("scan")
+	rec := newRecorder(t, bus, failedTopic, TopicError)
+
+	hold := make(chan struct{})
+	run := func(Reporter) (Outcome, error) {
+		<-hold
+		return Outcome{}, errors.New("候选池为空")
+	}
+	if err := m.Start("scan", run); err != nil {
+		t.Fatalf("启动失败：%v", err)
+	}
+
+	clock.Store(base.Add(1500 * time.Millisecond).UnixNano())
+	close(hold)
+
+	rec.waitCount(t, failedTopic, 1, waitTimeout)
+	out, ok := rec.last(failedTopic).(Outcome)
+	if !ok {
+		t.Fatalf("failed 事件载荷类型 = %T，期望 Outcome", rec.last(failedTopic))
+	}
+	if out.Stage != model.PhaseScan {
+		t.Errorf("失败事件 stage = %q，期望 %q", out.Stage, model.PhaseScan)
+	}
+	if out.DurationMs != 1500 {
+		t.Errorf("失败事件 duration_ms = %d，期望 1500", out.DurationMs)
+	}
+
+	// 错误提示链路保持原样：失败仍要发 TopicError。
+	rec.waitCount(t, TopicError, 1, waitTimeout)
+	if err, ok := rec.last(TopicError).(error); !ok || err.Error() != "候选池为空" {
+		t.Errorf("error 事件载荷 = %v", rec.last(TopicError))
+	}
+}
+
+// 可继续的局部失败要变成告警而不是失败：任务整体成功，告警随 done 下发。
+func TestManagerCollectsWarningsOnPartialFailure(t *testing.T) {
+	m, bus := newTestManager(t)
+	doneTopic := DoneTopic("scan")
+	rec := newRecorder(t, bus, doneTopic)
+
+	run := func(rep Reporter) (Outcome, error) {
+		rep.SetTotal(10)
+		rep.SetDone(10)
+		Warn(rep, "数据源 A 不可用，已跳过")
+		Warn(rep, "   ") // 空白告警没有信息量，必须丢弃。
+		Warn(rep, "地区解析部分失败")
+		return Outcome{Count: 8, Warnings: []string{"任务体自带的告警"}}, nil
+	}
+	if err := m.Start("scan", run); err != nil {
+		t.Fatalf("启动失败：%v", err)
+	}
+
+	rec.waitCount(t, doneTopic, 1, waitTimeout)
+	out, ok := rec.last(doneTopic).(Outcome)
+	if !ok {
+		t.Fatalf("done 事件载荷类型 = %T，期望 Outcome", rec.last(doneTopic))
+	}
+	want := []string{"任务体自带的告警", "数据源 A 不可用，已跳过", "地区解析部分失败"}
+	if len(out.Warnings) != len(want) {
+		t.Fatalf("warnings = %v，期望 %v", out.Warnings, want)
+	}
+	for i := range want {
+		if out.Warnings[i] != want[i] {
+			t.Errorf("warnings[%d] = %q，期望 %q", i, out.Warnings[i], want[i])
+		}
+	}
+	if !knownStage(out.Stage) || out.DurationMs < 0 {
+		t.Errorf("stage/duration = %q/%d，期望 stage 可识别且耗时非负", out.Stage, out.DurationMs)
+	}
+}
+
+// 新字段必须 omitempty：没有扩展信息时，旧前端收到的 JSON 与旧版完全一致。
+func TestOutcomeJSONOmitsEmptyExtensions(t *testing.T) {
+	raw, err := json.Marshal(Outcome{Count: 3})
+	if err != nil {
+		t.Fatalf("序列化失败：%v", err)
+	}
+	if got := string(raw); got != `{"count":3}` {
+		t.Errorf("空扩展字段的 JSON = %s，期望 {\"count\":3}", got)
+	}
+
+	raw, err = json.Marshal(Outcome{
+		Count:      3,
+		Stage:      model.PhaseSpeed,
+		DurationMs: 12,
+		Warnings:   []string{"源不可用"},
+	})
+	if err != nil {
+		t.Fatalf("序列化失败：%v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("反序列化失败：%v", err)
+	}
+	for _, key := range []string{"stage", "duration_ms", "warnings"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("非空扩展字段 %q 未出现在 JSON：%s", key, raw)
+		}
+	}
 }

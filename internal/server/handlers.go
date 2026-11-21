@@ -76,8 +76,15 @@ func (s *server) taskSubscriptions() []subscription {
 		{topic: geo.TopicProgress, fn: func(any) { s.hub.broadcast(eventGeo, s.geoStatus()) }},
 		{topic: task.TopicError, fn: s.onTaskError},
 	}
+	// 三种终态都原样转发：完成带结果，中止带部分结果，失败带阶段与耗时。
+	// 失败另有 TopicError 负责错误码与提示文案，两条链路互补而非重复。
 	for _, phase := range phases {
-		for _, topic := range []string{task.DoneTopic(phase), task.AbortTopic(phase)} {
+		topics := []string{
+			task.DoneTopic(phase),
+			task.AbortTopic(phase),
+			task.FailedTopic(phase),
+		}
+		for _, topic := range topics {
 			subs = append(subs, subscription{topic: topic, fn: s.forward(topic)})
 		}
 	}
