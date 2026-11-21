@@ -29,5 +29,12 @@
 *.mk text eol=lf
 Makefile text eol=lf
 
+# 内嵌产物（web/dist）也钉成 LF。
+#
+# CI 会重建产物再 `git diff --exit-code -- web/dist`。只要检出时行尾被转换，
+# 重建出的 LF 文件与工作区里的 CRLF 版本就会整份不同，校验永远红——而红的是
+# 行尾，不是产物。这里显式声明，让校验比较内容而不是各台机器的 core.autocrlf。
+web/dist/** text eol=lf
+
 # 本文件自身也用 LF：它是要被 git 解析的配置，不该带平台相关的行尾。
 .gitattributes text eol=lf
