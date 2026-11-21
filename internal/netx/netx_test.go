@@ -178,7 +178,9 @@ func TestDialerResolvesHostnameAndDials(t *testing.T) {
 		t.Fatal("有自定义 DNS 时不该返回 nil")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// 自定义 DNS 不可达时要等满 DefaultTimeout 才会回退到系统解析，预算必须
+	// 比它长；只给 3 秒的话，测到的是「预算不够」而不是「回退之后能拨通」。
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout+5*time.Second)
 	defer cancel()
 
 	conn, err := dial(ctx, "tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
