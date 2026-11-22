@@ -14,9 +14,11 @@ import { describe, expect, it } from 'vitest'
 import {
   SETTING_GROUPS,
   buildPatchMany,
+  fieldMatches,
   fieldPatch,
   fieldValue,
   fieldVisible,
+  highlightParts,
   settingsText,
   type SettingField,
 } from './settingsSchema'
@@ -163,11 +165,6 @@ describe('常用区与生效时机', () => {
   })
 
   /**
-   * 保存即写盘、但要重启才生效的项，界面上得说清楚。
-   *
-   * 这份清单与 internal/server/settings.go 的 restartRequired 是同一批。
-   */
-  /**
    * 合成项的档位要与下拉里的选项一一对上。
    *
    * 下拉里列出一个档位、writes 里却没有它，选中时什么都不会写，界面像保存成功
@@ -219,6 +216,11 @@ describe('常用区与生效时机', () => {
     })
   })
 
+  /**
+   * 保存即写盘、但要重启才生效的项，界面上得说清楚。
+   *
+   * 这份清单与 internal/server/settings.go 的 restartRequired 是同一批。
+   */
   it('需要重启的项都带了标记', () => {
     const restart = allFields
       .filter((field) => field.restart)
@@ -232,5 +234,39 @@ describe('常用区与生效时机', () => {
       'server.bind',
       'server.port',
     ])
+  })
+})
+
+describe('设置搜索', () => {
+  it('空查询命中全部', () => {
+    expect(allFields.every((field) => fieldMatches(field, '  ', 'zh'))).toBe(true)
+  })
+
+  it('按名称命中', () => {
+    const hits = allFields.filter((field) => fieldMatches(field, '延迟', 'zh'))
+    expect(hits.map((field) => field.path)).toContain('scan.latency_threshold')
+  })
+
+  it('按配置路径命中，且只命中这一项', () => {
+    const hits = allFields.filter((field) => fieldMatches(field, 'speed.target_qualified', 'zh'))
+    expect(hits.map((field) => field.path)).toEqual(['speed.target_qualified'])
+  })
+
+  /**
+   * 按说明命中：用户记得的是「那个会让扫描变慢的开关」，不是它的名字。
+   */
+  it('按说明命中', () => {
+    const hint = settingsText.zh['scan.timeout_ms']?.hint ?? ''
+    expect(hint.length).toBeGreaterThan(1)
+    const hits = allFields.filter((field) => fieldMatches(field, hint.slice(0, 2), 'zh'))
+    expect(hits.map((field) => field.path)).toContain('scan.timeout_ms')
+  })
+
+  it('命中片段被切出来，未命中的整段保留', () => {
+    expect(highlightParts('延迟上限', '延迟')).toEqual([
+      { text: '延迟', hit: true },
+      { text: '上限', hit: false },
+    ])
+    expect(highlightParts('延迟上限', '抖动')).toEqual([{ text: '延迟上限', hit: false }])
   })
 })

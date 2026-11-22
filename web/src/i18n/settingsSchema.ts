@@ -151,7 +151,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
       // 想要「几乎不等」填 1 即可，那个值会被原样采纳。
       { path: 'speed.interval_ms', kind: 'int', min: 1, max: 5000 },
       { path: 'speed.max_download_mb', kind: 'int', min: 0, max: 1000 },
-      { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 100 },
+      { path: 'speed.per_region_topn', kind: 'int', min: 0, max: 1000 },
       { path: 'speed.weight_speed', kind: 'float', min: 0, max: 10, step: 0.1 },
       { path: 'speed.weight_latency', kind: 'float', min: 0, max: 10, step: 0.1 },
       { path: 'speed.weight_jitter', kind: 'float', min: 0, max: 10, step: 0.1 },
@@ -579,6 +579,43 @@ export function buildPatchMany(pairs: Record<string, unknown>): Record<string, u
     mergeInto(root, buildPatch(path, value))
   }
   return root
+}
+
+/**
+ * 一项是否命中搜索。
+ *
+ * 三个维度都算：名称、配置路径、说明。只按名称匹配的话，用户记得「那个 429
+ * 的开关」却记不住它叫「限速熔断阈值」就搜不到；路径是给按配置文件排查的人
+ * 准备的；说明里往往写着代价与适用场景，正是要找的东西。
+ */
+export function fieldMatches(field: SettingField, query: string, locale: 'zh' | 'en'): boolean {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return true
+  const text = fieldText(field.path, locale)
+  return [field.path, text.label, text.hint].some((value) => value.toLowerCase().includes(needle))
+}
+
+export interface TextPart {
+  text: string
+  hit: boolean
+}
+
+/** 把一段文案按查询词切开，命中的片段单独标出来。 */
+export function highlightParts(value: string, query: string): TextPart[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return [{ text: value, hit: false }]
+  const lower = value.toLowerCase()
+  const parts: TextPart[] = []
+  let from = 0
+  for (;;) {
+    const at = lower.indexOf(needle, from)
+    if (at < 0) break
+    if (at > from) parts.push({ text: value.slice(from, at), hit: false })
+    parts.push({ text: value.slice(at, at + needle.length), hit: true })
+    from = at + needle.length
+  }
+  if (from < value.length) parts.push({ text: value.slice(from), hit: false })
+  return parts.length === 0 ? [{ text: value, hit: false }] : parts
 }
 
 function mergeInto(into: Record<string, unknown>, from: Record<string, unknown>): void {

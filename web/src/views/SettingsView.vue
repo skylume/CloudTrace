@@ -16,6 +16,7 @@ import {
   SETTING_GROUPS,
   buildPatch,
   buildPatchMany,
+  fieldMatches,
   fieldPatch,
   fieldValue,
   fieldVisible,
@@ -54,6 +55,20 @@ function toggleGroup(id: string): void {
     : [...openGroups.value, id]
 }
 
+/**
+ * 搜索词。
+ *
+ * 有搜索词时不看常用/高级：搜一个只出现在高级区的项却搜不到，是最让人困惑
+ * 的结果；命中之后也不该再要求用户先切到「显示全部」。
+ */
+const query = ref('')
+const searching = computed(() => query.value.trim() !== '')
+
+/** 恢复默认影响面有多大：项数按声明计，用户理解的就是「多少项」。 */
+const settableCount = computed(() =>
+  SETTING_GROUPS.reduce((sum, group) => sum + group.fields.length, 0),
+)
+
 /** 只有桌面版窗口里才生效的项：面板版跑在浏览器里，没有托盘可收。 */
 const DESKTOP_ONLY = new Set(['ui.close_to_tray'])
 
@@ -87,7 +102,11 @@ const groupsWithFields = computed(() =>
       )
       // 互斥项按当前取值只显示生效的那一个。
       .filter((field) => fieldVisible(field, values.value))
-      .filter((field) => ui.showAdvanced || field.primary),
+      .filter((field) =>
+        searching.value
+          ? fieldMatches(field, query.value, ui.lang)
+          : ui.showAdvanced || field.primary,
+      ),
   })).filter((group) => group.fields.length > 0),
 )
 
@@ -98,14 +117,21 @@ const activeGroupSafe = computed(() =>
     : (groupsWithFields.value[0]?.id ?? ''),
 )
 
-/** 窄屏渲染全部分组，宽屏只渲染当前选中的那一组。 */
+/** 窄屏渲染全部分组，宽屏只渲染当前选中的那一组；搜索时一律全渲染。 */
 const visibleGroups = computed(() =>
-  narrow.value
+  narrow.value || searching.value
     ? groupsWithFields.value
     : groupsWithFields.value.filter((item) => item.id === activeGroupSafe.value),
 )
 
+/** 搜索命中的项数，显示在输入框旁边。 */
+const matchedCount = computed(() =>
+  groupsWithFields.value.reduce((sum, group) => sum + group.fields.length, 0),
+)
+
 function isOpen(id: string): boolean {
+  // 搜索结果散在多个组里，折叠着等于没搜到。
+  if (searching.value) return true
   return !narrow.value || openGroups.value.includes(id)
 }
 const healthChecked = computed(() => settings.health !== null)
@@ -253,6 +279,19 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       />
     </div>
 
+    <div class="search-row">
+      <input
+        v-model="query"
+        type="search"
+        class="ct-input search"
+        :placeholder="t('settings.search')"
+        :aria-label="t('settings.search')"
+      />
+      <span v-if="searching" class="ct-subtle tnum">
+        {{ t('settings.searchCount', { count: matchedCount }) }}
+      </span>
+    </div>
+
     <!-- 披露程度：简单模式只显示常用项，与扫描页的「详细设置」共用同一个开关。 -->
     <div class="mode-row">
       <span class="ct-subtle">{{ ui.showAdvanced ? t('settings.allHint') : t('settings.coreHint') }}</span>
@@ -267,7 +306,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       </button>
     </div>
 
-    <nav v-if="!narrow" class="groups" :aria-label="t('settings.groups')">
+    <nav v-if="!narrow && !searching" class="groups" :aria-label="t('settings.groups')">
       <button
         v-for="item in groupsWithFields"
         :key="item.id"
@@ -282,6 +321,9 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 
     <div class="columns">
       <div class="main">
+        <p v-if="searching && matchedCount === 0" class="ct-card search-empty">
+          {{ t('settings.searchEmpty', { query: query.trim() }) }}
+        </p>
         <section v-for="item in visibleGroups" :key="item.id" class="ct-card">
           <h2 class="ct-card-title">
             <button
@@ -306,6 +348,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
               :values="values"
               :warning="settings.warningOf(field.path)"
               :locale="ui.lang"
+              :highlight="query.trim()"
               @change="change"
               @reset="resetField"
             />
@@ -313,7 +356,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
         </section>
       </div>
 
-      <div class="side">
+      <div v-if="!searching" class="side">
         <section class="ct-card">
           <h2 class="ct-card-title">
             <span>{{ t('health.title') }}</span>
@@ -413,6 +456,9 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
               </button>
             </template>
           </div>
+          <p v-if="confirmingReset" class="ct-subtle warn-text">
+            {{ t('settings.resetAllConfirm', { count: settableCount }) }}
+          </p>
         </section>
       </div>
     </div>
@@ -424,6 +470,21 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.search {
+  max-width: 320px;
+}
+
+.search-empty {
+  margin: 0;
+  color: var(--color-text-muted);
 }
 
 .warnings {

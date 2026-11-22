@@ -166,8 +166,11 @@ export const en: Record<keyof typeof zh, string> = {
 
   'settings.title': 'Settings',
   'settings.search': 'Search settings',
+  'settings.searchCount': '{count} matched',
+  'settings.searchEmpty': 'No setting matches "{query}"',
   'settings.restarting': 'Restarting…',
   'settings.resetAll': 'Restore recommended settings',
+  'settings.resetAllConfirm': '{count} settings go back to defaults; password, port and bind address stay as they are',
   'session.offer': 'Last scan did not finish — {count} results can be restored',
   'session.restore': 'Restore',
   'migrate.offer': 'Legacy data found ({parts}). Importing will not delete it, and a backup is made first',

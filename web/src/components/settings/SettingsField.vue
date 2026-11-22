@@ -12,7 +12,7 @@ import { computed } from 'vue'
 
 
 import { t } from '@/i18n'
-import { fieldText, readPath, type SettingField } from '@/i18n/settingsSchema'
+import { fieldText, highlightParts, readPath, type SettingField } from '@/i18n/settingsSchema'
 
 const props = defineProps<{
   field: SettingField
@@ -27,6 +27,8 @@ const props = defineProps<{
    */
   warning?: { reason: string }
   locale: 'zh' | 'en'
+  /** 搜索词：命中的字标出来，说明里命中时把说明提到行下。 */
+  highlight?: string
 }>()
 
 /**
@@ -48,6 +50,19 @@ const emit = defineEmits<{
 
 const text = computed(() => fieldText(props.field.path, props.locale))
 const hint = computed(() => (text.value.hint === '' ? t('common.none') : text.value.hint))
+const labelParts = computed(() => highlightParts(text.value.label, props.highlight ?? ''))
+
+/**
+ * 名称没命中、说明命中的情况。
+ *
+ * 这时把说明提到行下显示：只高亮名称的话，用户搜「限速」看到一整屏没有任何
+ * 标记的行，会以为搜索坏了。
+ */
+const hintHit = computed(() => {
+  const needle = (props.highlight ?? '').trim().toLowerCase()
+  if (needle === '') return false
+  return !text.value.label.toLowerCase().includes(needle) && text.value.hint.toLowerCase().includes(needle)
+})
 
 /**
  * 枚举取值的文案。
@@ -91,10 +106,13 @@ function onToggle(option: string, on: boolean): void {
 <template>
   <div class="field" :class="{ warned: props.warning !== undefined }">
     <label class="label" :title="props.warning ? props.warning.reason : hint">
-      <span>{{ text.label }}</span>
+      <span class="label-text">
+        <span v-for="(part, index) in labelParts" :key="index" :class="{ hit: part.hit }">{{ part.text }}</span>
+      </span>
       <span class="info" aria-hidden="true">?</span>
       <!-- 保存即写盘、但要重启才换过去，说在行上而不是只靠顶部横幅。 -->
       <span v-if="field.restart" class="restart-tag">{{ t('settings.restartTag') }}</span>
+      <span v-if="hintHit" class="match-hint">{{ text.hint }}</span>
     </label>
 
     <div class="control">
@@ -182,10 +200,26 @@ function onToggle(option: string, on: boolean): void {
 
 .label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-sm);
   cursor: help;
+}
+
+/* 只把命中的字标出来：整行标色等于没标。 */
+.label-text .hit {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--color-warn-bg);
+  box-shadow: inset 0 -1px 0 var(--color-warn-border);
+}
+
+.match-hint {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
 }
 
 .info {

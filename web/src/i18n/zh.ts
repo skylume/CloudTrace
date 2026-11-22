@@ -158,8 +158,11 @@ export const zh = {
 
   'settings.title': '设置',
   'settings.search': '搜索设置项',
+  'settings.searchCount': '命中 {count} 项',
+  'settings.searchEmpty': '没有找到与「{query}」相关的设置项',
   'settings.restarting': '正在重启…',
   'settings.resetAll': '恢复推荐设置',
+  'settings.resetAllConfirm': '将把 {count} 项设置恢复为默认值；访问密码、端口与监听地址保持不变',
   'session.offer': '上次扫描没正常结束，有 {count} 条结果可以恢复',
   'session.restore': '恢复',
   'migrate.offer': '检测到旧版数据（{parts}）。导入不会删除旧数据，并且会先备份一份',
