@@ -221,6 +221,8 @@ export interface HistoryIndexEntry {
   min_latency?: number
   regions?: string[]
   params_hash?: string
+  /** 算分时用的公式版本；0 或缺失表示没有标记（测速记录不带）。 */
+  score_version?: number
 }
 
 /** 两份历史的对比结果。 */

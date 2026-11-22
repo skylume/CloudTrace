@@ -63,6 +63,13 @@ type HistoryRecord struct {
 	// Origins 记录每个参数是默认值、档位带入还是用户显式设置。
 	Origins model.ParamOrigins `json:"origins,omitempty"`
 
+	// ScoreVersion 是这份结果算分时用的公式版本。
+	//
+	// 只有扫描记录带它（测速结果不评分）。0 表示这份记录早于版本标记，与当前
+	// 公式是否一致无从判断。放在记录元数据而不是 Params 里：Params 参与参数
+	// 差异比对，版本号混进去会被当成一次参数改动。
+	ScoreVersion int `json:"score_version,omitempty"`
+
 	Summary model.Summary    `json:"summary"`
 	Count   int              `json:"count"`
 	Tags    []string         `json:"tags,omitempty"`
@@ -121,20 +128,21 @@ func (r HistoryRecord) Validate() error {
 // 列表页多一次打开记录文件的理由。
 func (r HistoryRecord) Entry() HistoryIndexEntry {
 	return HistoryIndexEntry{
-		ID:         r.ID,
-		Type:       r.Type,
-		IPVersion:  r.IPVersion,
-		CreatedAt:  r.CreatedAt,
-		Duration:   r.Duration,
-		Preset:     r.Preset,
-		Count:      r.Count,
-		Tags:       cloneStrings(r.Tags),
-		Note:       r.Note,
-		Starred:    r.Starred,
-		BestSpeed:  r.Summary.BestSpeed,
-		MinLatency: r.Summary.MinLatency,
-		Regions:    distinctRegions(r.Results),
-		ParamsHash: ParamsHash(r.Params),
+		ID:           r.ID,
+		Type:         r.Type,
+		IPVersion:    r.IPVersion,
+		CreatedAt:    r.CreatedAt,
+		Duration:     r.Duration,
+		Preset:       r.Preset,
+		Count:        r.Count,
+		Tags:         cloneStrings(r.Tags),
+		Note:         r.Note,
+		Starred:      r.Starred,
+		BestSpeed:    r.Summary.BestSpeed,
+		MinLatency:   r.Summary.MinLatency,
+		Regions:      distinctRegions(r.Results),
+		ParamsHash:   ParamsHash(r.Params),
+		ScoreVersion: r.ScoreVersion,
 	}
 }
 
@@ -162,6 +170,12 @@ type HistoryIndexEntry struct {
 	// ParamsHash 是参数快照的摘要，用于判断「同参数的重复存档」。
 	// 存摘要而不是参数本身，是为了让去重判断也不必打开记录文件。
 	ParamsHash string `json:"params_hash,omitempty"`
+
+	// ScoreVersion 是这份结果算分时用的公式版本，0 表示没有标记。
+	//
+	// 放进索引是为了让列表页能标注「旧口径」——判断新旧本来要打开记录文件，
+	// 而列表页不打开记录文件是本包的第一条约束。
+	ScoreVersion int `json:"score_version,omitempty"`
 }
 
 // Index 是历史索引，落盘为 index.json。

@@ -266,8 +266,8 @@ export function wireEvents(): void {
   })
 
   onEvent(EVT.historyList, (data) => {
-    const payload = data as { entries?: unknown[]; total?: number }
-    history.applyList((payload.entries ?? []) as never[], payload.total ?? 0)
+    const payload = data as { entries?: unknown[]; total?: number; score_version?: number }
+    history.applyList((payload.entries ?? []) as never[], payload.total ?? 0, payload.score_version ?? 0)
   })
   onEvent(EVT.historyLoad, (data) => history.applyLoaded(data as LoadedHistory))
   onEvent(EVT.historyGet, (data) => {

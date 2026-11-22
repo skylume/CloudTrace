@@ -148,6 +148,7 @@ export const zh = {
   'history.load': '加载',
   'history.compare': '对比',
   'history.starred': '已收藏',
+  'history.legacyScore': '旧口径',
   'history.tag': '标签',
   'history.note': '备注',
   'history.paramDiff': '这份记录是 {minutes} 分钟前用别的参数跑的',

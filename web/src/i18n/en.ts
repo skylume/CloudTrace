@@ -156,6 +156,7 @@ export const en: Record<keyof typeof zh, string> = {
   'history.load': 'Load',
   'history.compare': 'Compare',
   'history.starred': 'Starred',
+  'history.legacyScore': 'Legacy score',
   'history.tag': 'Tags',
   'history.note': 'Note',
   'history.paramDiff': 'This record was taken {minutes} minutes ago with different parameters',

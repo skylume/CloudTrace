@@ -7,6 +7,7 @@ import (
 
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/score"
 	"cloudtrace/internal/task"
 )
 
@@ -48,6 +49,11 @@ type historyListReq struct {
 type historyListResp struct {
 	Entries []history.HistoryIndexEntry `json:"entries"`
 	Total   int                         `json:"total"`
+	// ScoreVersion 是当前评分公式的版本。
+	//
+	// 由后端下发而不是前端写死：两端的版本号一旦各写一份，公式升级后必然
+	// 出现「前端还认为旧记录是新口径」这种漂移。
+	ScoreVersion int `json:"score_version"`
 }
 
 type historyIDReq struct {
@@ -126,7 +132,11 @@ func (s *server) handleHistoryList(c *wsConn, data json.RawMessage) error {
 	if err != nil {
 		return s.historyError(err)
 	}
-	c.sendEvent(cmdHistoryList, historyListResp{Entries: entries, Total: len(entries)})
+	c.sendEvent(cmdHistoryList, historyListResp{
+		Entries:      entries,
+		Total:        len(entries),
+		ScoreVersion: score.Version,
+	})
 	return nil
 }
 
@@ -287,12 +297,14 @@ func (s *server) history() *history.Store { return s.svc.History }
 
 // archiveScan 把一次扫描的结果存进历史。
 func (s *server) archiveScan(params model.ScanParams, preset string, res model.TaskResult, duration float64) {
-	s.archive(model.PhaseScan, params.IPVersion, preset, params, res, duration)
+	s.archive(model.PhaseScan, params.IPVersion, preset, params, res, duration, score.Version)
 }
 
 // archiveSpeed 把一次测速的结果存进历史。
+//
+// 评分版本传 0：测速结果不参与评分，带一个版本号只会让人以为它能比。
 func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model.TaskResult, duration float64) {
-	s.archive(model.PhaseSpeed, params.IPVersion, preset, params, res, duration)
+	s.archive(model.PhaseSpeed, params.IPVersion, preset, params, res, duration, 0)
 }
 
 // archive 写入一份历史记录。
@@ -300,7 +312,7 @@ func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model
 // 只有任务**正常跑完**才会走到这里：中止与失败都不存档。中止的结果是残缺的，
 // 存下来会让用户在历史列表里挑到一份根本没扫完的节点，而且看起来和完整结果
 // 毫无区别。
-func (s *server) archive(typ string, ipVersion int, preset string, params any, res model.TaskResult, duration float64) {
+func (s *server) archive(typ string, ipVersion int, preset string, params any, res model.TaskResult, duration float64, scoreVersion int) {
 	store := s.history()
 	if store == nil {
 		return
@@ -326,14 +338,15 @@ func (s *server) archive(typ string, ipVersion int, preset string, params any, r
 	summary.Qualified = countMeasured(res.Records)
 
 	rec, err := store.Save(history.HistoryRecord{
-		Type:      typ,
-		IPVersion: ipVersion,
-		Duration:  duration,
-		Preset:    preset,
-		Params:    raw,
-		Origins:   s.cfg.Get().Origins.Clone(),
-		Summary:   summary,
-		Results:   res.Records,
+		Type:         typ,
+		IPVersion:    ipVersion,
+		Duration:     duration,
+		Preset:       preset,
+		Params:       raw,
+		Origins:      s.cfg.Get().Origins.Clone(),
+		ScoreVersion: scoreVersion,
+		Summary:      summary,
+		Results:      res.Records,
 	})
 	if err != nil {
 		// 存档失败不能让任务看起来失败了：结果已经推给前端，用户还能导出。

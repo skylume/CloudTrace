@@ -328,7 +328,7 @@ func TestEntryExtractsRegionsAndLatency(t *testing.T) {
 	rec := HistoryRecord{
 		ID: "20260927_143012_ab12cd34", Type: TypeScan, IPVersion: 4,
 		CreatedAt: time.Now(), Results: results, Summary: model.Summarize(results),
-		Params: json.RawMessage(`{"a":1}`),
+		Params: json.RawMessage(`{"a":1}`), ScoreVersion: 7,
 	}
 
 	e := rec.Entry()
@@ -340,6 +340,9 @@ func TestEntryExtractsRegionsAndLatency(t *testing.T) {
 	}
 	if e.ParamsHash != ParamsHash(rec.Params) {
 		t.Fatalf("参数摘要 = %q", e.ParamsHash)
+	}
+	if e.ScoreVersion != 7 {
+		t.Fatalf("评分版本 = %d，期望从记录带进索引", e.ScoreVersion)
 	}
 }
 

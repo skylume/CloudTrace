@@ -15,6 +15,7 @@ import (
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/history"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/score"
 	"cloudtrace/internal/task"
 )
 
@@ -299,6 +300,12 @@ func TestArchiveWritesRecordWithSnapshot(t *testing.T) {
 	if rec.Count != 3 || len(rec.Results) != 3 {
 		t.Fatalf("结果条数 = %d/%d，期望 3", rec.Count, len(rec.Results))
 	}
+	if rec.ScoreVersion != score.Version {
+		t.Fatalf("评分版本 = %d，期望当前公式版本 %d", rec.ScoreVersion, score.Version)
+	}
+	if entries[0].ScoreVersion != score.Version {
+		t.Fatalf("索引里的评分版本 = %d，期望 %d", entries[0].ScoreVersion, score.Version)
+	}
 }
 
 // 自动存档关掉之后，任务照跑但不留痕。
@@ -352,6 +359,9 @@ func TestArchiveSpeedMarksQualified(t *testing.T) {
 	}
 	if rec.Type != history.TypeSpeed {
 		t.Fatalf("类型 = %q，期望 speed", rec.Type)
+	}
+	if rec.ScoreVersion != 0 {
+		t.Fatalf("测速记录的评分版本 = %d，期望 0（不评分）", rec.ScoreVersion)
 	}
 }
 

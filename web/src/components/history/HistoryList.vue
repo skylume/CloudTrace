@@ -69,6 +69,17 @@ function exactTime(createdAt: string): string {
 const sorted = computed(() =>
   [...props.entries].sort((a, b) => Number(b.starred) - Number(a.starred)),
 )
+
+/**
+ * 这份记录是不是用旧公式算的分。
+ *
+ * 只标注、不隐藏：旧结果照样能用，只是它的分数和新结果不是同一把尺子量出来
+ * 的，混在一张表里排序会误导。
+ */
+function legacyScore(entry: HistoryIndexEntry): boolean {
+  const current = history.currentScoreVersion
+  return Boolean(entry.score_version && current > 0 && entry.score_version !== current)
+}
 </script>
 
 <template>
@@ -86,6 +97,7 @@ const sorted = computed(() =>
         </button>
         <span class="when" :title="exactTime(entry.created_at)">{{ relativeTime(entry.created_at) }}</span>
         <span v-if="entry.preset" class="chip">{{ entry.preset }}</span>
+        <span v-if="legacyScore(entry)" class="chip warn">{{ t('history.legacyScore') }}</span>
         <span class="ct-subtle">IPv{{ entry.ip_version }}</span>
         <span class="spacer" />
         <span class="count tnum">{{ t('result.stat.usable') }} {{ entry.count }}</span>
@@ -192,5 +204,11 @@ const sorted = computed(() =>
   border-radius: var(--radius-pill);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+.chip.warn {
+  border-color: var(--color-warn-border);
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
 }
 </style>

@@ -50,6 +50,13 @@ export const useHistoryStore = defineStore('history', () => {
    * 出现「撤销按钮还在、后端已经落定」的情况。
    */
   const undoWindowMs = ref(15000)
+  /**
+   * 当前评分公式的版本，由后端随列表下发。
+   *
+   * 前端不写死：两端各存一份版本号，公式一升级就会出现「前端还把旧记录当新
+   * 口径」的漂移。
+   */
+  const currentScoreVersion = ref(0)
 
   const starred = computed(() => entries.value.filter((entry) => entry.starred))
   const allTags = computed(() => {
@@ -60,9 +67,10 @@ export const useHistoryStore = defineStore('history', () => {
     return [...set].sort()
   })
 
-  function applyList(list: HistoryIndexEntry[], count: number): void {
+  function applyList(list: HistoryIndexEntry[], count: number, scoreVersion = 0): void {
     entries.value = list
     total.value = count
+    if (scoreVersion > 0) currentScoreVersion.value = scoreVersion
   }
 
   function applyLoaded(payload: LoadedHistory): void {
@@ -150,6 +158,7 @@ export const useHistoryStore = defineStore('history', () => {
     diff,
     detail,
     undoWindowMs,
+    currentScoreVersion,
     starred,
     allTags,
     applyList,
