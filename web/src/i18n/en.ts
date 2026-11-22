@@ -410,6 +410,8 @@ export const en: Record<keyof typeof zh, string> = {
   'opt.iptoasn': 'iptoasn (no account, small)',
   'opt.geolite2_mmdb': 'GeoLite2 (faster lookups)',
   'opt.off': 'Off',
+  'opt.detail': 'Record details',
+  'opt.precheck': 'Record and precheck',
   'opt.count': 'By count',
   'opt.days': 'By age',
   'opt.csv': 'CSV',

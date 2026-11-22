@@ -8,7 +8,7 @@
  * `settings/reset` 接受的键一致，中间不做任何转换。
  */
 
-export type FieldKind = 'bool' | 'int' | 'float' | 'text' | 'enum' | 'list' | 'path'
+export type FieldKind = 'bool' | 'int' | 'float' | 'text' | 'enum' | 'list' | 'path' | 'multi'
 
 export interface SettingField {
   /** 点号路径，如 `scan.workers`。 */
@@ -44,6 +44,21 @@ export interface SettingField {
    * 保存完就换过去了。
    */
   restart?: boolean
+  /**
+   * 一个控件背后是一组键，不是一个键。
+   *
+   * 选中某个取值时要写的键值：`{ precheck: { 'scan.verify_nodes': true, 'scan.usability_check': true } }`。
+   * 界面上是一个选择，配置里仍是几个独立的布尔——迁移、历史记录、参数来源
+   * 都照原字段走，不为界面好看去动存储。
+   */
+  writes?: Record<string, Record<string, unknown>>
+  /**
+   * 多选：每个选项对应一个布尔键，值 = 选中的选项集合。
+   *
+   * 与 writes 的区别是「可以同时选几个」：提醒方式能既弹通知又响一声，而
+   * 节点明细的深浅只能挑一档。
+   */
+  toggles?: Record<string, string>
 }
 
 /** 一项显示条件：依赖项 path 的取值落在 in 里。 */
@@ -100,8 +115,18 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'scan.retry', kind: 'int', min: 0, max: 10 },
       { path: 'scan.mode', kind: 'enum', options: ['tcping', 'httping'], primary: true },
       { path: 'scan.two_phase', kind: 'bool', primary: true },
-      { path: 'scan.verify_nodes', kind: 'bool' },
-      { path: 'scan.usability_check', kind: 'bool' },
+      // 明细采集与测速前预检是同一件事的深浅两档：既然已经为每个节点发过请求，
+      // 顺带预检不多花什么，拆成两个开关只会让人配出「采明细却不预检」的半截状态。
+      {
+        path: 'scan.node_check',
+        kind: 'enum',
+        options: ['off', 'detail', 'precheck'],
+        writes: {
+          off: { 'scan.verify_nodes': false, 'scan.usability_check': false },
+          detail: { 'scan.verify_nodes': true, 'scan.usability_check': false },
+          precheck: { 'scan.verify_nodes': true, 'scan.usability_check': true },
+        },
+      },
       { path: 'scan.source_mode', kind: 'enum', options: ['official', 'custom', 'both'] },
       { path: 'scan.allowed_regions', kind: 'list' },
       { path: 'scan.blocked_regions', kind: 'list' },
@@ -141,8 +166,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'net.max_workers', kind: 'int', min: 1, max: 10000, primary: true },
       { path: 'net.proxy', kind: 'text' },
       { path: 'net.force_direct', kind: 'bool' },
+      // 自定义 DNS 留空即用系统 DNS；填了而解析失败时总是回退系统，没有关掉的必要。
       { path: 'net.custom_dns', kind: 'list' },
-      { path: 'net.dns_fallback', kind: 'bool' },
       { path: 'net.user_agent', kind: 'text' },
       { path: 'source.merge_strategy', kind: 'enum', options: ['union', 'intersect'] },
       { path: 'source.timeout_ms', kind: 'int', min: 100, max: 60000, primary: true },
@@ -206,9 +231,11 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { path: 'export.filename_template', kind: 'text' },
       { path: 'notify.on_done', kind: 'bool' },
       { path: 'notify.on_fail', kind: 'bool' },
-      { path: 'notify.web', kind: 'bool' },
-      { path: 'notify.tray', kind: 'bool' },
-      { path: 'notify.sound', kind: 'bool' },
+      {
+        path: 'notify.channels',
+        kind: 'multi',
+        toggles: { web: 'notify.web', tray: 'notify.tray', sound: 'notify.sound' },
+      },
     ],
   },
   {
@@ -256,8 +283,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.retry': { label: '失败重试', hint: '探测失败后重试几次' },
     'scan.mode': { label: '探测模式', hint: 'TCPing 更快，HTTPing 更接近真实访问但阈值会放宽' },
     'scan.two_phase': { label: '两阶段扫描', hint: '先低采样粗筛，再对达标节点精测。开着更快' },
-    'scan.verify_nodes': { label: '采集节点明细', hint: '关掉会少发大量请求、明显更快，代价是结果里没有地区与运营商' },
-    'scan.usability_check': { label: '测速前可用性校验', hint: '测速之前再确认一次节点还活着' },
+    'scan.node_check': {
+      label: '节点明细与预检',
+      hint: '记下地区与运营商；选「记录并预检」会在测速前再确认一次节点还活着。关掉会少发大量请求、明显更快',
+    },
 
     'speed.concurrency': { label: '测速并发', hint: '同时下载多少个，上限 16。太高容易触发限速，测出来的速度也不准' },
     'speed.target_qualified': { label: '收够多少合格即停', hint: '测到这么多个达标节点就结束本轮' },
@@ -285,13 +314,14 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'server.bind': { label: '监听地址', hint: '仅本机时只有这台电脑能访问；局域网会让同网段的设备都能打开，所以要先在下面的「服务面板」里设好访问密码' },
     'server.session_ttl_min': { label: '会话有效期（分钟）', hint: '登录后多久需要重新输入密码' },
     'server.open_browser': { label: '启动后打开浏览器', hint: '双击运行时省去手动输地址。开发时可用 --no-browser 跳过' },
-    'server.autostart': { label: '开机自启', hint: '仅桌面版有效' },
+    'server.autostart': { label: '开机自启', hint: '登录系统时自动启动，省得每次手动打开' },
 
     'notify.on_done': { label: '任务完成提醒', hint: '扫描或测速结束时提示一次' },
     'notify.on_fail': { label: '任务失败提醒', hint: '任务出错时提示' },
-    'notify.web': { label: '浏览器通知', hint: '需要浏览器授权；被拒绝时不会重复询问' },
-    'notify.tray': { label: '托盘通知', hint: '任务结束时在托盘图标上给出提示' },
-    'notify.sound': { label: '提示音', hint: '默认关闭，避免在公共场合突然出声' },
+    'notify.channels': {
+      label: '提醒方式',
+      hint: '可多选。浏览器通知需要授权，被拒绝时不会重复询问；托盘只在桌面版可用',
+    },
 
     'advanced.log_level': { label: '日志级别', hint: '排查问题时调到 debug。改完需要重启才生效' },
 
@@ -321,7 +351,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'net.proxy': { label: 'HTTP 代理', hint: '拉取官方网段与远端源时走这个代理。留空表示直连' },
     'net.force_direct': { label: '强制直连', hint: '忽略环境变量里的代理设置。节点探测始终直连，不受这里影响' },
     'net.custom_dns': { label: '自定义 DNS', hint: '解析域名时用这些 DNS 服务器，留空用系统默认' },
-    'net.dns_fallback': { label: 'DNS 回退', hint: '系统 DNS 解析失败时回退到内置的公共 DNS' },
     'net.user_agent': { label: '请求 User-Agent', hint: '拉取数据源时用的 UA。默认浏览器 UA，被拦时可能有用' },
 
     'history.auto_dedup': { label: '自动去重', hint: '同参数短时间内重复存档时合并，避免历史列表被同一份结果刷屏' },
@@ -356,8 +385,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.retry': { label: 'Retries', hint: 'Retries after a failed probe' },
     'scan.mode': { label: 'Probe mode', hint: 'TCPing is faster; HTTPing is closer to real traffic but relaxes thresholds' },
     'scan.two_phase': { label: 'Two-phase scan', hint: 'Coarse pass first, then a fine pass on survivors. Faster' },
-    'scan.verify_nodes': { label: 'Collect node details', hint: 'Off sends far fewer requests but drops region and operator info' },
-    'scan.usability_check': { label: 'Usability check before speed test', hint: 'Confirms nodes are still alive right before testing' },
+    'scan.node_check': {
+      label: 'Node details and precheck',
+      hint: 'Records region and operator; "Record and precheck" also re-confirms each node is alive before the speed test. Off sends far fewer requests and is much faster',
+    },
 
     'speed.concurrency': { label: 'Test concurrency', hint: 'How many downloads at once, 16 max. Too many triggers rate limits and skews the numbers' },
     'speed.target_qualified': { label: 'Stop after N qualified', hint: 'Ends the run once this many nodes pass' },
@@ -385,13 +416,14 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in, so set an access password in the service panel below first' },
     'server.session_ttl_min': { label: 'Session lifetime (minutes)', hint: 'How long a sign-in lasts before the password is needed again' },
     'server.open_browser': { label: 'Open browser on start', hint: 'Saves typing the address when double-clicking. Use --no-browser during development' },
-    'server.autostart': { label: 'Start on login', hint: 'Desktop build only' },
+    'server.autostart': { label: 'Start on login', hint: 'Launches itself when you sign in, so you do not have to open it by hand' },
 
     'notify.on_done': { label: 'Notify on completion', hint: 'One notification when a scan or speed test finishes' },
     'notify.on_fail': { label: 'Notify on failure', hint: 'Notify when a task errors out' },
-    'notify.web': { label: 'Browser notifications', hint: 'Needs browser permission; a denial is not asked for again' },
-    'notify.tray': { label: 'Tray notifications', hint: 'Shows a hint on the tray icon when a task finishes' },
-    'notify.sound': { label: 'Sound', hint: 'Off by default so it does not blurt out in public' },
+    'notify.channels': {
+      label: 'Notify via',
+      hint: 'Pick any. Browser notifications need permission and are not asked for again after a denial; tray is desktop only',
+    },
 
     'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
 
@@ -420,7 +452,6 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'net.proxy': { label: 'HTTP proxy', hint: 'Used for official ranges and remote sources. Empty means direct' },
     'net.force_direct': { label: 'Force direct', hint: 'Ignore proxy settings from the environment. Node probing is always direct' },
     'net.custom_dns': { label: 'Custom DNS', hint: 'Resolvers used for hostnames; empty uses the system ones' },
-    'net.dns_fallback': { label: 'DNS fallback', hint: 'Fall back to built-in public resolvers when system DNS fails' },
     'net.user_agent': { label: 'Request User-Agent', hint: 'UA used when fetching sources. Useful when a source blocks the default' },
 
     'history.auto_dedup': { label: 'Auto dedupe', hint: 'Merge records saved with the same parameters in a short window, so the list is not flooded' },
@@ -484,6 +515,46 @@ export function readPath(values: Record<string, unknown>, path: string): unknown
   return current
 }
 
+/**
+ * 一项当前的值。
+ *
+ * 普通项直接读路径；合成项（writes / toggles）没有自己的存储，要从它背后的
+ * 几个键反推——否则界面会显示成空，用户一碰就把原来的配置覆盖掉。
+ */
+export function fieldValue(field: SettingField, values: Record<string, unknown>): unknown {
+  if (field.toggles !== undefined) {
+    const { toggles } = field
+    return Object.keys(toggles).filter((option) => readPath(values, toggles[option]!) === true)
+  }
+  if (field.writes !== undefined) {
+    for (const [option, spec] of Object.entries(field.writes)) {
+      if (Object.entries(spec).every(([path, want]) => readPath(values, path) === want)) return option
+    }
+    // 几个键的取值凑不出任何一档（例如手工改过配置文件），显示成未选而不是
+    // 猜一个最近的——猜错的话用户下次点保存就把它固化下来了。
+    return ''
+  }
+  return readPath(values, field.path)
+}
+
+/**
+ * 一次改动要写回的键值，键是点号路径。
+ *
+ * 合成项按选项展开成多个键；普通项就是它自己。
+ */
+export function fieldPatch(field: SettingField, value: unknown): Record<string, unknown> {
+  if (field.toggles !== undefined) {
+    const chosen = Array.isArray(value) ? value.map(String) : []
+    const patch: Record<string, unknown> = {}
+    for (const [option, path] of Object.entries(field.toggles)) {
+      patch[path] = chosen.includes(option)
+    }
+    return patch
+  }
+  if (field.writes !== undefined) return field.writes[String(value)] ?? {}
+  return { [field.path]: value }
+}
+
 /** 按点号路径构造一份嵌套的 patch，供 settings/update 使用。 */
 export function buildPatch(path: string, value: unknown): Record<string, unknown> {
   const parts = path.split('.')
@@ -499,4 +570,24 @@ export function buildPatch(path: string, value: unknown): Record<string, unknown
     cursor = next
   })
   return root
+}
+
+/** 把若干「点号路径 → 值」合成一份嵌套 patch；同前缀的键合并而不是互相覆盖。 */
+export function buildPatchMany(pairs: Record<string, unknown>): Record<string, unknown> {
+  const root: Record<string, unknown> = {}
+  for (const [path, value] of Object.entries(pairs)) {
+    mergeInto(root, buildPatch(path, value))
+  }
+  return root
+}
+
+function mergeInto(into: Record<string, unknown>, from: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(from)) {
+    const current = into[key]
+    if (current !== null && typeof current === 'object' && !Array.isArray(current) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      mergeInto(current as Record<string, unknown>, value as Record<string, unknown>)
+    } else {
+      into[key] = value
+    }
+  }
 }

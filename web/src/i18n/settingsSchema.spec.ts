@@ -11,7 +11,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { SETTING_GROUPS, fieldVisible, settingsText, type SettingField } from './settingsSchema'
+import {
+  SETTING_GROUPS,
+  buildPatchMany,
+  fieldPatch,
+  fieldValue,
+  fieldVisible,
+  settingsText,
+  type SettingField,
+} from './settingsSchema'
 
 const allFields = SETTING_GROUPS.flatMap((group) => group.fields)
 
@@ -159,6 +167,58 @@ describe('常用区与生效时机', () => {
    *
    * 这份清单与 internal/server/settings.go 的 restartRequired 是同一批。
    */
+  /**
+   * 合成项的档位要与下拉里的选项一一对上。
+   *
+   * 下拉里列出一个档位、writes 里却没有它，选中时什么都不会写，界面像保存成功
+   * 了；反过来 writes 里多一个，那个档位永远选不到。两种都不会报错。
+   */
+  it('合成项的档位与选项一一对应', () => {
+    for (const field of allFields) {
+      const options = field.writes ?? field.toggles
+      if (options === undefined) continue
+      const keys = Object.keys(options)
+      expect(new Set(keys).size, `${field.path} 的选项重复`).toBe(keys.length)
+      if (field.kind === 'enum') {
+        expect([...keys].sort(), `${field.path} 的档位与选项不一致`).toEqual(
+          [...(field.options ?? [])].sort(),
+        )
+      }
+    }
+  })
+
+  it('多选值由背后几个开关反推', () => {
+    const field = fieldOf('notify.channels')
+    expect(fieldValue(field, { notify: { web: true, tray: false, sound: true } })).toEqual([
+      'web',
+      'sound',
+    ])
+    expect(fieldPatch(field, ['sound'])).toEqual({
+      'notify.web': false,
+      'notify.tray': false,
+      'notify.sound': true,
+    })
+  })
+
+  it('三态项由两个开关反推，凑不出档位时显示未选', () => {
+    const field = fieldOf('scan.node_check')
+    expect(fieldValue(field, { scan: { verify_nodes: true, usability_check: true } })).toBe('precheck')
+    expect(fieldValue(field, { scan: { verify_nodes: true, usability_check: false } })).toBe('detail')
+    expect(fieldValue(field, { scan: { verify_nodes: false, usability_check: false } })).toBe('off')
+    // 手工改过配置文件、两个开关凑不出任何一档：显示未选，不猜一个最近的。
+    expect(fieldValue(field, { scan: { verify_nodes: false, usability_check: true } })).toBe('')
+    expect(fieldPatch(field, 'detail')).toEqual({
+      'scan.verify_nodes': true,
+      'scan.usability_check': false,
+    })
+  })
+
+  it('多个键合成一份 patch，同前缀不互相覆盖', () => {
+    expect(buildPatchMany({ 'scan.verify_nodes': true, 'scan.usability_check': true })).toEqual({
+      scan: { verify_nodes: true, usability_check: true },
+    })
+  })
+
   it('需要重启的项都带了标记', () => {
     const restart = allFields
       .filter((field) => field.restart)

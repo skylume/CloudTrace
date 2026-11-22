@@ -78,6 +78,14 @@ function onList(raw: string): void {
 }
 
 const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(', ') : ''))
+
+/** 多选当前选中的选项。 */
+const chosen = computed(() => (Array.isArray(props.value) ? props.value.map(String) : []))
+
+function onToggle(option: string, on: boolean): void {
+  const next = on ? [...chosen.value, option] : chosen.value.filter((item) => item !== option)
+  emit('change', props.field.path, next)
+}
 </script>
 
 <template>
@@ -97,6 +105,18 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         :checked="Boolean(value)"
         @change="emit('change', field.path, ($event.target as HTMLInputElement).checked)"
       />
+
+      <div v-else-if="field.kind === 'multi'" class="multi">
+        <label v-for="option in Object.keys(field.toggles ?? {})" :key="option" class="multi-item">
+          <input
+            type="checkbox"
+            class="ct-check"
+            :checked="chosen.includes(option)"
+            @change="onToggle(option, ($event.target as HTMLInputElement).checked)"
+          />
+          <span>{{ optionLabel(option) }}</span>
+        </label>
+      </div>
 
       <select
         v-else-if="field.kind === 'enum'"
@@ -185,6 +205,20 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+
+.multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.multi-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
 }
 
 .restart-tag {

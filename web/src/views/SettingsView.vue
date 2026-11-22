@@ -15,6 +15,9 @@ import { t } from '@/i18n'
 import {
   SETTING_GROUPS,
   buildPatch,
+  buildPatchMany,
+  fieldPatch,
+  fieldValue,
   fieldVisible,
   groupText,
   readPath,
@@ -52,7 +55,12 @@ function toggleGroup(id: string): void {
 }
 
 /** 只有桌面版窗口里才生效的项：面板版跑在浏览器里，没有托盘可收。 */
-const DESKTOP_ONLY = new Set(['ui.close_to_tray', 'notify.tray'])
+const DESKTOP_ONLY = new Set(['ui.close_to_tray'])
+
+/** 按路径取声明，用于把「一个控件对应多个键」的项摊开。 */
+const FIELD_BY_PATH = new Map(
+  SETTING_GROUPS.flatMap((group) => group.fields.map((field) => [field.path, field] as const)),
+)
 
 /**
  * 每一组在当前模式下实际会渲染的字段。
@@ -66,6 +74,17 @@ const groupsWithFields = computed(() =>
     fields: group.fields
       // 改了不会起作用的项不显示，比显示出来再注明「仅桌面版有效」诚实。
       .filter((field) => settings.desktop || !DESKTOP_ONLY.has(field.path))
+      // 多选里的托盘渠道同理：面板版没有托盘，留着这一格只会让人勾了没反应。
+      .map((field) =>
+        settings.desktop || field.toggles === undefined
+          ? field
+          : {
+              ...field,
+              toggles: Object.fromEntries(
+                Object.entries(field.toggles).filter(([option]) => option !== 'tray'),
+              ),
+            },
+      )
       // 互斥项按当前取值只显示生效的那一个。
       .filter((field) => fieldVisible(field, values.value))
       .filter((field) => ui.showAdvanced || field.primary),
@@ -122,17 +141,40 @@ function warningText(item: ParamWarning): string {
   return t(`paramRule.${item.rule}` as never, { a: item.values[0] ?? 0, b: item.values[1] ?? 0 })
 }
 
-/** 改一项：只把这一项按点号路径拼成嵌套 patch，不动别的键。 */
+/**
+ * 改一项。
+ *
+ * 多数项只对应一个键，但合成项（一个控件管几个键）要按选项摊开：节点明细
+ * 三档同时写明细与预检两个布尔，提醒方式写三个渠道开关。一次发出去而不是
+ * 连发几条——中间那些半截状态会被广播回来，界面上闪一下又跳回去。
+ */
 function change(path: string, value: unknown): void {
-  sendCommand(CMD.settingsUpdate, { patch: buildPatch(path, value), origins: { [path]: 'user' } })
+  const field = FIELD_BY_PATH.get(path)
+  if (field !== undefined && (field.writes !== undefined || field.toggles !== undefined)) {
+    const pairs = fieldPatch(field, value)
+    const origins: Record<string, string> = {}
+    for (const key of Object.keys(pairs)) origins[key] = 'user'
+    sendCommand(CMD.settingsUpdate, { patch: buildPatchMany(pairs), origins })
+    // 勾上浏览器通知时顺手申请权限：申请需要一个用户手势，而任务结束时没有手势
+    // 可借。用户之前拒绝过就不再问——反复弹窗只会让人把整个站点的通知永久关掉。
+    if (field.toggles?.web !== undefined && Array.isArray(value) && value.includes('web')) {
+      void requestWebPermission()
+    }
+    return
+  }
 
-  // 打开浏览器通知时顺手申请权限：申请需要一个用户手势，而任务结束时没有手势
-  // 可借。用户之前拒绝过就不再问——反复弹窗只会让人把整个站点的通知永久关掉。
-  if (path === 'notify.web' && value === true) void requestWebPermission()
+  sendCommand(CMD.settingsUpdate, { patch: buildPatch(path, value), origins: { [path]: 'user' } })
 }
 
+/** 恢复一项默认；合成项恢复的是它背后那几个键。 */
 function resetField(path: string): void {
-  sendCommand(CMD.settingsReset, { keys: [path] })
+  const field = FIELD_BY_PATH.get(path)
+  if (field === undefined || (field.writes === undefined && field.toggles === undefined)) {
+    sendCommand(CMD.settingsReset, { keys: [path] })
+    return
+  }
+  const keys = Object.keys(fieldPatch(field, fieldValue(field, values.value)))
+  sendCommand(CMD.settingsReset, { keys })
 }
 
 /**
@@ -260,7 +302,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
               v-for="field in item.fields"
               :key="field.path"
               :field="field"
-              :value="readPath(values, field.path)"
+              :value="fieldValue(field, values)"
               :values="values"
               :warning="settings.warningOf(field.path)"
               :locale="ui.lang"

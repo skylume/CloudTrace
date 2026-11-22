@@ -402,6 +402,8 @@ export const zh = {
   'opt.iptoasn': 'iptoasn（免账号，体积小）',
   'opt.geolite2_mmdb': 'GeoLite2（查询更快）',
   'opt.off': '关闭',
+  'opt.detail': '记录明细',
+  'opt.precheck': '记录并预检',
   'opt.count': '按份数',
   'opt.days': '按天数',
   'opt.csv': 'CSV',
