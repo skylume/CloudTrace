@@ -292,7 +292,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'speed.target_qualified': { label: '收够多少合格即停', hint: '测到这么多个达标节点就结束本轮' },
     'speed.min_speed': { label: '最低速度', hint: '低于这个速度算不合格' },
     'speed.url_mode': { label: '测速源', hint: '自动会根据你的出口运营商选；也可固定用官方源或指定地址' },
-    'speed.custom_url': { label: '自定义测速地址', hint: '仅在测速源选「自定义」时使用' },
+    'speed.custom_url': {
+      label: '自定义测速地址',
+      hint: '仅在测速源选「自定义」时使用。可填你的真实业务 URL 或节点分享页，用它测出来的速度更接近实际使用',
+    },
     'speed.download_duration_s': { label: '单次测速时长', hint: '每个节点下载多久' },
     'speed.breaker_429': { label: '限速熔断阈值', hint: '连续多少次被限速就停止。设成 1 等于一遇到限速就停' },
 
@@ -394,7 +397,10 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'speed.target_qualified': { label: 'Stop after N qualified', hint: 'Ends the run once this many nodes pass' },
     'speed.min_speed': { label: 'Minimum speed', hint: 'Below this a node does not qualify' },
     'speed.url_mode': { label: 'Test source', hint: 'Auto picks by your ISP; you can also pin the official source or a custom URL' },
-    'speed.custom_url': { label: 'Custom test URL', hint: 'Only used when the source is set to custom' },
+    'speed.custom_url': {
+      label: 'Custom test URL',
+      hint: 'Only used when the source is set to custom. A real service URL or a node share page measures closer to what you actually get',
+    },
     'speed.download_duration_s': { label: 'Test duration', hint: 'How long each node downloads' },
     'speed.breaker_429': { label: 'Rate-limit breaker', hint: 'Stop after this many consecutive rate limits. 1 stops on the first one' },
 

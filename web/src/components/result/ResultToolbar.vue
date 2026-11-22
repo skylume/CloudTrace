@@ -13,9 +13,11 @@ import { computed, ref } from 'vue'
 import ColumnSettings from './ColumnSettings.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { t } from '@/i18n'
+import { readPath } from '@/i18n/settingsSchema'
 import { COLUMN_PRESETS, useFieldsStore, type ColumnPresetId } from '@/stores/fields'
 import { useExportStore } from '@/stores/export'
 import { useResultsStore } from '@/stores/results'
+import { useSettingsStore } from '@/stores/settings'
 
 const view = defineModel<'result' | 'speed'>('view', { required: true })
 
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 const results = useResultsStore()
 const fields = useFieldsStore()
 const exporter = useExportStore()
+const settings = useSettingsStore()
 
 const selectedCount = computed(() => results.selected.size)
 
@@ -50,6 +53,41 @@ const latencyLimit = computed({
     const parsed = Number.parseInt(value, 10)
     results.maxLatency = Number.isFinite(parsed) && parsed > 0 ? parsed : null
   },
+})
+
+/** 丢包档位。存的是与记录同单位的小数，界面上按百分比显示。 */
+const LOSS_STEPS = [0, 0.01, 0.05, 0.1]
+
+function toggleLoss(step: number): void {
+  results.maxLoss = results.maxLoss === step ? null : step
+}
+
+/**
+ * 评分权重说明：三项都从配置读，不写死。
+ *
+ * 抖动项默认权重是 0（等于不参与），不说清楚的话，用户会以为分数里已经算了
+ * 抖动，而实际排序只按速度与延迟。
+ */
+const weightNote = computed(() => {
+  const values = settings.values as unknown as Record<string, unknown> | null
+  if (!values) return ''
+  const weight = (path: string, fallback: number): number => {
+    const value = readPath(values, path)
+    return typeof value === 'number' ? value : fallback
+  }
+  return t('result.weightNote', {
+    speed: weight('speed.weight_speed', 1),
+    latency: weight('speed.weight_latency', 1),
+    jitter: weight('speed.weight_jitter', 0),
+  })
+})
+
+/** 分地区配额只在完全测速时生效，设置里开着就得在这里说清楚。 */
+const regionQuota = computed(() => {
+  const values = settings.values as unknown as Record<string, unknown> | null
+  if (!values) return 0
+  const value = readPath(values, 'speed.per_region_topn')
+  return typeof value === 'number' && value > 0 ? value : 0
 })
 </script>
 
@@ -128,6 +166,22 @@ const latencyLimit = computed({
         <span>{{ t('result.filter.qualified') }}</span>
       </label>
 
+      <!-- 丢包上限：0 / 1% / 5% / 10%，再点一次取消。 -->
+      <div class="loss-group" role="group" :aria-label="t('result.filter.loss')">
+        <span class="ct-subtle">{{ t('result.filter.loss') }}</span>
+        <button
+          v-for="step in LOSS_STEPS"
+          :key="step"
+          type="button"
+          class="chip"
+          :class="{ on: results.maxLoss === step }"
+          :aria-pressed="results.maxLoss === step"
+          @click="toggleLoss(step)"
+        >
+          {{ step === 0 ? t('result.filter.lossNone') : `${Math.round(step * 100)}%` }}
+        </button>
+      </div>
+
       <SegmentedControl
         :segments="presetSegments"
         :model-value="fields.presetId"
@@ -157,6 +211,11 @@ const latencyLimit = computed({
           {{ t('result.speedAll') }}
         </button>
       </div>
+
+      <p v-if="weightNote" class="note">{{ weightNote }}</p>
+      <p v-if="regionQuota > 0" class="note">{{ t('result.regionQuota', { count: regionQuota }) }}</p>
+
+      <button type="button" class="ct-btn" @click="results.resetView()">{{ t('result.resetView') }}</button>
     </div>
   </div>
 </template>
@@ -221,6 +280,42 @@ const latencyLimit = computed({
 
 .filter-input {
   width: 84px;
+}
+
+.loss-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.chip.on {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+}
+
+/* 说明行独占一行：和控件挤在同一排会看起来像又一个可点的东西。 */
+.note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 /* 三个测速入口要么都在这一行、要么整体挪到下一行，不拆散。 */

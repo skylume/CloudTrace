@@ -9,6 +9,7 @@ import { computed, ref, watch } from 'vue'
 
 import { UNREACHABLE, type IPRecord, type Summary } from '@/api/types'
 import { readPath } from '@/i18n/settingsSchema'
+import { DEFAULT_PRESET, useFieldsStore } from '@/stores/fields'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 
@@ -72,6 +73,63 @@ export function mergeRecord(old: IPRecord, incoming: IPRecord): IPRecord {
   }
 }
 
+/**
+ * 视图记忆：筛选、排序与分组。
+ *
+ * 搜索词不记——它是「我现在找这一条」，不是「我平时怎么看这张表」；把搜索词
+ * 一起存下来，下次打开结果页会是一张莫名其妙空着的表。
+ */
+const VIEW_KEY = 'cloudtrace.resultView'
+
+interface StoredView {
+  regionFilter: string[]
+  maxLatency: number | null
+  maxLoss: number | null
+  qualifiedOnly: boolean
+  sortKey: SortKey
+  sortDesc: boolean
+  groupBy: GroupBy
+}
+
+const SORT_KEYS: SortKey[] = ['latency', 'latency_avg', 'loss', 'jitter', 'score', 'speed_mbps', 'region']
+const GROUP_KEYS: GroupBy[] = ['none', 'colo', 'region', 'asn']
+
+/** loadView 只收认得出的值：坏掉的一项回默认，而不是让整张表消失。 */
+function loadView(): Partial<StoredView> {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const out: Partial<StoredView> = {}
+    if (Array.isArray(parsed.regionFilter)) {
+      out.regionFilter = parsed.regionFilter.filter((item): item is string => typeof item === 'string')
+    }
+    const optionalNumber = (value: unknown): number | null | undefined => {
+      if (value === null) return null
+      return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+    }
+    const maxLatency = optionalNumber(parsed.maxLatency)
+    if (maxLatency !== undefined) out.maxLatency = maxLatency
+    const maxLoss = optionalNumber(parsed.maxLoss)
+    if (maxLoss !== undefined) out.maxLoss = maxLoss
+    if (typeof parsed.qualifiedOnly === 'boolean') out.qualifiedOnly = parsed.qualifiedOnly
+    if (SORT_KEYS.includes(parsed.sortKey as SortKey)) out.sortKey = parsed.sortKey as SortKey
+    if (typeof parsed.sortDesc === 'boolean') out.sortDesc = parsed.sortDesc
+    if (GROUP_KEYS.includes(parsed.groupBy as GroupBy)) out.groupBy = parsed.groupBy as GroupBy
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function saveView(view: StoredView): void {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify(view))
+  } catch {
+    /* 隐私模式下写不进去，忽略即可 */
+  }
+}
+
 export const useResultsStore = defineStore('results', () => {
   /** 每页行数来自界面配置，所以这里要读另一个 store。 */
   const uiStore = useUIStore()
@@ -81,19 +139,28 @@ export const useResultsStore = defineStore('results', () => {
   /** 触发视图更新的版本号。Map 的原地修改不会被响应式系统看到。 */
   const version = ref(0)
 
+  const storedView = loadView()
+
   const selected = ref(new Set<string>())
-  const regionFilter = ref<string[]>([])
-  const maxLatency = ref<number | null>(null)
+  const regionFilter = ref<string[]>(storedView.regionFilter ?? [])
+  const maxLatency = ref<number | null>(storedView.maxLatency ?? null)
+  /**
+   * 丢包上限，与记录里的 loss 同单位（0..1 小数）；null 表示不限。
+   *
+   * 不做成配置项：丢包是「这一批结果里我想排除哪些」的临时判断，写进配置会
+   * 让下次扫描的候选集也跟着变，那是另一件事。
+   */
+  const maxLoss = ref<number | null>(storedView.maxLoss ?? null)
   /**
    * 只看测速达标的节点。
    *
    * 合格线取自配置里的 `speed.min_speed`，不在前端写死：用户调过合格线之后，
    * 这里筛出来的必须与后端「合格数」的口径一致，否则同一个数字在两处对不上。
    */
-  const qualifiedOnly = ref(false)
-  const sortKey = ref<SortKey>('loss')
-  const sortDesc = ref(false)
-  const groupBy = ref<GroupBy>('none')
+  const qualifiedOnly = ref(storedView.qualifiedOnly ?? false)
+  const sortKey = ref<SortKey>(storedView.sortKey ?? 'loss')
+  const sortDesc = ref(storedView.sortDesc ?? false)
+  const groupBy = ref<GroupBy>(storedView.groupBy ?? 'none')
   /**
    * 当前这批结果的来源历史 ID；为空表示「最新一份」。
    *
@@ -234,6 +301,13 @@ export const useResultsStore = defineStore('results', () => {
       list = list.filter((record) => !reachable(record) || record.latency <= limit)
     }
 
+    if (maxLoss.value !== null) {
+      const limit = maxLoss.value
+      // 不可达的记录不按丢包筛掉：它已经由「仅显示达标」与延迟上限负责，
+      // 这里再筛一遍只会让「丢包 100%」这个解释消失。
+      list = list.filter((record) => !reachable(record) || record.loss <= limit)
+    }
+
     if (qualifiedOnly.value) {
       const floor = minSpeed.value
       // 0 表示「没测出来」，不算达标——与后端的合格判定同一条规则。
@@ -289,9 +363,52 @@ export const useResultsStore = defineStore('results', () => {
    * 不回的话，用户停在第 7 页改一下筛选，看到的就是一张空表——而结果其实有，
    * 只是都在前几页。
    */
-  watch([regionFilter, maxLatency, keyword, sortKey, sortDesc, groupBy, pageSize], () => {
+  watch([regionFilter, maxLatency, maxLoss, keyword, sortKey, sortDesc, groupBy, pageSize], () => {
     page.value = 1
   })
+
+  // 视图一变就记下来。放 watch 而不是每个 setter 里：这些状态有十来个入口，
+  // 漏一个就会出现「记得住筛选、记不住排序」的半吊子行为。
+  watch(
+    [regionFilter, maxLatency, maxLoss, qualifiedOnly, sortKey, sortDesc, groupBy],
+    () => {
+      saveView({
+        regionFilter: regionFilter.value,
+        maxLatency: maxLatency.value,
+        maxLoss: maxLoss.value,
+        qualifiedOnly: qualifiedOnly.value,
+        sortKey: sortKey.value,
+        sortDesc: sortDesc.value,
+        groupBy: groupBy.value,
+      })
+    },
+    { deep: true },
+  )
+
+  /**
+   * 还原默认视图：筛选、排序、分组、列与列宽一起回到出厂状态。
+   *
+   * 有记忆就必须有出口——用户把视图调乱之后，没有任何按钮能回去，只能清
+   * 浏览器数据，那是把「记住」做成了陷阱。
+   */
+  function resetView(): void {
+    regionFilter.value = []
+    maxLatency.value = null
+    maxLoss.value = null
+    qualifiedOnly.value = false
+    sortKey.value = 'loss'
+    sortDesc.value = false
+    groupBy.value = 'none'
+    keyword.value = ''
+    try {
+      localStorage.removeItem(VIEW_KEY)
+    } catch {
+      /* 同上 */
+    }
+    const fields = useFieldsStore()
+    fields.applyPreset(DEFAULT_PRESET)
+    fields.resetWidths()
+  }
 
   /**
    * stats 从结果集现算。
@@ -378,9 +495,11 @@ export const useResultsStore = defineStore('results', () => {
     selectedRecords,
     regionFilter,
     maxLatency,
+    maxLoss,
     qualifiedOnly,
     sortKey,
     sortDesc,
+    resetView,
     addChunk,
     nearest,
     applyNearest,

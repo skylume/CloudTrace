@@ -36,6 +36,18 @@ func TestScoreExpectedValues(t *testing.T) {
 	}
 }
 
+// 抖动权重调高之后，同样速度与延迟的记录分数必须下降。
+//
+// 这是「抖动进了公式」的直接证据：默认权重为 0，光看默认配置是看不出来的。
+func TestJitterWeightLowersScore(t *testing.T) {
+	const speed, latency, jitter = 10, 100, 50
+	off := Score(speed, latency, jitter, Weights{Speed: 1, Latency: 1})
+	on := Score(speed, latency, jitter, Weights{Speed: 1, Latency: 1, Jitter: 0.3})
+	if on >= off {
+		t.Errorf("抖动权重 0.3 时评分 %v，应低于权重 0 时的 %v", on, off)
+	}
+}
+
 // 不可达用负哨兵表示，它比任何正阈值都小；只比大小的话「完全不可达」
 // 会被当成「极快」排到最前面。
 func TestScoreRejectsUnreachable(t *testing.T) {
