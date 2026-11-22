@@ -9,6 +9,7 @@ import { CMD } from '@/api/protocol'
 import { computed, onMounted, ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
+import { api } from '@/api/rest'
 import SettingsField from '@/components/settings/SettingsField.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
@@ -41,6 +42,42 @@ const ui = useUIStore()
 
 const narrow = useNarrow()
 const activeGroup = ref(SETTING_GROUPS[0]!.id)
+
+/** 恢复中的状态：挡住连点，也用来禁用按钮。 */
+const restoring = ref(false)
+const restoreInput = ref<HTMLInputElement | null>(null)
+
+/** 备份设置：后端直接回附件，交给浏览器原生下载。 */
+function backupSettings(): void {
+  api.download(api.settingsBackupUrl)
+}
+
+/** 恢复设置：按钮只负责打开文件选择，真正的导入在 change 之后。 */
+function pickRestoreFile(): void {
+  restoreInput.value?.click()
+}
+
+async function onRestoreFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清空 value：否则选同一个文件再点一次不会触发 change。
+  input.value = ''
+  if (!file) return
+
+  restoring.value = true
+  try {
+    const result = await api.restoreSettings(file)
+    const parts = [t('settings.restoreDone')]
+    if (result.ignored?.length) parts.push(t('settings.restoreIgnored'))
+    if (result.restart_required?.length) parts.push(t('settings.restoreRestart'))
+    ui.pushToast({ kind: result.ignored?.length ? 'warn' : 'ok', message: parts.join(' ') })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : t('settings.restoreFailed')
+    ui.pushToast({ kind: 'bad', message })
+  } finally {
+    restoring.value = false
+  }
+}
 /**
  * 窄屏下哪些分组是展开的。
  *
@@ -290,6 +327,21 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
       <span v-if="searching" class="ct-subtle tnum">
         {{ t('settings.searchCount', { count: matchedCount }) }}
       </span>
+      <span class="spacer" />
+      <button type="button" class="ct-link" @click="backupSettings">
+        {{ t('settings.backup') }}
+      </button>
+      <button type="button" class="ct-link" :disabled="restoring" @click="pickRestoreFile">
+        {{ t('settings.restore') }}
+      </button>
+      <input
+        ref="restoreInput"
+        type="file"
+        accept="application/json,.json"
+        class="sr-only"
+        tabindex="-1"
+        @change="onRestoreFile"
+      />
     </div>
 
     <!-- 披露程度：简单模式只显示常用项，与扫描页的「详细设置」共用同一个开关。 -->
@@ -474,11 +526,13 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 
 .search-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
 
 .search {
+  flex: 1 1 200px;
   max-width: 320px;
 }
 

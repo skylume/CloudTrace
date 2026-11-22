@@ -31,6 +31,10 @@ func (s *server) routes() http.Handler {
 	mux.Handle(latestRoute, s.requireAuth(http.HandlerFunc(s.handleLatest)))
 	mux.Handle(latestJSONRoute, s.requireAuth(http.HandlerFunc(s.handleLatestJSON)))
 
+	// 配置备份与恢复：备份文件里没有凭据，但恢复会覆盖本机配置，两者都必须鉴权。
+	mux.Handle(settingsBackupRoute, s.requireAuth(http.HandlerFunc(s.handleSettingsBackup)))
+	mux.Handle(settingsRestoreRoute, s.requireAuth(http.HandlerFunc(s.handleSettingsRestore)))
+
 	// WebSocket：鉴权后建立。
 	mux.Handle("/ws", s.requireAuth(http.HandlerFunc(s.handleWS)))
 

@@ -55,6 +55,14 @@ export interface HealthResponse {
   warnings?: string[]
 }
 
+/** 恢复配置的结果。 */
+export interface SettingsRestoreResponse {
+  /** 恢复后与启动时不同、要重启才生效的配置项。 */
+  restart_required?: string[]
+  /** 文件里带了但没有导入的凭据键。 */
+  ignored?: string[]
+}
+
 export const api = {
   health: () => request<HealthResponse>('/api/health'),
 
@@ -85,5 +93,21 @@ export const api = {
     document.body.appendChild(link)
     link.click()
     link.remove()
+  },
+
+  /** 配置备份的下载地址：交给浏览器原生下载，前端不持有任何本地路径。 */
+  settingsBackupUrl: '/api/settings/backup',
+
+  /**
+   * 用上传的备份覆盖当前配置。
+   *
+   * 直接传 File 作为请求体：配置文件是 JSON，没必要套 multipart 再解一层。
+   */
+  restoreSettings(file: File): Promise<SettingsRestoreResponse> {
+    return request<SettingsRestoreResponse>('/api/settings/restore', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: file,
+    })
   },
 }
