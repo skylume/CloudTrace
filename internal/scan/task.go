@@ -112,10 +112,11 @@ type Options struct {
 	Resolver source.Resolver
 	Logger   *slog.Logger
 
-	// OnDone 在任务**正常跑完**时回调一次，交出本次的完整结果。
+	// OnDone 在任务结束时回调一次，交出本次的全部结果。
 	//
-	// 中止时不调用：中止的结果是残缺的，把它存档会污染历史列表，用户下次
-	// 复用历史时会拿到一批根本没扫完的节点。
+	// 正常跑完与用户中止都会调用：中止的结果是半截的，但对「接着拿这批去
+	// 测速」有用，所以照样交出——由调用方标成「已中止」，不会和完整扫描
+	// 混在一起。
 	//
 	// 结果走这里而不是走事件总线：总线在队列满时会丢事件，前端丢几条只是
 	// 少渲染几行，存档丢几条就是永久缺数据。
@@ -342,6 +343,9 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	// 已扫出的那部分。
 	sink.flush()
 	if err != nil {
+		// 中止时也交付：存档要拿到这一批，历史里才查得到。是否算「完成」
+		// 由编排层按 context 判定，这里只交数据。
+		r.finish(records)
 		return len(records), err
 	}
 
@@ -361,7 +365,7 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		"latency_ok", funnel.Snapshot().LatencyOK,
 		"usable", len(records))
 
-	r.finish(ctx, records)
+	r.finish(records)
 	return len(records), nil
 }
 
@@ -384,12 +388,12 @@ func (r *Runner) emitNearest(rep task.Reporter, rejected []probed) {
 	})
 }
 
-// finish 在任务正常跑完时把完整结果交出去。
+// finish 把本次已产出的结果交出去。
 //
-// 判定用的是 context 而不是「函数有没有返回错误」：取消本身也会让流水线
-// 返回错误，但那不是任务失败，而是用户按了停止。
-func (r *Runner) finish(ctx context.Context, records []model.IPRecord) {
-	if r.onDone == nil || ctx.Err() != nil {
+// 中止时同样交付：用户按了停止，但扫出来的那批节点仍然有用，历史里要能
+// 接着拿去测速。调用方会把它标成「已中止」，所以不会被当成一次完整扫描。
+func (r *Runner) finish(records []model.IPRecord) {
+	if r.onDone == nil {
 		return
 	}
 	r.onDone(model.NewTaskResult(records))

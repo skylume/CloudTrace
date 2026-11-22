@@ -238,8 +238,8 @@ func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams, prese
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(preset, runner.Run, func(duration float64) {
-		s.archiveScan(params, s.currentPreset(), res, duration)
+	return taskRunner(preset, runner.Run, func(duration float64, aborted bool) {
+		s.archiveScan(params, s.currentPreset(), res, duration, aborted)
 	})
 }
 
@@ -288,8 +288,8 @@ func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams, pr
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(preset, runner.Run, func(duration float64) {
-		s.archiveSpeed(params, s.currentPreset(), res, duration)
+	return taskRunner(preset, runner.Run, func(duration float64, aborted bool) {
+		s.archiveSpeed(params, s.currentPreset(), res, duration, aborted)
 	})
 }
 

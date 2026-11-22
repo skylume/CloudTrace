@@ -74,10 +74,11 @@ type Options struct {
 	Now    func() time.Time
 	Logger *slog.Logger
 
-	// OnDone 在任务**正常跑完**时回调一次，交出本次的完整结果。
+	// OnDone 在任务结束时回调一次，交出本次的全部结果。
 	//
-	// 提前收敛也算正常跑完：用户要的就是够用的那批，把收敛后的结果存下来
-	// 正是这个功能的意义。中止则不算——中止的结果残缺，存档会污染历史。
+	// 提前收敛算正常跑完：用户要的就是够用的那批，把收敛后的结果存下来
+	// 正是这个功能的意义。中止也调用，结果由调用方标成「已中止」——半截
+	// 结果对接着用是有价值的，只要别把它当成完整测速。
 	//
 	// 结果走这里而不是走事件总线：总线在队列满时会丢事件，前端丢几条只是
 	// 少渲染几行，存档丢几条就是永久缺数据。
@@ -311,6 +312,8 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		Usable:    len(results),
 	})
 	if err != nil {
+		// 中止时也交付已测出的那部分，调用方会标成「已中止」。
+		r.finish(results)
 		return len(results), err
 	}
 
@@ -318,16 +321,17 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	r.logger.Info("测速结束",
 		"targets", len(targets), "usable", len(usable), "qualified", len(results), "url", url)
 
-	r.finish(ctx, results)
+	r.finish(results)
 	return len(results), nil
 }
 
-// finish 在任务正常跑完时把完整结果交出去。
+// finish 把本次已测出的结果交出去。
 //
 // 提前收敛也算「正常跑完」：用户要的就是够用的那批结果，把收敛后的结果存
-// 下来正是这个功能的意义。中止则不算——中止的结果残缺，存档会污染历史。
-func (r *Runner) finish(ctx context.Context, records []model.IPRecord) {
-	if r.onDone == nil || ctx.Err() != nil {
+// 下来正是这个功能的意义。中止也交付，但调用方会标成「已中止」——残不缺
+// 是一回事，把它当完整结果展示是另一回事。
+func (r *Runner) finish(records []model.IPRecord) {
+	if r.onDone == nil {
 		return
 	}
 	r.onDone(model.NewTaskResult(records))

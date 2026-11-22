@@ -98,6 +98,7 @@ function legacyScore(entry: HistoryIndexEntry): boolean {
         <span class="when" :title="exactTime(entry.created_at)">{{ relativeTime(entry.created_at) }}</span>
         <span v-if="entry.preset" class="chip">{{ entry.preset }}</span>
         <span v-if="legacyScore(entry)" class="chip warn">{{ t('history.legacyScore') }}</span>
+        <span v-if="entry.aborted" class="chip warn" :title="t('history.abortedHint')">{{ t('history.aborted') }}</span>
         <span class="ct-subtle">IPv{{ entry.ip_version }}</span>
         <span class="spacer" />
         <span class="count tnum">{{ t('result.stat.usable') }} {{ entry.count }}</span>

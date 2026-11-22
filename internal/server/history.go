@@ -296,23 +296,24 @@ func (s *server) history() *history.Store { return s.svc.History }
 // --- 任务完成后存档 ---
 
 // archiveScan 把一次扫描的结果存进历史。
-func (s *server) archiveScan(params model.ScanParams, preset string, res model.TaskResult, duration float64) {
-	s.archive(model.PhaseScan, params.IPVersion, preset, params, res, duration, score.Version)
+func (s *server) archiveScan(params model.ScanParams, preset string, res model.TaskResult, duration float64, aborted bool) {
+	s.archive(model.PhaseScan, params.IPVersion, preset, params, res, duration, score.Version, aborted)
 }
 
 // archiveSpeed 把一次测速的结果存进历史。
 //
 // 评分版本传 0：测速结果不参与评分，带一个版本号只会让人以为它能比。
-func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model.TaskResult, duration float64) {
-	s.archive(model.PhaseSpeed, params.IPVersion, preset, params, res, duration, 0)
+func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model.TaskResult, duration float64, aborted bool) {
+	s.archive(model.PhaseSpeed, params.IPVersion, preset, params, res, duration, 0, aborted)
 }
 
 // archive 写入一份历史记录。
 //
-// 只有任务**正常跑完**才会走到这里：中止与失败都不存档。中止的结果是残缺的，
-// 存下来会让用户在历史列表里挑到一份根本没扫完的节点，而且看起来和完整结果
-// 毫无区别。
-func (s *server) archive(typ string, ipVersion int, preset string, params any, res model.TaskResult, duration float64, scoreVersion int) {
+// 中止的批次也写，但带 aborted 标记：半截结果对「接着拿这批去测速」是有用的，
+// 而列表里必须能看出它没跑完——一份没扫完的记录和一份扫完的看起来一模一样，
+// 用户会按「这些地址都试过了」去理解它。真正的失败（出错退出）不写：那种结果
+// 连「扫到哪儿了」都说不清。
+func (s *server) archive(typ string, ipVersion int, preset string, params any, res model.TaskResult, duration float64, scoreVersion int, aborted bool) {
 	store := s.history()
 	if store == nil {
 		return
@@ -341,6 +342,7 @@ func (s *server) archive(typ string, ipVersion int, preset string, params any, r
 		Type:         typ,
 		IPVersion:    ipVersion,
 		Duration:     duration,
+		Aborted:      aborted,
 		Preset:       preset,
 		Params:       raw,
 		Origins:      s.cfg.Get().Origins.Clone(),
@@ -378,16 +380,27 @@ func countMeasured(records []model.IPRecord) int {
 // preset 是本次使用的档位名，进来就先记到任务状态上。存档时要读它，而存档
 // 发生在任务跑完之后——档位名不能等任务结束再传，那时编排层已经在准备下一
 // 个任务的状态了。
-func taskRunner(preset string, run func(task.Reporter) (int, error), done func(duration float64)) task.RunFunc {
+func taskRunner(preset string, run func(task.Reporter) (int, error), done func(duration float64, aborted bool)) task.RunFunc {
 	return func(rep task.Reporter) (task.Outcome, error) {
 		if preset != "" {
 			rep.SetPreset(preset)
 		}
 		started := time.Now()
 		count, err := run(rep)
-		if err == nil && rep.Context().Err() == nil && done != nil {
-			done(time.Since(started).Seconds())
+		outcome := task.Outcome{Count: count}
+		if done == nil {
+			return outcome, err
 		}
-		return task.Outcome{Count: count}, err
+		aborted := rep.Context().Err() != nil
+		// 出错退出不存档：连「扫到哪儿」都说不清的结果留在历史里只会误导。
+		if err != nil && !aborted {
+			return outcome, err
+		}
+		// 中止但一条都没扫出来时也不存：空记录在列表里只占位。
+		if aborted && count == 0 {
+			return outcome, err
+		}
+		done(time.Since(started).Seconds(), aborted)
+		return outcome, err
 	}
 }

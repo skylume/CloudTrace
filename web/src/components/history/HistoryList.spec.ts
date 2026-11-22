@@ -49,6 +49,20 @@ describe('HistoryList 评分口径', () => {
     expect(marks[0]?.text()).toBe('旧口径')
   })
 
+  it('中止的批次单独标出来', () => {
+    useHistoryStore().currentScoreVersion = 3
+    const wrapper = mount(HistoryList, {
+      props: {
+        entries: [entry({ id: 'cut', aborted: true }), entry({ id: 'full' })],
+        compareIds: [],
+      },
+    })
+
+    const marks = wrapper.findAll('.chip.warn')
+    expect(marks).toHaveLength(1)
+    expect(marks[0]?.text()).toBe('已中止')
+  })
+
   it('后端还没给当前版本时不猜，一条都不标', () => {
     useHistoryStore().currentScoreVersion = 0
     const wrapper = mount(HistoryList, {

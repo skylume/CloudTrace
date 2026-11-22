@@ -162,6 +162,8 @@ export const en: Record<keyof typeof zh, string> = {
   'history.compare': 'Compare',
   'history.starred': 'Starred',
   'history.legacyScore': 'Legacy score',
+  'history.aborted': 'Stopped',
+  'history.abortedHint': 'This run was stopped early — the results are incomplete',
   'history.tag': 'Tags',
   'history.note': 'Note',
   'history.paramDiff': 'This record was taken {minutes} minutes ago with different parameters',

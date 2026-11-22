@@ -154,6 +154,8 @@ export const zh = {
   'history.compare': '对比',
   'history.starred': '已收藏',
   'history.legacyScore': '旧口径',
+  'history.aborted': '已中止',
+  'history.abortedHint': '这一批是中途停止的，结果不完整',
   'history.tag': '标签',
   'history.note': '备注',
   'history.paramDiff': '这份记录是 {minutes} 分钟前用别的参数跑的',

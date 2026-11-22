@@ -78,6 +78,7 @@ function latencyOf(record: IPRecord): string {
           <template v-if="record.preset"> · {{ t('task.preset') }} {{ record.preset }}</template>
           <template v-if="record.duration_s"> · {{ record.duration_s }}s</template>
         </p>
+        <p v-if="record.aborted" class="stopped">{{ t('history.abortedHint') }}</p>
       </div>
       <span class="spacer" />
       <button type="button" class="ct-link" @click="emit('close')">{{ t('common.close') }}</button>
@@ -173,6 +174,12 @@ function latencyOf(record: IPRecord): string {
 .meta {
   margin: 2px 0 0;
   font-size: var(--font-size-xs);
+}
+
+.stopped {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-warn);
 }
 
 .spacer {

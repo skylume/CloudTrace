@@ -273,7 +273,7 @@ func TestArchiveWritesRecordWithSnapshot(t *testing.T) {
 
 	params := scanParamsForTest(150)
 	results := testRecords(3)
-	srv.archiveScan(params, "标准", model.NewTaskResult(results), 12.5)
+	srv.archiveScan(params, "标准", model.NewTaskResult(results), 12.5, false)
 
 	entries, err := st.svc.History.List(history.Filter{})
 	if err != nil {
@@ -308,12 +308,41 @@ func TestArchiveWritesRecordWithSnapshot(t *testing.T) {
 	}
 }
 
+// 中止的批次照样存档，但必须带标记。
+//
+// 一份没扫完的记录和一份扫完的在列表里长得一模一样，用户会按「这些地址都
+// 试过了」去理解它。
+func TestArchiveMarksAborted(t *testing.T) {
+	st := newTestStack(t, nil)
+	srv := unitServer(t, st)
+
+	srv.archiveScan(scanParamsForTest(150), "标准", model.NewTaskResult(testRecords(2)), 3, true)
+
+	entries, err := st.svc.History.List(history.Filter{})
+	if err != nil {
+		t.Fatalf("列表失败：%v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("历史条目数 = %d，期望 1", len(entries))
+	}
+	if !entries[0].Aborted {
+		t.Error("索引条目未标记中止")
+	}
+	rec, err := st.svc.History.Load(entries[0].ID)
+	if err != nil {
+		t.Fatalf("读取失败：%v", err)
+	}
+	if !rec.Aborted {
+		t.Error("记录未标记中止")
+	}
+}
+
 // 自动存档关掉之后，任务照跑但不留痕。
 func TestArchiveRespectsAutoSaveOff(t *testing.T) {
 	st := newTestStack(t, func(c *config.Config) { c.History.AutoSave = false })
 	srv := unitServer(t, st)
 
-	srv.archiveScan(scanParamsForTest(150), "标准", model.NewTaskResult(testRecords(2)), 1)
+	srv.archiveScan(scanParamsForTest(150), "标准", model.NewTaskResult(testRecords(2)), 1, false)
 
 	entries, _ := st.svc.History.List(history.Filter{})
 	if len(entries) != 0 {
@@ -327,7 +356,7 @@ func TestArchiveRejectsUnknownIPVersion(t *testing.T) {
 	st := newTestStack(t, nil)
 	srv := unitServer(t, st)
 
-	srv.archiveScan(model.ScanParams{IPVersion: 0}, "", model.NewTaskResult(testRecords(2)), 1)
+	srv.archiveScan(model.ScanParams{IPVersion: 0}, "", model.NewTaskResult(testRecords(2)), 1, false)
 
 	entries, _ := st.svc.History.List(history.Filter{})
 	if len(entries) != 0 {
@@ -344,7 +373,7 @@ func TestArchiveSpeedMarksQualified(t *testing.T) {
 		{IP: "1.1.1.2", Port: 443, SpeedMBps: 0, LatencyAvg: 80, Recv: 3, Sent: 3},
 	}
 	srv.archiveSpeed(model.SpeedParams{IPVersion: 4, Scope: model.SpeedScopeSingle},
-		"标准", model.NewTaskResult(results), 8)
+		"标准", model.NewTaskResult(results), 8, false)
 
 	entries, _ := st.svc.History.List(history.Filter{Type: history.TypeSpeed})
 	if len(entries) != 1 {
@@ -365,18 +394,45 @@ func TestArchiveSpeedMarksQualified(t *testing.T) {
 	}
 }
 
-// 中止的任务绝不能留下历史：那会让用户在列表里挑到一份根本没扫完的节点，
-// 而且看起来和完整结果毫无区别。
-func TestTaskRunnerSkipsArchiveOnAbort(t *testing.T) {
+// 中止也存档，但要带上 aborted 标记：半截结果对「接着拿这批去测速」有用，
+// 而列表里必须能看出它没跑完。
+func TestTaskRunnerArchivesOnAbort(t *testing.T) {
 	st := newTestStack(t, nil)
 
-	var archived bool
+	var archived, gotAborted bool
 	run := taskRunner("", func(rep task.Reporter) (int, error) {
 		// 模拟用户在跑的过程中按了停止。
 		st.svc.Tasks.Abort()
 		<-rep.Context().Done()
 		return 2, errors.New("已取消")
-	}, func(float64) { archived = true })
+	}, func(_ float64, aborted bool) {
+		archived = true
+		gotAborted = aborted
+	})
+
+	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
+		t.Fatalf("启动任务失败：%v", err)
+	}
+	waitTaskIdle(t, st)
+
+	if !archived {
+		t.Fatal("中止的批次没有存档")
+	}
+	if !gotAborted {
+		t.Error("存档时没标记中止")
+	}
+}
+
+// 一条都没扫到的中止批次不留痕：空记录在列表里只占位。
+func TestTaskRunnerSkipsArchiveOnAbortWithNothing(t *testing.T) {
+	st := newTestStack(t, nil)
+
+	var archived bool
+	run := taskRunner("", func(rep task.Reporter) (int, error) {
+		st.svc.Tasks.Abort()
+		<-rep.Context().Done()
+		return 0, errors.New("已取消")
+	}, func(float64, bool) { archived = true })
 
 	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
 		t.Fatalf("启动任务失败：%v", err)
@@ -384,11 +440,7 @@ func TestTaskRunnerSkipsArchiveOnAbort(t *testing.T) {
 	waitTaskIdle(t, st)
 
 	if archived {
-		t.Fatal("中止的任务被存档了")
-	}
-	entries, _ := st.svc.History.List(history.Filter{})
-	if len(entries) != 0 {
-		t.Fatalf("中止的任务留下了 %d 条历史", len(entries))
+		t.Fatal("零条结果的中止批次被存档了")
 	}
 }
 
@@ -398,7 +450,7 @@ func TestTaskRunnerSkipsArchiveOnError(t *testing.T) {
 	var archived bool
 	run := taskRunner("", func(task.Reporter) (int, error) {
 		return 0, errors.New("没有生成任何候选")
-	}, func(float64) { archived = true })
+	}, func(float64, bool) { archived = true })
 
 	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
 		t.Fatalf("启动任务失败：%v", err)
@@ -414,13 +466,14 @@ func TestTaskRunnerArchivesOnSuccessWithDuration(t *testing.T) {
 	st := newTestStack(t, nil)
 
 	var got float64
-	var called bool
+	var called, gotAborted bool
 	run := taskRunner("", func(task.Reporter) (int, error) {
 		time.Sleep(5 * time.Millisecond)
 		return 7, nil
-	}, func(d float64) {
+	}, func(d float64, aborted bool) {
 		called = true
 		got = d
+		gotAborted = aborted
 	})
 
 	if err := st.svc.Tasks.Start(model.PhaseScan, run); err != nil {
@@ -433,6 +486,9 @@ func TestTaskRunnerArchivesOnSuccessWithDuration(t *testing.T) {
 	}
 	if got <= 0 {
 		t.Fatalf("耗时 = %v，期望为正", got)
+	}
+	if gotAborted {
+		t.Error("正常跑完的批次被标记成了中止")
 	}
 }
 

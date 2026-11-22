@@ -10,7 +10,7 @@ const (
 // 任务状态（TaskState.Status），对应任务状态机：
 //
 //	Idle ──start──► Running ──┬──complete──► Done    （写历史）
-//	                          ├──abort─────► Aborted （保留部分结果，不写历史）
+//	                          ├──abort─────► Aborted （保留部分结果，存档并标 aborted）
 //	                          └──error─────► Failed
 const (
 	StatusIdle    = "idle"

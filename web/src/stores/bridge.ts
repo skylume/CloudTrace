@@ -203,7 +203,11 @@ export function wireEvents(): void {
       // 而这一步本来就是他要做的事。
       if (next.status === 'done') ui.activeView = 'result'
       // 中途停止但已经扫出了东西时也跳：那批结果同样是可用的。
-      else if (next.status === 'aborted' && results.total > 0) ui.activeView = 'result'
+      else if (next.status === 'aborted' && results.total > 0) {
+        ui.activeView = 'result'
+        // 中止的批次也存档了（带 aborted 标记），历史列表得跟上。
+        refreshHistory()
+      }
 
       notifyEnd(next, settings.notify)
     }

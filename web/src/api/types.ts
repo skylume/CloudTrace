@@ -203,6 +203,8 @@ export interface HistoryRecord {
   tags?: string[]
   note?: string
   starred: boolean
+  /** 中途停止的批次：结果只是半截。 */
+  aborted?: boolean
   results: IPRecord[]
 }
 
@@ -223,6 +225,8 @@ export interface HistoryIndexEntry {
   params_hash?: string
   /** 算分时用的公式版本；0 或缺失表示没有标记（测速记录不带）。 */
   score_version?: number
+  /** 中途停止的批次：结果只是半截，列表里必须看得出来。 */
+  aborted?: boolean
 }
 
 /** 两份历史的对比结果。 */
