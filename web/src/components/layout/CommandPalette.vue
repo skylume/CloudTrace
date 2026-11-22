@@ -123,13 +123,6 @@ const commands = computed<Command[]>(() => {
     },
     { id: 'theme', group: 'action', label: t('theme.label'), run: cycleTheme },
     {
-      id: 'density',
-      group: 'action',
-      label: ui.showAdvanced ? t('density.simple') : t('density.advanced'),
-      hint: 'Ctrl + Shift + A',
-      run: () => ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced'),
-    },
-    {
       id: 'contrast',
       group: 'action',
       label: t('contrast.label'),

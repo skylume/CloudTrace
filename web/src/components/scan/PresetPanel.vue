@@ -13,14 +13,12 @@ import PresetParams from '@/components/scan/PresetParams.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
-import { useUIStore } from '@/stores/ui'
 import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
 
 defineProps<{ disabled?: boolean }>()
 
-const ui = useUIStore()
 const adaptive = useAdaptiveStore()
 
 /**
@@ -31,25 +29,6 @@ const adaptive = useAdaptiveStore()
  */
 function suggestionText(item: AdaptiveNotice): string {
   return adaptive.reasonText(item.reason) + '　' + item.key + ' ' + item.from + ' → ' + item.to
-}
-
-/**
- * 是否展开全部参数。
- *
- * 由 ui.density 决定而不是组件自己的状态：披露是「首次默认」，不是每次的
- * 关卡——用户展开过一次，下次进来就该直接是展开的，不该让他再点一次。
- */
-const expanded = computed(() => ui.showAdvanced)
-
-/**
- * 展开 / 收起。
- *
- * 用户的最近一次选择说了算：展开记成「高级」，收起记成「简单」。auto 只在
- * 用户还没表过态时起作用（默认简单）。这比「展开过就再也收不回去」更符合
- * 直觉，而想回到简单还有 Ctrl+Shift+A。
- */
-function toggleExpanded(): void {
-  ui.setDensity(expanded.value ? 'simple' : 'advanced')
 }
 
 /**
@@ -68,13 +47,7 @@ function warningText(item: ParamWarning): string {
 
 <template>
   <section class="ct-card">
-    <h2 class="ct-card-title">
-      <span>{{ t('param.panel') }}</span>
-      <span class="spacer" />
-      <button type="button" class="ct-link" @click="toggleExpanded">
-        {{ expanded ? t('param.collapse') : t('param.all') }}
-      </button>
-    </h2>
+    <h2 class="ct-card-title">{{ t('param.panel') }}</h2>
 
     <div v-if="adaptive.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
       <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->

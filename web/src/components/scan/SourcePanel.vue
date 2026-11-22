@@ -39,6 +39,9 @@ const dragging = ref(false)
 const preview = computed(() => parseSourceText(source.value.customText))
 const invalidCount = computed(() => preview.value.invalid.length)
 
+/** 停用的远程源不会参与扫描，列出来免得用户以为它还在生效。 */
+const offRemote = computed(() => source.value.remote.filter((item) => !item.enabled).length)
+
 /** 开着却没填地址的远程源：它不会生效，得在启动前说清楚。 */
 const blankRemote = computed(
   () => source.value.remote.filter((item) => item.enabled && item.url.trim() === '').length,
@@ -89,7 +92,7 @@ async function onDrop(event: DragEvent): Promise<void> {
     <h2 class="ct-card-title">{{ t('source.title') }}</h2>
 
     <!-- ① 官方网段 -->
-    <label class="row">
+    <label class="row" :class="{ off: !source.official }">
       <input v-model="source.official" type="checkbox" class="ct-check" />
       <span class="row-text">
         <span>{{ t('source.official') }}</span>
@@ -97,6 +100,7 @@ async function onDrop(event: DragEvent): Promise<void> {
       </span>
       <span class="ct-subtle tnum">{{ t('source.official.count', { count: officialCount }) }}</span>
     </label>
+    <p v-if="!source.official" class="warn hint">{{ t('source.official.off') }}</p>
 
     <!-- ② 远端地址：和官方网段一样属于「从哪儿取」，不藏在折叠里。 -->
 
@@ -112,7 +116,7 @@ async function onDrop(event: DragEvent): Promise<void> {
         v-for="(item, index) in source.remote"
         :key="index"
         class="remote-row"
-        :class="{ blank: item.enabled && item.url.trim() === '' }"
+        :class="{ blank: item.enabled && item.url.trim() === '', off: !item.enabled }"
       >
         <input
           :checked="item.enabled"
@@ -137,6 +141,7 @@ async function onDrop(event: DragEvent): Promise<void> {
           {{ t('source.remote.remove') }}
         </button>
       </div>
+      <p v-if="offRemote > 0" class="warn hint">{{ t('source.remote.off', { count: offRemote }) }}</p>
       <p v-if="blankRemote > 0" class="warn hint">
         {{ t('source.remote.invalid', { count: blankRemote }) }}
       </p>
@@ -264,6 +269,17 @@ async function onDrop(event: DragEvent): Promise<void> {
 /* 空地址那一行用警示色描边：填了才算数，空着等于白开一个开关。 */
 .remote-row.blank .ct-input {
   border-color: var(--color-warn-border);
+}
+
+/* 停用的行压暗并留一道警示边：它还在列表里，但确实不参与扫描。 */
+.row.off,
+.remote-row.off {
+  opacity: 0.6;
+}
+
+.remote-row.off {
+  border-left: 2px solid var(--color-warn-border);
+  padding-left: var(--space-2);
 }
 
 .preview {

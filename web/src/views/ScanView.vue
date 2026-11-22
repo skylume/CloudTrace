@@ -117,11 +117,6 @@ const legacyResult = computed(() => {
   return text
 })
 
-/** 展开 / 收起详细设置。与参数面板的「全部参数」共用同一个状态，不会各说各话。 */
-function toggleDetails(): void {
-  ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced')
-}
-
 /**
  * 参数状态用驼峰，与 i18n 映射表的 key 一致；发请求时再转成后端的下划线。
  *
@@ -386,9 +381,9 @@ function stop(): void {
     />
 
     <!--
-      首屏只有「选档位 + 开始扫描」：这两件事是同一个决定的两半。数据源、参数
-      明细、过程、日志全部收进「详细设置」，默认不展开——首次进来的用户不需要
-      先读懂六个面板才敢点按钮。
+      首屏只有「扫描深度 + 开始扫描」：这两件事是同一个决定的两半。来源与参数
+      就在下面，但简单模式只露常用项；要看全部参数请去设置页切换模式，或按
+      Ctrl+Shift+A——披露状态只有一个入口，不在这里再放一个。
     -->
     <!-- 来源不成立时直接挡在按钮前：这条不是提醒，是「现在点也没用」。 -->
     <Banner v-if="sourceIssue !== ''" tone="warn" :message="sourceIssue" :closable="false" />
@@ -414,10 +409,6 @@ function stop(): void {
         @click="adaptive.recommend()"
       >
         {{ adaptive.recommending ? t('adaptive.recommending') : t('adaptive.recommend') }}
-      </button>
-      <span class="spacer" />
-      <button type="button" class="ct-link" :aria-expanded="ui.showAdvanced" @click="toggleDetails">
-        {{ ui.showAdvanced ? t('param.collapse') : t('scan.details') }}
       </button>
     </div>
 
