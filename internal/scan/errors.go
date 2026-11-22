@@ -9,6 +9,8 @@ const (
 	CodeNoCandidate = "E_NO_CANDIDATE"
 	// CodeAllFiltered 表示候选有，但前置过滤（端口 / 地区）一条都没留下。
 	CodeAllFiltered = "E_ALL_FILTERED"
+	// CodeAllSkipped 表示候选全都在已测集合里：续测没有剩下新的地址。
+	CodeAllSkipped = "E_ALL_SKIPPED"
 )
 
 // CodedError 是带稳定错误码的失败原因。

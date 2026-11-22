@@ -98,6 +98,12 @@ type Options struct {
 	// Seed 是采样的随机种子。
 	Seed int64
 
+	// Skip 是已经测过的地址，续测时跳过它们，不整批重来。
+	//
+	// 按 IP 而不是 IP:端口 去重：同一个地址换个端口重扫一遍对用户没有
+	// 意义，他要的是「还有哪些没试过」。
+	Skip map[string]struct{}
+
 	// Enrich 在每条结果产出后补齐归属地（地区中文名、ASN、组织名）。
 	//
 	// 为 nil 时不做任何补齐。它会被每个节点调用一次，因此实现里**不允许
@@ -131,6 +137,7 @@ type Runner struct {
 	// remoteOptions 是远端拉取的重试、间隔与合并方式。
 	remoteOptions source.RemoteOptions
 	seed          int64
+	skip          map[string]struct{}
 
 	probeFn  ProbeFunc
 	traceFn  TraceFunc
@@ -227,6 +234,7 @@ func NewRunner(opts Options) (*Runner, error) {
 		probeFn:       opts.Probe,
 		traceFn:       opts.Trace,
 		verifyFn:      opts.Verify,
+		skip:          opts.Skip,
 		remoteFn:      opts.Remote,
 		resolver:      opts.Resolver,
 		logger:        opts.Logger,
@@ -305,14 +313,23 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	generated := len(pool.Candidates)
+	if len(r.skip) > 0 {
+		pool.Candidates = dropKnown(pool.Candidates, r.skip)
+	}
 	funnel.Set(StageGenerated, len(pool.Candidates))
 	r.logger.Info("候选池生成完毕",
 		"candidates", len(pool.Candidates),
+		"skipped_known", generated-len(pool.Candidates),
 		"explicit", pool.Explicit,
 		"sampled", pool.Sampled,
 		"hosts_failed", len(pool.DroppedHosts),
 		"remote_failed", len(pool.RemoteFailed))
 	if len(pool.Candidates) == 0 {
+		// 候选本来就有、只是全在已测集合里：这是续测跑完了，不是来源配错。
+		if generated > 0 && len(r.skip) > 0 {
+			return 0, &CodedError{Code: CodeAllSkipped, Msg: "这批地址都测过了，没有新的可扫"}
+		}
 		return 0, &CodedError{Code: CodeNoCandidate, Msg: "没有生成任何候选，请检查来源设置"}
 	}
 

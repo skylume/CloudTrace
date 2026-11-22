@@ -23,6 +23,25 @@ type poolOptions struct {
 	RemoteURLs []string
 }
 
+// dropKnown 去掉已经测过的地址。
+//
+// 按 IP 去重而不是 IP:端口：同一个地址换个端口重扫一遍对用户没有意义，他要
+// 的是「还有哪些没试过」。返回新切片，不改动传入的候选池——调用方还要用原始
+// 数量区分「来源没配好」与「全都测过了」。
+func dropKnown(items []Candidate, known map[string]struct{}) []Candidate {
+	if len(known) == 0 {
+		return items
+	}
+	kept := make([]Candidate, 0, len(items))
+	for _, c := range items {
+		if _, ok := known[c.IP]; ok {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
+}
+
 // poolResult 是候选池与生成过程的统计。
 //
 // 显式条目与网段展开的候选分开计数：用户看到「候选怎么这么少」时，

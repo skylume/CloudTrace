@@ -179,6 +179,25 @@ function retryScan(threshold: number): void {
 }
 
 /**
+ * 续测：拿上一轮的请求再扫一遍，跳过已经出结果的地址。
+ *
+ * 不把这次请求写回 lastScan：那份快照记的是「上一轮怎么扫的」，被续测覆盖
+ * 之后，「放宽重跑」会带着 skip 再跑一次，把刚挑出来的地址全跳掉。
+ */
+function resumeScan(): void {
+  const previous = recallScanRequest()
+  if (!previous) {
+    ui.pushToast({ kind: 'warn', message: t('result.resumeMissing') })
+    return
+  }
+  const skip = results.all.map((record) => record.ip)
+  if (skip.length === 0) return
+  if (!sendCommand(CMD.scanStart, { ...previous, skip })) return
+  ui.pushToast({ kind: 'info', message: t('result.resumeStarted', { count: skip.length }) })
+  ui.activeView = 'scan'
+}
+
+/**
  * 清空当前结果。
  *
  * 不弹确认框，走 Toast 撤销：结果只在内存里、清掉就真没了，所以必须给后悔的
@@ -356,6 +375,7 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         @copy="copyTop"
         @export="exportResult"
         @speed="onToolbarSpeed"
+        @resume="resumeScan"
       />
 
       <RecordCardList v-if="narrow" :records="results.paged" />

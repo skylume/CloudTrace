@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"cloudtrace/internal/adaptive"
@@ -207,6 +208,23 @@ type scanStartReq struct {
 	model.ScanParams
 	// Preset 是本次使用的档位标识；空表示用户是手调的，历史里不记档位。
 	Preset string `json:"preset"`
+	// Skip 是已经测过的地址，续测时跳过。不进参数快照：它描述的是「上一轮
+	// 做过什么」，不是这次怎么扫。
+	Skip []string `json:"skip,omitempty"`
+}
+
+// ipSet 把地址列表转成去重集合；空列表返回 nil，让下游走「不跳过」的路径。
+func ipSet(items []string) map[string]struct{} {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if ip := strings.TrimSpace(item); ip != "" {
+			out[ip] = struct{}{}
+		}
+	}
+	return out
 }
 
 // handleScanStart 校验参数并启动扫描任务。
@@ -225,7 +243,9 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	runner, err := scan.NewRunner(s.scanOptions(params))
+	opts := s.scanOptions(params)
+	opts.Skip = ipSet(req.Skip)
+	runner, err := scan.NewRunner(opts)
 	if err != nil {
 		return fail(CodeInvalidParam, err.Error())
 	}

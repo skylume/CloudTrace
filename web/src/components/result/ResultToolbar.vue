@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (event: 'copy', count: number): void
   (event: 'export'): void
   (event: 'speed', scope: 'single' | 'region' | 'all'): void
+  (event: 'resume'): void
 }>()
 
 const results = useResultsStore()
@@ -211,6 +212,14 @@ const regionQuota = computed(() => {
           {{ t('result.speedAll') }}
         </button>
       </div>
+
+      <!--
+        续测：拿上一轮的请求再扫一遍，跳过已经出结果的地址。整批重来既浪费
+        时间，也会把刚挑出来的节点冲掉。
+      -->
+      <button type="button" class="ct-btn" :disabled="results.total === 0" @click="emit('resume')">
+        {{ t('result.resume', { count: results.total }) }}
+      </button>
 
       <p v-if="weightNote" class="note">{{ weightNote }}</p>
       <p v-if="regionQuota > 0" class="note">{{ t('result.regionQuota', { count: regionQuota }) }}</p>

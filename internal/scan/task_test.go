@@ -263,6 +263,8 @@ type deps struct {
 	remoteURLs []string
 	resolver   source.Resolver
 	enrich     func(rec *model.IPRecord)
+	// skip 是续测时要跳过的已测地址。
+	skip map[string]struct{}
 }
 
 func newRunnerForTest(t *testing.T, params model.ScanParams, d *deps) *Runner {
@@ -288,6 +290,7 @@ func newRunnerForTest(t *testing.T, params model.ScanParams, d *deps) *Runner {
 		Host:       "edge.example.com",
 		Seed:       1,
 		RemoteURLs: d.remoteURLs,
+		Skip:       d.skip,
 		Probe:      d.prober.probe,
 		Trace:      d.tracer.fetch,
 		Verify:     d.verifier.verify,
@@ -315,6 +318,60 @@ func ipSet(records []model.IPRecord) map[string]bool {
 		out[rec.IP] = true
 	}
 	return out
+}
+
+// ---------------------------------------------------------------- 续测去重
+
+// 续测只扫没试过的地址：已测的跳过，不是整批重来。
+func TestRunSkipsKnownAddresses(t *testing.T) {
+	params := scanParams("1.1.1.1\n2.2.2.2")
+	d := &deps{
+		prober: &fakeProber{fallback: 20},
+		skip:   map[string]struct{}{"1.1.1.1": {}},
+	}
+	runner := newRunnerForTest(t, params, d)
+
+	count, err, rep := runScan(t, runner, context.Background())
+	if err != nil {
+		t.Fatalf("续测失败：%v", err)
+	}
+	if count != 1 {
+		t.Errorf("结果数 = %d，期望只扫没试过的那条", count)
+	}
+	// 两阶段会对同一个地址探两次（粗探 + 精探），所以只断言「探的是谁」。
+	calls := d.prober.all()
+	if len(calls) == 0 {
+		t.Fatal("没有发起任何探测")
+	}
+	for _, call := range calls {
+		if call.ip != "2.2.2.2" {
+			t.Errorf("探测了已测地址 %s", call.ip)
+		}
+	}
+	got := rep.results()
+	if len(got) != 1 || got[0].IP != "2.2.2.2" {
+		t.Errorf("交付结果 = %+v，期望只有 2.2.2.2", got)
+	}
+}
+
+// 候选全在已测集合里时要报「都测过了」，不能说「来源没配好」——两者的
+// 处置方式完全相反。
+func TestRunAllKnownReturnsCodedError(t *testing.T) {
+	params := scanParams("1.1.1.1\n2.2.2.2")
+	d := &deps{
+		prober: &fakeProber{fallback: 20},
+		skip:   map[string]struct{}{"1.1.1.1": {}, "2.2.2.2": {}},
+	}
+	runner := newRunnerForTest(t, params, d)
+
+	_, err, _ := runScan(t, runner, context.Background())
+	var coded *CodedError
+	if !errors.As(err, &coded) || coded.Code != CodeAllSkipped {
+		t.Fatalf("错误 = %v，期望错误码 %s", err, CodeAllSkipped)
+	}
+	if d.prober.count() != 0 {
+		t.Errorf("全被跳过时仍发起了 %d 次探测", d.prober.count())
+	}
 }
 
 // ---------------------------------------------------------------- 参数校验
