@@ -81,12 +81,10 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
 </script>
 
 <template>
-  <div class="field" :class="{ pending: props.field.pending, warned: props.warning !== undefined }">
+  <div class="field" :class="{ warned: props.warning !== undefined }">
     <label class="label" :title="props.warning ? props.warning.reason : hint">
       <span>{{ text.label }}</span>
       <span class="info" aria-hidden="true">?</span>
-      <!-- 还没有任何代码读这一项时明说，而不是让它看起来是个正常开关。 -->
-      <span v-if="props.field.pending" class="pending-tag">{{ t('settings.pending') }}</span>
     </label>
 
     <div class="control">
@@ -95,7 +93,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         type="checkbox"
         class="ct-check"
         :checked="Boolean(value)"
-        :disabled="props.field.pending"
         @change="emit('change', field.path, ($event.target as HTMLInputElement).checked)"
       />
 
@@ -103,7 +100,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         v-else-if="field.kind === 'enum'"
         class="ct-input"
         :value="String(value ?? '')"
-        :disabled="props.field.pending"
         @change="emit('change', field.path, ($event.target as HTMLSelectElement).value)"
       >
         <option v-for="option in field.options ?? []" :key="option" :value="option">
@@ -119,7 +115,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         :min="field.min"
         :max="maxValue"
         :step="field.kind === 'float' ? (field.step ?? 0.1) : 1"
-        :disabled="props.field.pending"
         @input="onNumber(($event.target as HTMLInputElement).value)"
       />
 
@@ -128,7 +123,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         type="text"
         class="ct-input"
         :value="listValue"
-        :disabled="props.field.pending"
         @change="onList(($event.target as HTMLInputElement).value)"
       />
 
@@ -138,7 +132,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
         class="ct-input"
         :class="{ 'ct-mono': field.kind === 'path' }"
         :value="String(value ?? '')"
-        :disabled="props.field.pending"
         @change="emit('change', field.path, ($event.target as HTMLInputElement).value)"
       />
 
@@ -192,11 +185,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
   min-width: 0;
 }
 
-/* 还没生效的项整体压暗一档，但保持可读：用户该看得见有这么一项。 */
-.field.pending .control {
-  opacity: 0.6;
-}
-
 /* 有代价的值：输入框描边转警示色，并在原「范围」的位置写一句为什么。 */
 .field.warned .ct-input,
 .field.warned .ct-check {
@@ -208,15 +196,6 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
   font-size: var(--font-size-xs);
   white-space: nowrap;
   cursor: help;
-}
-
-.pending-tag {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-  color: var(--color-text-subtle);
-  font-size: 10px;
-  white-space: nowrap;
 }
 
 /* 下拉的选项文字比输入框长得多（如「GeoLite2（查询更快）」），

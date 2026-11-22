@@ -347,6 +347,7 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         :total="results.visible.length"
         :page-size="ui.pageSize"
         @update:page="results.setPage"
+        @update:page-size="ui.setPageSize"
       />
 
       <MobileActionBar

@@ -274,7 +274,7 @@ export const useResultsStore = defineStore('results', () => {
    * 不回的话，用户停在第 7 页改一下筛选，看到的就是一张空表——而结果其实有，
    * 只是都在前几页。
    */
-  watch([regionFilter, maxLatency, keyword, sortKey, sortDesc, groupBy], () => {
+  watch([regionFilter, maxLatency, keyword, sortKey, sortDesc, groupBy, pageSize], () => {
     page.value = 1
   })
 

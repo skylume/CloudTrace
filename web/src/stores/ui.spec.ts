@@ -9,6 +9,7 @@
  */
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 // 声明成接收任意参数：下面的 mock 工厂要把它透传出去，
 // 零参数的 vi.fn 会让展开实参在类型上过不去。
@@ -27,6 +28,27 @@ beforeEach(() => {
   sendCommand.mockClear()
   localStorage.clear()
 })
+
+/** 一份完整的界面配置，只覆盖关心的那几项。 */
+function config(overrides: Partial<UIConfig> = {}): UIConfig {
+  return {
+    theme: 'dark',
+    lang: 'zh',
+    font_scale: 'medium',
+    density: 'advanced',
+    table_density: 'normal',
+    page_size: 50,
+    close_to_tray: true,
+    time_format: 'local',
+    start_page: 'scan',
+    animation: true,
+    contrast: false,
+    remember_state: true,
+    adaptive_enabled: true,
+    adaptive_allow_preset: true,
+    ...overrides,
+  }
+}
 
 describe('主题与语言', () => {
   it('切主题时同时写回服务端', () => {
@@ -93,56 +115,20 @@ describe('披露程度', () => {
   })
 })
 
-describe('记住界面状态与启动页', () => {
-  /** 一份完整的界面配置，只覆盖关心的那两项。 */
-  function config(overrides: Partial<UIConfig>): UIConfig {
-    return {
-      theme: 'dark',
-      lang: 'zh',
-      font_scale: 'medium',
-      density: 'advanced',
-      table_density: 'normal',
-      page_size: 50,
-      close_to_tray: true,
-      time_format: 'local',
-      start_page: 'scan',
-      animation: true,
-      contrast: false,
-      remember_state: true,
-      adaptive_enabled: true,
-      adaptive_allow_preset: true,
-      ...overrides,
-    }
-  }
-
-  /**
-   * 关掉记忆时每次从启动页面开始。
-   *
-   * 这个开关以前没有任何代码读它——改它什么都不会发生，而界面上它看起来是个
-   * 正常的开关。
-   */
-  it('关掉记忆时从启动页面开始，并回到默认密度', () => {
+describe('初始页面', () => {
+  it('没有存过状态时落在扫描页', () => {
     const ui = useUIStore()
 
-    ui.applyFromSettings(config({ remember_state: false, start_page: 'history' }))
+    ui.applyFromSettings(config())
 
-    expect(ui.activeView).toBe('history')
-    expect(ui.density).toBe('auto')
+    expect(ui.activeView).toBe('scan')
   })
 
-  it('没有存过状态时落到启动页面', () => {
-    const ui = useUIStore()
-
-    ui.applyFromSettings(config({ remember_state: true, start_page: 'result' }))
-
-    expect(ui.activeView).toBe('result')
-  })
-
-  it('允许记忆且存过时留在上次那一页', () => {
+  it('存过状态时留在上次那一页', () => {
     localStorage.setItem('cloudtrace.ui', JSON.stringify({ activeView: 'settings' }))
     const ui = useUIStore()
 
-    ui.applyFromSettings(config({ remember_state: true, start_page: 'scan' }))
+    ui.applyFromSettings(config())
 
     expect(ui.activeView).toBe('settings')
   })
@@ -155,12 +141,68 @@ describe('记住界面状态与启动页', () => {
    */
   it('之后的配置广播不把用户刚做的导航抹掉', () => {
     const ui = useUIStore()
-    ui.applyFromSettings(config({ remember_state: false, start_page: 'scan' }))
+    ui.applyFromSettings(config())
 
     ui.activeView = 'history'
-    ui.applyFromSettings(config({ remember_state: false, start_page: 'scan' }))
+    ui.applyFromSettings(config())
 
     expect(ui.activeView).toBe('history')
+  })
+})
+
+describe('表格密度跟随字号', () => {
+  it('小字号对应紧凑行高', () => {
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ font_scale: 'small' }))
+
+    expect(ui.tableDensity).toBe('compact')
+  })
+
+  it('大字号对应宽松行高', () => {
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ font_scale: 'large' }))
+
+    expect(ui.tableDensity).toBe('comfortable')
+  })
+
+  it('不再读取服务端那份 table_density', () => {
+    const ui = useUIStore()
+
+    ui.applyFromSettings(config({ font_scale: 'medium', table_density: 'compact' }))
+
+    expect(ui.tableDensity).toBe('normal')
+  })
+})
+
+describe('每页条数', () => {
+  it('只改本地，不写服务端', () => {
+    const ui = useUIStore()
+
+    ui.setPageSize(100)
+
+    expect(ui.pageSize).toBe(100)
+    expect(sendCommand).not.toHaveBeenCalled()
+  })
+
+  it('非法值被忽略', () => {
+    const ui = useUIStore()
+
+    ui.setPageSize(0)
+
+    expect(ui.pageSize).toBe(50)
+  })
+
+  it('写进本地记忆，下次打开还是这个数', async () => {
+    const ui = useUIStore()
+
+    ui.setPageSize(200)
+    // 写盘挂在 watchEffect 上，等它跑完再读。
+    await nextTick()
+
+    const saved = JSON.parse(localStorage.getItem('cloudtrace.ui') ?? '{}')
+    expect(saved.pageSize).toBe(200)
   })
 })
 
@@ -168,49 +210,18 @@ describe('服务端下发的界面配置', () => {
   it('全量替换本地状态', () => {
     const ui = useUIStore()
 
-    ui.applyFromSettings({
-      theme: 'light',
-      lang: 'en',
-      font_scale: 'large',
-      density: 'advanced',
-      table_density: 'compact',
-      page_size: 50,
-      close_to_tray: true,
-      time_format: 'local',
-      start_page: 'result',
-      animation: false,
-      contrast: false,
-      remember_state: true,
-      adaptive_enabled: true,
-      adaptive_allow_preset: false,
-    })
+    ui.applyFromSettings(config({ theme: 'light', lang: 'en', font_scale: 'large', animation: false }))
 
     expect(ui.theme).toBe('light')
     expect(ui.lang).toBe('en')
     expect(ui.fontScale).toBe('large')
-    expect(ui.tableDensity).toBe('compact')
     expect(ui.animation).toBe(false)
   })
 
   it('吸收服务端配置本身不触发写回，否则会形成回环', () => {
     const ui = useUIStore()
 
-    ui.applyFromSettings({
-      theme: 'dark',
-      lang: 'zh',
-      font_scale: 'medium',
-      density: 'auto',
-      table_density: 'normal',
-      page_size: 50,
-      close_to_tray: true,
-      time_format: 'local',
-      start_page: 'scan',
-      animation: true,
-      contrast: false,
-      remember_state: true,
-      adaptive_enabled: true,
-      adaptive_allow_preset: true,
-    })
+    ui.applyFromSettings(config({ density: 'auto' }))
 
     expect(sendCommand).not.toHaveBeenCalled()
   })

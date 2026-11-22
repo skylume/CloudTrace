@@ -25,7 +25,6 @@ const STORAGE_KEY = 'cloudtrace.ui'
 interface PersistedUI {
   theme: Theme
   fontScale: FontScale
-  tableDensity: TableDensity
   density: Density
   animation: boolean
   contrast: boolean
@@ -34,18 +33,20 @@ interface PersistedUI {
   navCollapsed: boolean
   /** 上次停留的页面，下次打开直接回去。 */
   activeView: string
+  /** 结果表每页行数。属于本机偏好，不进服务端配置。 */
+  pageSize: number
 }
 
 const DEFAULTS: PersistedUI = {
   theme: 'system',
   fontScale: 'medium',
-  tableDensity: 'normal',
   density: 'auto',
   animation: true,
   contrast: false,
   lang: 'zh',
   navCollapsed: false,
   activeView: 'scan',
+  pageSize: 50,
 }
 
 /**
@@ -82,10 +83,21 @@ export const useUIStore = defineStore('ui', () => {
 
   const theme = ref<Theme>(saved.theme)
   const fontScale = ref<FontScale>(saved.fontScale)
-  const tableDensity = ref<TableDensity>(saved.tableDensity)
   const density = ref<Density>(saved.density)
   const animation = ref(saved.animation)
   const contrast = ref(saved.contrast)
+
+  /**
+   * 表格行高跟随字号，不再单设一项。
+   *
+   * 字号与行高是一件事的两面：小字配松行距、大字配紧行距都别扭。让用户分别
+   * 调两次，只会调出不搭的组合。
+   */
+  const tableDensity = computed<TableDensity>(() => {
+    if (fontScale.value === 'small') return 'compact'
+    if (fontScale.value === 'large') return 'comfortable'
+    return 'normal'
+  })
 
   /**
    * 结果页当前是「结果」还是「测速」视图。
@@ -98,24 +110,16 @@ export const useUIStore = defineStore('ui', () => {
   const navCollapsed = ref(saved.navCollapsed)
   const activeView = ref(saved.activeView)
 
-  /**
-   * 服务端那份 `ui.remember_state`。
-   *
-   * 本地先按上次的值渲染（首屏不闪），配置一到就以它为准决定「要不要继续按
-   * 上次的来」。
-   */
-  const rememberState = ref(true)
-  /** 是否已经按 remember_state 定过初始状态。 */
+  /** 是否已经定过初始页面。 */
   const stateSettled = ref(false)
-  /** 准确时间的显示时区。 */
-  const timeFormat = ref<TimeFormat>('local')
   /**
-   * 结果表每页行数。
+   * 准确时间的显示时区。
    *
-   * 初始值只是「配置还没到之前先按这个渲染」，配置一到就以 `ui.page_size`
-   * 为准——它和主题、字号一样是配置项，不是本地偏好。
+   * 固定本地时间：跨时区对照是少数场景，让每个用户先做一次选择不值得。
    */
-  const pageSize = ref(50)
+  const timeFormat: TimeFormat = 'local'
+  /** 结果表每页行数。属于本机偏好，不进服务端配置。 */
+  const pageSize = ref(saved.pageSize > 0 ? saved.pageSize : 50)
 
   /** 系统当前是不是深色。跟随系统时用它决定实际主题。 */
   const systemDark = ref(true)
@@ -159,44 +163,27 @@ export const useUIStore = defineStore('ui', () => {
   function applyFromSettings(ui: UIConfig): void {
     theme.value = ui.theme
     fontScale.value = ui.font_scale
-    tableDensity.value = ui.table_density
     // density 为 auto 时保持 auto：它表示「还没决定」，由首次使用来决定。
     density.value = ui.density
     animation.value = ui.animation
     contrast.value = ui.contrast
     lang.value = ui.lang
 
-    timeFormat.value = ui.time_format
-    rememberState.value = ui.remember_state
-    // 兜底到 50：配置里给了 0 或负数时不能让它变成「一页零行」——
-    // 那会得到一张空表，而用户不知道是自己填错了。
-    pageSize.value = ui.page_size > 0 ? ui.page_size : 50
-    settleInitialView(ui)
+    settleInitialView()
   }
 
   /**
-   * settleInitialView 定下「这次打开落在哪一页、参数展开到什么程度」。
+   * settleInitialView 定下「这次打开落在哪一页」。
    *
    * 只在第一份配置到达时做一次：这个函数挂在每次配置广播上，而广播会因为改个
    * 主题、调个参数随时到来——每次都重置，用户刚点的导航就被抹掉了。
    *
-   * 两条规则：
-   *   - 允许记住且本地确实存过 → 留在上次那一页；
-   *   - 否则（关掉了记忆，或第一次打开）→ 落到配置里的启动页。
+   * 本地存过就留在上次那一页，第一次打开则落到扫描页。
    */
-  function settleInitialView(ui: UIConfig): void {
+  function settleInitialView(): void {
     if (stateSettled.value) return
     stateSettled.value = true
-
-    const landing = ui.start_page !== '' ? ui.start_page : DEFAULTS.activeView
-    if (!ui.remember_state || !stored) {
-      activeView.value = landing
-    }
-    if (!ui.remember_state) {
-      // 关掉记忆之后连「展开过高级参数」也不该被带走。
-      density.value = 'auto'
-      navCollapsed.value = false
-    }
+    if (!stored) activeView.value = DEFAULTS.activeView
   }
 
   /**
@@ -249,6 +236,13 @@ export const useUIStore = defineStore('ui', () => {
     persist({ contrast: next })
   }
 
+  /** setPageSize 只改本机偏好，不写服务端。 */
+  function setPageSize(next: number): void {
+    const size = Math.round(next)
+    if (!Number.isFinite(size) || size <= 0) return
+    pageSize.value = size
+  }
+
   // 把状态贴到 DOM 与 localStorage。集中在一处，避免各组件各贴一部分。
   watchEffect(() => {
     const root = document.documentElement
@@ -259,18 +253,16 @@ export const useUIStore = defineStore('ui', () => {
     root.dataset.contrast = contrast.value ? 'high' : 'normal'
     setLocale(lang.value)
 
-    // 关掉「记住界面状态」时，本地存的是「下次打开会用的值」，而不是用户刚
-    // 停留的地方。这样再把它打开时不会突然跳回一个很久以前的页面。
     const payload: PersistedUI = {
       theme: theme.value,
       fontScale: fontScale.value,
-      tableDensity: tableDensity.value,
-      density: rememberState.value ? density.value : DEFAULTS.density,
+      density: density.value,
       animation: animation.value,
       contrast: contrast.value,
       lang: lang.value,
-      navCollapsed: rememberState.value ? navCollapsed.value : DEFAULTS.navCollapsed,
-      activeView: rememberState.value ? activeView.value : DEFAULTS.activeView,
+      navCollapsed: navCollapsed.value,
+      activeView: activeView.value,
+      pageSize: pageSize.value,
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -293,7 +285,6 @@ export const useUIStore = defineStore('ui', () => {
     lang,
     navCollapsed,
     activeView,
-    rememberState,
     timeFormat,
     pageSize,
     resolvedTheme,
@@ -306,5 +297,6 @@ export const useUIStore = defineStore('ui', () => {
     setTheme,
     setLang,
     setContrast,
+    setPageSize,
   }
 })
