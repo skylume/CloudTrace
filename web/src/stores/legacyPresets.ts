@@ -14,6 +14,7 @@ import { computed, ref } from 'vue'
 import { CMD } from '@/api/protocol'
 import { sendCommand } from '@/api/client'
 import type { LegacyPresetsStatus } from '@/api/types'
+import { pickOutputTarget } from '@/utils/outputTarget'
 
 export const useLegacyPresetsStore = defineStore('legacyPresets', () => {
   const status = ref<LegacyPresetsStatus | null>(null)
@@ -72,12 +73,10 @@ export const useLegacyPresetsStore = defineStore('legacyPresets', () => {
     if (!s?.presets?.length) return
     const raw = JSON.stringify({ default: s.default ?? '', presets: s.presets }, null, 2)
     const blob = new Blob([raw], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'cloudtrace-presets-legacy.json'
-    a.click()
-    URL.revokeObjectURL(url)
+    pickOutputTarget({ name: 'cloudtrace-presets-legacy.json', blob }).save({
+      name: 'cloudtrace-presets-legacy.json',
+      blob,
+    })
   }
 
   return {

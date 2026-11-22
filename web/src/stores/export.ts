@@ -13,8 +13,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 import { sendCommand } from '@/api/client'
-import { api } from '@/api/rest'
 import type { ExportResult } from '@/api/types'
+import { pickOutputTarget } from '@/utils/outputTarget'
 
 export const useExportStore = defineStore('export', () => {
   /** 正在等待后端生成，用于禁用按钮避免重复点击。 */
@@ -48,7 +48,9 @@ export const useExportStore = defineStore('export', () => {
   function applyResult(result: ExportResult): void {
     pending.value = false
     if (!result.url) return
-    api.download(result.url, result.name)
+    // 具体怎么交给用户由输出目标决定：桌面是下载，Android 壳可以是系统分享。
+    const file = { name: result.name, url: result.url }
+    pickOutputTarget(file).save(file)
   }
 
   /** 后端报错时也要解除等待，否则按钮会一直转下去。 */

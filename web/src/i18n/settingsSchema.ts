@@ -280,7 +280,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.ping_times': { label: '探测次数', hint: '每个地址测几次。0 表示自动' },
     'scan.port': { label: '默认端口', hint: '默认 443。部分网络下 2053 / 2083 更稳' },
     'scan.timeout_ms': { label: '探测超时', hint: '单次探测等多久算失败' },
-    'scan.retry': { label: '失败重试', hint: '探测失败后重试几次' },
+    'scan.retry': { label: '探测重试', hint: '单个地址探测失败后重试几次' },
     'scan.mode': { label: '探测模式', hint: 'TCPing 更快，HTTPing 更接近真实访问但阈值会放宽' },
     'scan.two_phase': { label: '两阶段扫描', hint: '先低采样粗筛，再对达标节点精测。开着更快' },
     'scan.node_check': {
@@ -303,7 +303,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'geo.asn_db_path': { label: '库文件位置', hint: '可指向目录或文件。手动放置的文件会被优先使用' },
     'geo.asn_auto_update': { label: '自动更新 ASN 库', hint: '关掉后不发任何请求，只用本地已有的' },
     'geo.asn_update_interval_days': { label: '更新周期（天）', hint: '超过这个天数就后台更新。0 表示仅手动' },
-    'geo.geo_warn_enabled': { label: '代理出口提示', hint: '检测到本机出口不是国内时给一条横幅提示。仅提示，不阻断任务' },
+    'geo.geo_warn_enabled': { label: '归属地异常提醒', hint: '检测到本机出口不在国内时给一条横幅提示。仅提示，不阻断任务' },
     'geo.filter_asn': { label: '运营商过滤', hint: '只看某些运营商的节点。留空表示不过滤' },
 
     'history.keep_count': { label: '保留份数', hint: '最多保留多少份历史。收藏的记录不占名额' },
@@ -342,7 +342,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'source.merge_strategy': { label: '多源合并方式', hint: '并集取所有来源的地址；交集只取同时出现在所有来源里的' },
     'source.timeout_ms': { label: '拉取超时', hint: '单个远端源等多久算失败' },
-    'source.retry': { label: '拉取重试', hint: '远端源失败后重试几次' },
+    'source.retry': { label: '源拉取重试', hint: '远端地址拉取失败后重试几次' },
     'source.retry_interval_ms': { label: '重试间隔', hint: '两次重试之间等多久' },
 
     'net.use_tls': { label: 'TLS 探测', hint: '自动时按端口推断：443 与 8443 走 TLS，其余不走' },
@@ -385,7 +385,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 means automatic' },
     'scan.port': { label: 'Default port', hint: '443 by default. 2053 / 2083 are steadier on some networks' },
     'scan.timeout_ms': { label: 'Probe timeout', hint: 'How long one probe waits before failing' },
-    'scan.retry': { label: 'Retries', hint: 'Retries after a failed probe' },
+    'scan.retry': { label: 'Probe retries', hint: 'Retries after a single address fails to respond' },
     'scan.mode': { label: 'Probe mode', hint: 'TCPing is faster; HTTPing is closer to real traffic but relaxes thresholds' },
     'scan.two_phase': { label: 'Two-phase scan', hint: 'Coarse pass first, then a fine pass on survivors. Faster' },
     'scan.node_check': {
@@ -408,7 +408,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'geo.asn_db_path': { label: 'Database location', hint: 'A directory or a file. A manually placed file takes precedence' },
     'geo.asn_auto_update': { label: 'Auto-update ASN database', hint: 'When off, no requests are made and the local copy is used as-is' },
     'geo.asn_update_interval_days': { label: 'Update interval (days)', hint: 'Update in the background after this many days. 0 means manual only' },
-    'geo.geo_warn_enabled': { label: 'Proxy exit warning', hint: 'Shows a banner when your exit does not look domestic. Never blocks a task' },
+    'geo.geo_warn_enabled': { label: 'Location mismatch warning', hint: 'Shows a banner when your exit does not look domestic. Never blocks a task' },
     'geo.filter_asn': { label: 'Operator filter', hint: 'Only show nodes from certain operators. Empty means no filter' },
 
     'history.keep_count': { label: 'Keep count', hint: 'How many records to keep. Starred ones do not count' },
@@ -447,7 +447,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'source.merge_strategy': { label: 'Merge strategy', hint: 'Union takes every address; intersect keeps only those present in all sources' },
     'source.timeout_ms': { label: 'Fetch timeout', hint: 'How long a single remote source may take' },
-    'source.retry': { label: 'Fetch retries', hint: 'Retries after a remote source fails' },
+    'source.retry': { label: 'Source fetch retries', hint: 'Retries after a remote address fails to load' },
     'source.retry_interval_ms': { label: 'Retry interval', hint: 'Wait between retries' },
     'net.use_tls': { label: 'TLS probing', hint: 'Auto infers from the port: 443 and 8443 use TLS, others do not' },
     'net.ip_version': { label: 'Address family', hint: 'IPv4 only, IPv6 only, or both' },

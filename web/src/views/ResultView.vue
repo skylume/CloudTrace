@@ -149,6 +149,12 @@ const stats = computed(() => {
 })
 
 const showEmpty = computed(() => results.total === 0 && !task.running)
+
+/** 分地区配额；配置还没到或值为空时按 0 处理，提示行会改说「未启用」。 */
+const quotaPerRegion = computed(() => {
+  const value = settings.values?.speed?.per_region_topn
+  return typeof value === 'number' ? value : 0
+})
 const selectedCount = computed(() => results.selected.size)
 
 /** 漏斗条：与扫描页右栏同一份数据，这里用紧凑版。 */
@@ -352,6 +358,20 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         <template v-if="speed.source.detail">（{{ speed.source.detail }}）</template>
       </p>
 
+      <!--
+        分地区配额只在「完全测速」里生效，地区测速不分桶。把这件事写在结果页，
+        用户才不用为了搞懂为什么只测了这几个节点去翻设置。
+      -->
+      <p v-if="view === 'speed'" class="ct-subtle quota-line">
+        <template v-if="quotaPerRegion > 0">
+          {{ t('result.quotaNote', { count: quotaPerRegion }) }}
+        </template>
+        <template v-else>{{ t('result.quotaOff') }}</template>
+        <button type="button" class="ct-link" @click="ui.activeView = 'settings'">
+          {{ t('result.quotaEdit') }}
+        </button>
+      </p>
+
       <div class="stats">
         <div v-for="item in stats" :key="item.label" class="stat">
           <span class="ct-subtle">{{ item.label }}</span>
@@ -475,6 +495,14 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 .source-line {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.quota-line {
+  margin: var(--space-1) 0 0;
+}
+
+.quota-line .ct-link {
+  margin-left: var(--space-2);
 }
 
 @media (max-width: 768px) {

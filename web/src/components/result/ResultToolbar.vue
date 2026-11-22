@@ -83,13 +83,6 @@ const weightNote = computed(() => {
   })
 })
 
-/** 分地区配额只在完全测速时生效，设置里开着就得在这里说清楚。 */
-const regionQuota = computed(() => {
-  const values = settings.values as unknown as Record<string, unknown> | null
-  if (!values) return 0
-  const value = readPath(values, 'speed.per_region_topn')
-  return typeof value === 'number' && value > 0 ? value : 0
-})
 </script>
 
 <template>
@@ -222,7 +215,6 @@ const regionQuota = computed(() => {
       </button>
 
       <p v-if="weightNote" class="note">{{ weightNote }}</p>
-      <p v-if="regionQuota > 0" class="note">{{ t('result.regionQuota', { count: regionQuota }) }}</p>
 
       <button type="button" class="ct-btn" @click="results.resetView()">{{ t('result.resetView') }}</button>
     </div>
