@@ -183,6 +183,7 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.allHint': 'Showing every setting',
   'settings.showAll': 'Show all',
   'settings.showCore': 'Essentials only',
+  'settings.restartTag': 'Needs restart',
   'settings.restartRequired': 'These changes take effect after a restart: {keys}',
   'settings.resetItem': 'Reset to default',
 

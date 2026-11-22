@@ -175,6 +175,7 @@ export const zh = {
   'settings.allHint': '显示全部配置项',
   'settings.showAll': '显示全部',
   'settings.showCore': '只看常用项',
+  'settings.restartTag': '重启生效',
   'settings.restartRequired': '以下改动需要重启后生效：{keys}',
   'settings.resetItem': '恢复默认',
 

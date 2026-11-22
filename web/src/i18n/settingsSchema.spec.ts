@@ -138,3 +138,39 @@ describe('按取值决定是否显示', () => {
     expect(fieldVisible(fieldOf('ui.theme'), {})).toBe(true)
   })
 })
+
+describe('常用区与生效时机', () => {
+  /**
+   * 常用区固定 20 项。
+   *
+   * 历史保留的「按次数 / 按天数」两项互斥，两种取值下都得凑够 20——否则切到
+   * 按天数时常用区少一项，用户得回高级区找那个数字。
+   */
+  it('两种保留方式下常用区都是 20 项', () => {
+    for (const mode of ['count', 'days']) {
+      const values = { history: { keep_mode: mode } }
+      const primary = allFields.filter((field) => field.primary && fieldVisible(field, values))
+      expect(primary.length, `${mode} 模式下的常用项数量`).toBe(20)
+    }
+  })
+
+  /**
+   * 保存即写盘、但要重启才生效的项，界面上得说清楚。
+   *
+   * 这份清单与 internal/server/settings.go 的 restartRequired 是同一批。
+   */
+  it('需要重启的项都带了标记', () => {
+    const restart = allFields
+      .filter((field) => field.restart)
+      .map((field) => field.path)
+      .sort()
+    expect(restart).toEqual([
+      'advanced.log_level',
+      'data.dir',
+      'data.portable',
+      'server.autostart',
+      'server.bind',
+      'server.port',
+    ])
+  })
+})

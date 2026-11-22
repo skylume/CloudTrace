@@ -85,6 +85,8 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
     <label class="label" :title="props.warning ? props.warning.reason : hint">
       <span>{{ text.label }}</span>
       <span class="info" aria-hidden="true">?</span>
+      <!-- 保存即写盘、但要重启才换过去，说在行上而不是只靠顶部横幅。 -->
+      <span v-if="field.restart" class="restart-tag">{{ t('settings.restartTag') }}</span>
     </label>
 
     <div class="control">
@@ -183,6 +185,15 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value.join(
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+
+.restart-tag {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-subtle);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 /* 有代价的值：输入框描边转警示色，并在原「范围」的位置写一句为什么。 */

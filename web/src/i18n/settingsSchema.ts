@@ -37,6 +37,13 @@ export interface SettingField {
    * 传数组表示同时满足。
    */
   showWhen?: FieldCondition | FieldCondition[]
+  /**
+   * 改了要重启才生效。
+   *
+   * 不拦着改——换机后第一件事就是改端口——但在行尾说清楚，别让人以为
+   * 保存完就换过去了。
+   */
+  restart?: boolean
 }
 
 /** 一项显示条件：依赖项 path 的取值落在 in 里。 */
@@ -181,12 +188,13 @@ export const SETTING_GROUPS: SettingGroup[] = [
         kind: 'int',
         min: 1,
         max: 3650,
+        primary: true,
         showWhen: { path: 'history.keep_mode', in: ['days'] },
       },
       { path: 'history.auto_save', kind: 'bool' },
       { path: 'history.auto_dedup', kind: 'bool' },
-      { path: 'data.dir', kind: 'path' },
-      { path: 'data.portable', kind: 'bool' },
+      { path: 'data.dir', kind: 'path', restart: true },
+      { path: 'data.portable', kind: 'bool', restart: true },
     ],
   },
   {
@@ -207,12 +215,12 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: 'service',
     members: ['server', 'advanced'],
     fields: [
-      { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true },
-      { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'] },
+      { path: 'server.port', kind: 'int', min: 1, max: 65535, primary: true, restart: true },
+      { path: 'server.bind', kind: 'enum', options: ['127.0.0.1', '0.0.0.0'], restart: true },
       { path: 'server.open_browser', kind: 'bool' },
-      { path: 'server.autostart', kind: 'bool' },
+      { path: 'server.autostart', kind: 'bool', restart: true },
       { path: 'server.session_ttl_min', kind: 'int', min: 1, max: 10080 },
-      { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'] },
+      { path: 'advanced.log_level', kind: 'enum', options: ['debug', 'info', 'warn', 'error'], restart: true },
       { path: 'advanced.log_keep_days', kind: 'int', min: 1, max: 365 },
       { path: 'advanced.check_update', kind: 'bool' },
     ],
