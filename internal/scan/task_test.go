@@ -511,6 +511,79 @@ func TestRunTwoPhaseSkipsFineWhenNothingPasses(t *testing.T) {
 	}
 }
 
+// TestRunEmitsNearestWhenNothingPasses 覆盖零结果回看。
+//
+// 一条都没达标时要把最接近阈值的那批补发出去：用户据此判断是条件定高了，
+// 还是这批地址根本不通——没有这份数据，只能靠重跑一次去猜。
+func TestRunEmitsNearestWhenNothingPasses(t *testing.T) {
+	params := scanParams("1.1.1.1\n1.1.1.2\n1.1.1.3\n1.1.1.4")
+	params.TwoPhase = false
+	params.VerifyNodes = false
+	params.LatencyThreshold = 100
+
+	d := &deps{prober: &fakeProber{
+		fallback:    900,
+		latency:     map[string]float64{"1.1.1.1": 180, "1.1.1.2": 120},
+		unreachable: map[string]bool{"1.1.1.4": true},
+	}}
+	runner := newRunnerForTest(t, params, d)
+
+	count, err, rep := runScan(t, runner, context.Background())
+	if err != nil {
+		t.Fatalf("无候选达标不该算失败，实际：%v", err)
+	}
+	if count != 0 {
+		t.Errorf("结果数 = %d，期望 0", count)
+	}
+
+	rep.mu.Lock()
+	payloads := rep.events[TopicNearest]
+	rep.mu.Unlock()
+	if len(payloads) != 1 {
+		t.Fatalf("回看事件数 = %d，期望 1", len(payloads))
+	}
+	payload, ok := payloads[0].(NearestPayload)
+	if !ok {
+		t.Fatalf("回看载荷类型 = %T", payloads[0])
+	}
+	if payload.Threshold != 100 {
+		t.Errorf("阈值 = %v，期望 100", payload.Threshold)
+	}
+	// 完全不通的那条不进来：它的延迟是哨兵值，混进来会让人以为差一点点就能过。
+	if len(payload.Items) != 3 {
+		t.Fatalf("回看条数 = %d，期望 3（排除不可达）", len(payload.Items))
+	}
+	want := []string{"1.1.1.2", "1.1.1.1", "1.1.1.3"}
+	for i, ip := range want {
+		if payload.Items[i].IP != ip {
+			t.Errorf("第 %d 条 = %s，期望 %s（按延迟升序）", i, payload.Items[i].IP, ip)
+		}
+	}
+}
+
+// TestRunSkipsNearestWhenResultsExist 确认回看只在零结果时发：有结果时它没有用处。
+func TestRunSkipsNearestWhenResultsExist(t *testing.T) {
+	params := scanParams("1.1.1.1")
+	params.VerifyNodes = false
+
+	d := &deps{prober: &fakeProber{fallback: 10}}
+	runner := newRunnerForTest(t, params, d)
+
+	count, err, rep := runScan(t, runner, context.Background())
+	if err != nil {
+		t.Fatalf("Run 返回错误：%v", err)
+	}
+	if count != 1 {
+		t.Fatalf("结果数 = %d，期望 1", count)
+	}
+	rep.mu.Lock()
+	n := len(rep.events[TopicNearest])
+	rep.mu.Unlock()
+	if n != 0 {
+		t.Errorf("有结果时不该发回看事件，实际 %d 条", n)
+	}
+}
+
 // TestRunFilterRunsBeforeProbing 验证前置过滤发生在任何探测之前。
 //
 // 顺序错了就完全失去意义：本该被过滤掉的地址照样要花一次 TCP 往返。

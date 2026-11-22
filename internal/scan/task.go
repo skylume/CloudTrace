@@ -55,6 +55,19 @@ const (
 // TopicResult 是扫描结果的增量推送，载荷为 []model.IPRecord。
 const TopicResult = "scan/result"
 
+// TopicNearest 是零结果时的回看推送。
+//
+// 只在一条都没达标时发一次：有结果时这些数据没有用处，白白多推一帧。
+const TopicNearest = "scan/nearest"
+
+// NearestPayload 是「差多少」的回看载荷。
+type NearestPayload struct {
+	// Threshold 是本次的延迟上限（毫秒），前端据此判断差了多少。
+	Threshold float64 `json:"threshold"`
+	// Items 是最接近阈值的若干条探测结果，按延迟升序。
+	Items []model.IPRecord `json:"items"`
+}
+
 // ProbeFunc 探测单个候选的延迟统计。
 type ProbeFunc func(ctx context.Context, c Candidate, times int, timeout time.Duration) (probe.Result, error)
 
@@ -299,7 +312,7 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		"hosts_failed", len(pool.DroppedHosts),
 		"remote_failed", len(pool.RemoteFailed))
 	if len(pool.Candidates) == 0 {
-		return 0, errors.New("没有生成任何候选，请检查来源设置")
+		return 0, &CodedError{Code: CodeNoCandidate, Msg: "没有生成任何候选，请检查来源设置"}
 	}
 
 	// ② 前置过滤：这是「省掉无效探测」的唯一机会，放到探测之后等于白做。
@@ -314,11 +327,11 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		"block_rejected", filtered.BlockRejected,
 		"allow_rejected", filtered.AllowRejected)
 	if len(filtered.Kept) == 0 {
-		return 0, errors.New("前置过滤后没有剩余候选，请检查端口与地区设置")
+		return 0, &CodedError{Code: CodeAllFiltered, Msg: "前置过滤后没有剩余候选，请检查端口与地区设置"}
 	}
 
 	// ③④ 延迟探测与阈值过滤。
-	passing, err := r.probeStages(ctx, rep, st, funnel, filtered.Kept)
+	passing, rejected, err := r.probeStages(ctx, rep, st, funnel, filtered.Kept)
 	if err != nil {
 		return 0, err
 	}
@@ -330,6 +343,12 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	sink.flush()
 	if err != nil {
 		return len(records), err
+	}
+
+	// 一条都没达标时补一批「差多少」的回看：否则用户只能靠重跑一次才知道
+	// 是阈值定高了，还是这批地址根本不通。
+	if len(records) == 0 {
+		r.emitNearest(rep, rejected)
 	}
 
 	// ⑦ 汇总。
@@ -344,6 +363,25 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 
 	r.finish(ctx, records)
 	return len(records), nil
+}
+
+// emitNearest 在零结果时补发一批最接近阈值的探测结果。
+//
+// 不带明细采集与归属地补齐：这一步发生在任务已经结束之后，再发网络请求
+// 既拖长收尾，也让「零结果」这件事变得不干脆。
+func (r *Runner) emitNearest(rep task.Reporter, rejected []probed) {
+	items := nearestReachable(rejected, nearestLimit)
+	if len(items) == 0 {
+		return
+	}
+	recs := make([]model.IPRecord, 0, len(items))
+	for _, item := range items {
+		recs = append(recs, recordOf(item))
+	}
+	rep.Emit(TopicNearest, NearestPayload{
+		Threshold: float64(r.params.LatencyThreshold),
+		Items:     recs,
+	})
 }
 
 // finish 在任务正常跑完时把完整结果交出去。

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * 结果页工具栏：视图切换、筛选、呈现方式、动作。
+ * 结果页工具栏：视图、搜索、分组、列设置，以及收在「更多」里的低频动作。
  *
- * 单独一个组件而不是摊在页面模板里：这一行有十几个控件，摊在页面里会把页面的
- * 结构淹没掉——页面该回答的是「这一页有哪几块」，不是「这一行有哪些按钮」。
+ * 十几个控件等权排开时，每次都要用的搜索与视图切换会被淹掉。这里只留常用的
+ * 一排，其余收进「更多」——找得到，但不占视线。
  *
  * 只连 store 与 emit，不自己发起测速：发起测速要按当前配置组装整份参数，那是
  * 页面的事，工具栏只表达「用户要测哪个范围」。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import ColumnSettings from './ColumnSettings.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
@@ -31,6 +31,9 @@ const exporter = useExportStore()
 
 const selectedCount = computed(() => results.selected.size)
 
+/** 「更多」默认收起：延迟上限、列预设、复制与按地区测速都不是每轮都改的。 */
+const moreOpen = ref(false)
+
 const presetSegments = computed(() =>
   COLUMN_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey as never) })),
 )
@@ -52,10 +55,7 @@ const latencyLimit = computed({
 
 <template>
   <div class="toolbar">
-    <!--
-      三组控件：看什么（视图与筛选）、怎么呈现（列与分组）、做什么（复制 / 导出 / 测速）。
-      分组之后宽屏上这一行才有主次；窄屏上也是整组换行，而不是十几个控件等权排开。
-    -->
+    <!-- 常用：看哪一份、找哪一条、怎么分组、显示哪些列。 -->
     <div class="group">
       <SegmentedControl
         v-model="view"
@@ -71,6 +71,43 @@ const latencyLimit = computed({
         type="search"
         :placeholder="t('common.search')"
       />
+      <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
+        <option value="none">{{ t('result.group.none') }}</option>
+        <option value="colo">{{ t('result.group.colo') }}</option>
+        <option value="region">{{ t('result.group.region') }}</option>
+        <option value="asn">{{ t('result.group.asn') }}</option>
+      </select>
+      <ColumnSettings />
+    </div>
+
+    <div class="group push">
+      <!--
+        窄屏下「测速选中」与「导出」在底部固定操作栏里已有，这里不再重复；
+        宽屏没有底部栏，这两个就是主入口。
+      -->
+      <button
+        type="button"
+        class="ct-btn ct-btn--primary dup"
+        :disabled="selectedCount === 0"
+        @click="emit('speed', 'single')"
+      >
+        {{ t('result.speedSelected', { count: selectedCount }) }}
+      </button>
+      <button type="button" class="ct-btn dup" :disabled="exporter.pending" @click="emit('export')">
+        {{ t('common.export') }}
+      </button>
+      <button
+        type="button"
+        class="ct-btn"
+        :aria-expanded="moreOpen"
+        aria-controls="ct-result-more"
+        @click="moreOpen = !moreOpen"
+      >
+        {{ t('common.more') }}
+      </button>
+    </div>
+
+    <div v-if="moreOpen" id="ct-result-more" class="more">
       <label class="filter">
         <span class="ct-subtle">{{ t('result.filter.latency') }}</span>
         <input
@@ -90,49 +127,24 @@ const latencyLimit = computed({
         <input v-model="results.qualifiedOnly" type="checkbox" class="ct-check" />
         <span>{{ t('result.filter.qualified') }}</span>
       </label>
-    </div>
 
-    <div class="group push">
       <SegmentedControl
         :segments="presetSegments"
         :model-value="fields.presetId"
         @update:model-value="fields.applyPreset($event as ColumnPresetId)"
       />
-      <ColumnSettings />
-      <select v-model="results.groupBy" class="ct-input" :aria-label="t('result.group.none')">
-        <option value="none">{{ t('result.group.none') }}</option>
-        <option value="colo">{{ t('result.group.colo') }}</option>
-        <option value="region">{{ t('result.group.region') }}</option>
-        <option value="asn">{{ t('result.group.asn') }}</option>
-      </select>
-    </div>
 
-    <div class="group">
       <button type="button" class="ct-btn" @click="emit('copy', 3)">{{ t('result.copyTop') }}</button>
-      <!-- 窄屏下这三个是重复入口：底部固定操作栏里已经有同样的动作。 -->
-      <button type="button" class="ct-btn dup" @click="emit('copy', results.visible.length)">
+      <button type="button" class="ct-btn" @click="emit('copy', results.visible.length)">
         {{ t('result.copyAll') }}
       </button>
-      <button type="button" class="ct-btn dup" :disabled="exporter.pending" @click="emit('export')">
-        {{ t('common.export') }}
-      </button>
+
       <!--
         三种测速范围并排给出，各自的可用条件写在按钮的禁用状态上：
         没勾选就没法「测速选中」，没筛地区就没法「测速所选地区」。
         合成一个下拉会把「这次到底要测哪些」藏起来，而那是发起前唯一要确认的事。
-
-        三个包在一个不换行的组里：工具栏本身会换行，拆散的话窄屏上会出现
-        「一个在上一行、两个在下一行」这种断法。
       -->
       <div class="speed-group">
-        <button
-          type="button"
-          class="ct-btn ct-btn--primary dup"
-          :disabled="selectedCount === 0"
-          @click="emit('speed', 'single')"
-        >
-          {{ t('result.speedSelected', { count: selectedCount }) }}
-        </button>
         <button
           type="button"
           class="ct-btn"
@@ -154,7 +166,7 @@ const latencyLimit = computed({
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  /* 组间比组内松一档：三个组各自成块，才不会看成一排等权的按钮。 */
+  /* 组间比组内松一档：两组各自成块，才不会看成一排等权的按钮。 */
   gap: var(--space-2) var(--space-3);
 }
 
@@ -166,15 +178,25 @@ const latencyLimit = computed({
   min-width: 0;
 }
 
-/* 「怎么呈现」贴右：宽屏上这一行因此有左右两半的层次。 */
+/* 动作组贴右：宽屏上这一行因此有左右两半的层次。 */
 .push {
   margin-left: auto;
 }
 
+/* 「更多」展开后独占一行，与常用控件用虚线分开。 */
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex-basis: 100%;
+  gap: var(--space-2) var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
 /*
  * 窄屏：底部固定操作栏已经给了「复制全部 / 导出 / 测速选中」，工具栏再摆一遍
- * 只会把表格往下顶四五行的距离。这里只收掉完全重复的三个入口；底部栏没有的
- * 「复制前三 / 测速所选地区 / 测速全部」全部保留，窄屏不丢能力。
+ * 只会把表格往下顶四五行的距离。
  */
 @media (max-width: 768px) {
   .push {

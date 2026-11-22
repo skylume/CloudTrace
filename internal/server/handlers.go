@@ -69,6 +69,7 @@ func (s *server) taskSubscriptions() []subscription {
 		{topic: app.TopicState, fn: s.onStateChanged},
 		{topic: task.TopicProgress, fn: s.forward(task.TopicProgress)},
 		{topic: scan.TopicResult, fn: s.forward(scan.TopicResult)},
+		{topic: scan.TopicNearest, fn: s.forward(scan.TopicNearest)},
 		{topic: speed.TopicPartial, fn: s.forward(speed.TopicPartial)},
 		{topic: history.TopicChanged, fn: s.forward(history.TopicChanged)},
 		// 下载进度只用来触发一次重新读取：载荷是地理层的 Status，而前端要的
@@ -110,6 +111,12 @@ func (s *server) onTaskError(payload any) {
 	// 限流熔断属于网络类问题：用户要看到的是「换个源或过会儿再试」，
 	// 而不是「未分类错误」。
 	code := CodeUnknown
+	// 扫描侧自带稳定错误码的失败原样透传：界面按码给建议（放宽端口 / 换来源），
+	// 不必再从中文文案里猜是哪一类。
+	var coded *scan.CodedError
+	if errors.As(err, &coded) {
+		code = coded.Code
+	}
 	if errors.Is(err, speed.ErrRateLimited) {
 		code = CodeNetwork
 		s.broadcastBreaker(err)

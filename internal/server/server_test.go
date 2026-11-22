@@ -20,6 +20,7 @@ import (
 	"cloudtrace/internal/app"
 	"cloudtrace/internal/config"
 	"cloudtrace/internal/model"
+	"cloudtrace/internal/scan"
 	"cloudtrace/internal/task"
 )
 
@@ -302,7 +303,37 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("protocol_version = %d，期望 %d", body.ProtocolVersion, ProtocolVersion)
 	}
 	if body.DataDir == "" {
-		t.Error("data_dir 不应为空")
+		t.Error("浏览器形态应当下发 data_dir")
+	}
+}
+
+// TestHealthEndpointHidesPathsWhenEmbedded 覆盖内嵌形态的收紧。
+//
+// 桌面版的服务只对本机可见，但同设备的其他程序也能摸到：绝对路径与配置
+// 告警在那种场景下只是白白泄露，界面本身并不需要它们。
+func TestHealthEndpointHidesPathsWhenEmbedded(t *testing.T) {
+	st := newTestStack(t, nil)
+	st.srv.desktop = true
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	st.srv.handleHealth(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望 200", rec.Code)
+	}
+	var body healthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("响应不是合法 JSON：%v", err)
+	}
+	if body.Status != "ok" {
+		t.Errorf("status = %q，期望 ok", body.Status)
+	}
+	if body.DataDir != "" {
+		t.Errorf("内嵌形态不应下发 data_dir，实际 %q", body.DataDir)
+	}
+	if len(body.Warnings) != 0 {
+		t.Errorf("内嵌形态不应下发配置告警，实际 %v", body.Warnings)
 	}
 }
 
@@ -926,6 +957,24 @@ func TestWSUnknownCommandReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(p.Msg, "definitely-not-a-command") {
 		t.Errorf("错误信息应指明命令名，实际为 %q", p.Msg)
+	}
+}
+
+// 扫描侧的失败码必须原样到达前端：界面靠它给出「放宽端口」这类建议。
+func TestWSTaskErrorKeepsScanCode(t *testing.T) {
+	st := newTestStack(t, nil)
+	conn := st.mustDial(t)
+	readUntil(t, conn, eventState, 3*time.Second)
+
+	st.srv.onTaskError(&scan.CodedError{Code: scan.CodeNoCandidate, Msg: "没有生成任何候选"})
+
+	m := readUntil(t, conn, eventError, 3*time.Second)
+	var p errorPayload
+	if err := json.Unmarshal(m.Data, &p); err != nil {
+		t.Fatalf("error 载荷不是合法 JSON：%v", err)
+	}
+	if p.Code != scan.CodeNoCandidate {
+		t.Errorf("code = %q，期望 %q", p.Code, scan.CodeNoCandidate)
 	}
 }
 

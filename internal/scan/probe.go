@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -24,18 +25,18 @@ type probed struct {
 // 两阶段模式下阶段一只测一次、只覆盖粗扫规模，阶段二只重测达标的那批。
 // 两阶段共用同一个 context：中止必须一次停掉全部，各用各的 context 会
 // 出现「点了停止，另一个阶段还在跑」。
-func (r *Runner) probeStages(ctx context.Context, rep task.Reporter, st *task.Stages, funnel *Funnel, items []Candidate) ([]probed, error) {
+func (r *Runner) probeStages(ctx context.Context, rep task.Reporter, st *task.Stages, funnel *Funnel, items []Candidate) (passing, rejected []probed, err error) {
 	if !r.params.TwoPhase {
 		st.Begin(len(items))
 		got, err := r.probePhase(ctx, rep, st, items, r.params.PingTimes, func(n int) {
 			funnel.Set(StageLatencyOK, n)
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		passing := r.keepPassing(got)
+		passing, rejected = r.splitPassing(got)
 		funnel.Set(StageLatencyOK, len(passing))
-		return passing, nil
+		return passing, rejected, nil
 	}
 
 	st.Begin(len(items))
@@ -43,15 +44,15 @@ func (r *Runner) probeStages(ctx context.Context, rep task.Reporter, st *task.St
 		funnel.Set(StageLatencyOK, n)
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	passing := r.keepPassing(coarse)
+	passing, rejected = r.splitPassing(coarse)
 	funnel.Set(StageLatencyOK, len(passing))
 	st.Advance(len(items))
 	if len(passing) == 0 {
 		// 粗扫一个都没达标，精扫只是把同样的失败再跑一遍。
 		r.logger.Info("粗扫无候选达标，跳过精扫", "probed", len(items))
-		return nil, nil
+		return nil, rejected, nil
 	}
 
 	targets := make([]Candidate, 0, len(passing))
@@ -63,9 +64,12 @@ func (r *Runner) probeStages(ctx context.Context, rep task.Reporter, st *task.St
 	// 在其中做更准的测量，让它回退会让漏斗看起来在倒着走。
 	fine, err := r.probePhase(ctx, rep, st, targets, r.params.PingTimes, nil)
 	if err != nil {
-		return nil, err
+		return nil, rejected, err
 	}
-	return r.keepPassing(fine), nil
+	finePass, fineRejected := r.splitPassing(fine)
+	// 粗扫被筛掉的那批也留着：精扫不达标的那批更接近阈值，但粗扫里可能有
+	// 单次抖动导致偏高的项，回看时两批都值得看。
+	return finePass, append(rejected, fineRejected...), nil
 }
 
 // probePhase 并发探测一批候选，返回每项的探测结果。
@@ -138,13 +142,39 @@ func (r *Runner) probeWithRetry(ctx context.Context, c Candidate, times int) (pr
 	return res, err
 }
 
-// keepPassing 留下通过延迟阈值的项。
-func (r *Runner) keepPassing(items []probed) []probed {
-	out := make([]probed, 0, len(items))
+// splitPassing 按阈值把探测结果分成达标与未达标两组，顺序与输入一致。
+func (r *Runner) splitPassing(items []probed) (passing, rejected []probed) {
+	passing = make([]probed, 0, len(items))
 	for _, item := range items {
 		if r.passed(item.cand, item.res) {
-			out = append(out, item)
+			passing = append(passing, item)
+			continue
 		}
+		rejected = append(rejected, item)
+	}
+	return passing, rejected
+}
+
+// nearestLimit 是零结果时回看的条数。
+//
+// 只回看一小批：用户要判断的是「差多少」，不是逐条排查几千个失败项。
+const nearestLimit = 20
+
+// nearestReachable 从未达标项里挑出最接近阈值的若干条。
+//
+// 只保留真的收到回包的项：完全连不上的那批延迟是哨兵值，混进来会让人以为
+// 差一点点就能过，而实际上它根本不通。
+func nearestReachable(items []probed, limit int) []probed {
+	out := make([]probed, 0, limit)
+	for _, item := range items {
+		if item.res.Recv <= 0 || item.res.Latency == model.Unreachable {
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].res.Latency < out[j].res.Latency })
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out
 }

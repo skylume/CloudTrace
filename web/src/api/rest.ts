@@ -51,7 +51,8 @@ export interface HealthResponse {
   version: string
   protocol_version: number
   uptime_s: number
-  data_dir: string
+  /** 内嵌形态（桌面版）不下发路径与配置告警，见后端 handleHealth。 */
+  data_dir?: string
   warnings?: string[]
 }
 

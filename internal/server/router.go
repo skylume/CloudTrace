@@ -94,12 +94,14 @@ func securityHeaders(next http.Handler) http.Handler {
 
 // healthResponse 是探活接口的响应体。
 type healthResponse struct {
-	Status          string   `json:"status"`
-	Version         string   `json:"version"`
-	ProtocolVersion int      `json:"protocol_version"`
-	UptimeS         float64  `json:"uptime_s"`
-	DataDir         string   `json:"data_dir"`
-	Warnings        []string `json:"warnings,omitempty"`
+	Status          string  `json:"status"`
+	Version         string  `json:"version"`
+	ProtocolVersion int     `json:"protocol_version"`
+	UptimeS         float64 `json:"uptime_s"`
+	// DataDir 与 Warnings 只在浏览器形态下发：内嵌形态（桌面版）的这个端口
+	// 对本机其他程序可见，绝对路径与配置告警会变成侦察信息，而界面不需要它们。
+	DataDir  string   `json:"data_dir,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // handleHealth 处理 GET /api/health。
@@ -110,19 +112,19 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dataDir, err := s.svc.DataDir()
-	if err != nil {
-		dataDir = ""
-	}
-
-	writeJSON(w, http.StatusOK, healthResponse{
+	out := healthResponse{
 		Status:          "ok",
 		Version:         s.svc.Version,
 		ProtocolVersion: ProtocolVersion,
 		UptimeS:         s.svc.Uptime().Seconds(),
-		DataDir:         dataDir,
-		Warnings:        s.cfg.Warnings(),
-	})
+	}
+	if !s.desktop {
+		if dataDir, err := s.svc.DataDir(); err == nil {
+			out.DataDir = dataDir
+		}
+		out.Warnings = s.cfg.Warnings()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // loginRequest 是登录请求体。

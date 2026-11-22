@@ -108,8 +108,22 @@ export const useResultsStore = defineStore('results', () => {
     version.value += 1
   }
 
+  /**
+   * nearest 是零结果时后端补发的「最接近阈值」那一批。
+   *
+   * 与结果集分开存：它不是结果，只是判断条件是否太严的依据，混进表格会
+   * 让「扫出 0 条」变成「扫出 20 条不达标的」。
+   */
+  const nearest = ref<{ threshold: number; items: IPRecord[] } | null>(null)
+
+  function applyNearest(payload: { threshold: number; items: IPRecord[] } | null): void {
+    nearest.value = payload && payload.items.length > 0 ? payload : null
+  }
+
   function addChunk(chunk: IPRecord[]): void {
     if (chunk.length === 0) return
+    // 有真结果进来，回看那批就过期了。
+    nearest.value = null
     const next = records.value
     for (const record of chunk) {
       const key = recordKey(record)
@@ -131,6 +145,7 @@ export const useResultsStore = defineStore('results', () => {
   function clear(): void {
     keyword.value = ''
     sourceId.value = ''
+    nearest.value = null
     records.value = new Map()
     selected.value = new Set()
     regionFilter.value = []
@@ -367,6 +382,8 @@ export const useResultsStore = defineStore('results', () => {
     sortKey,
     sortDesc,
     addChunk,
+    nearest,
+    applyNearest,
     replaceAll,
     clear,
     toggleSelect,

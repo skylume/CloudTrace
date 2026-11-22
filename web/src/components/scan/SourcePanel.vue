@@ -12,7 +12,6 @@
 import { computed, ref } from 'vue'
 
 import { t } from '@/i18n'
-import { useUIStore } from '@/stores/ui'
 import { parseSourceText } from '@/utils/sourceText'
 
 export interface RemoteSource {
@@ -27,8 +26,6 @@ export interface ScanSource {
   customText: string
 }
 
-const ui = useUIStore()
-
 const source = defineModel<ScanSource>({ required: true })
 
 defineProps<{
@@ -41,6 +38,11 @@ const dragging = ref(false)
 
 const preview = computed(() => parseSourceText(source.value.customText))
 const invalidCount = computed(() => preview.value.invalid.length)
+
+/** 开着却没填地址的远程源：它不会生效，得在启动前说清楚。 */
+const blankRemote = computed(
+  () => source.value.remote.filter((item) => item.enabled && item.url.trim() === '').length,
+)
 
 function addRemote(): void {
   source.value = {
@@ -96,13 +98,8 @@ async function onDrop(event: DragEvent): Promise<void> {
       <span class="ct-subtle tnum">{{ t('source.official.count', { count: officialCount }) }}</span>
     </label>
 
-    <!--
-      远端地址、自定义文本、本地文件三块收进「详细设置」：
-      简单模式下只留「官方网段」这一个开关——它覆盖绝大多数场景，而这三块
-      是给有特定来源的人用的。
-    -->
-    <template v-if="ui.showAdvanced">
-    <!-- ② 远端地址 -->
+    <!-- ② 远端地址：和官方网段一样属于「从哪儿取」，不藏在折叠里。 -->
+
     <div class="block">
       <div class="block-head">
         <span>{{ t('source.remote') }}</span>
@@ -111,7 +108,12 @@ async function onDrop(event: DragEvent): Promise<void> {
         <button type="button" class="ct-link" @click="addRemote">{{ t('source.remote.add') }}</button>
       </div>
       <p v-if="source.remote.length === 0" class="ct-subtle empty">{{ t('source.remote.empty') }}</p>
-      <div v-for="(item, index) in source.remote" :key="index" class="remote-row">
+      <div
+        v-for="(item, index) in source.remote"
+        :key="index"
+        class="remote-row"
+        :class="{ blank: item.enabled && item.url.trim() === '' }"
+      >
         <input
           :checked="item.enabled"
           type="checkbox"
@@ -135,8 +137,15 @@ async function onDrop(event: DragEvent): Promise<void> {
           {{ t('source.remote.remove') }}
         </button>
       </div>
+      <p v-if="blankRemote > 0" class="warn hint">
+        {{ t('source.remote.invalid', { count: blankRemote }) }}
+      </p>
       <p v-if="source.remote.length > 0" class="ct-subtle hint">{{ t('scan.remoteNote') }}</p>
     </div>
+
+    <!-- ③④ 自定义文本与本地文件：多数人只改上面两项，默认收起。 -->
+    <details class="extra">
+      <summary class="ct-link">{{ t('source.extra') }}</summary>
 
     <!-- ③ 自定义文本 -->
     <div class="block">
@@ -186,7 +195,7 @@ async function onDrop(event: DragEvent): Promise<void> {
         />
       </div>
     </div>
-    </template>
+    </details>
   </section>
 </template>
 
@@ -242,6 +251,19 @@ async function onDrop(event: DragEvent): Promise<void> {
 
 .note {
   flex: 0 0 28%;
+}
+
+.extra {
+  margin-top: var(--space-4);
+}
+
+.extra summary {
+  font-size: var(--font-size-sm);
+}
+
+/* 空地址那一行用警示色描边：填了才算数，空着等于白开一个开关。 */
+.remote-row.blank .ct-input {
+  border-color: var(--color-warn-border);
 }
 
 .preview {

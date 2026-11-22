@@ -25,6 +25,7 @@ import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
 import { useMigrateStore } from '@/stores/migrate'
 import { useSystemStore } from '@/stores/system'
+import { rememberScanRequest } from '@/utils/lastScan'
 import {
   clearSnapshot,
   loadSnapshot,
@@ -290,7 +291,10 @@ function buildRequest(): Record<string, unknown> {
 }
 
 function start(): void {
-  if (!sendCommand(CMD.scanStart, buildRequest())) return
+  const payload = buildRequest()
+  if (!sendCommand(CMD.scanStart, payload)) return
+  // 记下这份请求：零结果时结果页要用同一份参数放宽重跑。
+  rememberScanRequest(payload)
   log.push(t('scan.start'))
 }
 

@@ -10,6 +10,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
 import MobileActionBar from '@/components/result/MobileActionBar.vue'
+import NearestNotice from '@/components/result/NearestNotice.vue'
 import RecordCardList from '@/components/result/RecordCardList.vue'
 import RegionChips from '@/components/result/RegionChips.vue'
 import ResultToolbar from '@/components/result/ResultToolbar.vue'
@@ -28,6 +29,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSpeedStore } from '@/stores/speed'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
+import { recallScanRequest } from '@/utils/lastScan'
 import { formatLatency, formatSpeed } from '@/utils/latency'
 import { buildSpeedParams } from '@/utils/speedParams'
 import { useNarrow } from '@/utils/useMediaQuery'
@@ -161,6 +163,22 @@ const funnelSteps = computed<FunnelStep[]>(() => [
 const showFunnel = computed(() => results.sourceId === '' && task.funnel.generated > 0)
 
 /**
+ * 放宽延迟上限重跑。
+ *
+ * 必须用上一次的请求参数：拿当前设置重拼一份，会悄悄换掉用户刚才用的来源
+ * 与端口，跑出来的东西和眼前这批没法比。
+ */
+function retryScan(threshold: number): void {
+  const previous = recallScanRequest()
+  if (!previous) {
+    ui.activeView = 'scan'
+    return
+  }
+  if (!sendCommand(CMD.scanStart, { ...previous, latency_threshold: threshold })) return
+  ui.activeView = 'scan'
+}
+
+/**
  * 清空当前结果。
  *
  * 不弹确认框，走 Toast 撤销：结果只在内存里、清掉就真没了，所以必须给后悔的
@@ -278,8 +296,20 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
     <!-- 结局放在空态之前：失败时哪怕一条结果都没有，也要说清卡在哪。 -->
     <TaskOutcomeNotice :outcome="task.outcome" />
 
+    <!--
+      一条都没达标时先给「差多少」：空表格只说明失败了，说明不了是条件太严
+      还是这批地址根本不通，而这两件事的下一步完全不同。
+    -->
+    <NearestNotice
+      v-if="showEmpty && results.nearest"
+      class="ct-card"
+      :threshold="results.nearest.threshold"
+      :items="results.nearest.items"
+      @retry="retryScan"
+      @back="ui.activeView = 'scan'"
+    />
     <EmptyState
-      v-if="showEmpty"
+      v-else-if="showEmpty"
       class="ct-card"
       :title="t('result.empty')"
       :desc="t('result.emptyDesc')"

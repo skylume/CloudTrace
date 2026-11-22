@@ -29,6 +29,7 @@ import { CMD } from '@/api/protocol'
 import type {
   ErrorPayload,
   HistoryChangePayload,
+  NearestPayload,
   ProgressPayload,
   TaskDonePayload,
 } from '@/api/protocol'
@@ -221,6 +222,7 @@ export function wireEvents(): void {
 
   onEvent(EVT.scanResult, (data) => results.addChunk((data as IPRecord[]) ?? []))
   onEvent(EVT.speedPartial, (data) => results.addChunk((data as IPRecord[]) ?? []))
+  onEvent(EVT.scanNearest, (data) => results.applyNearest((data as NearestPayload) ?? null))
 
   onEvent(EVT.export, (data) => exporter.applyResult(data as ExportResult))
   onEvent(EVT.source, (data) => system.applySource(data as SourceStatus))

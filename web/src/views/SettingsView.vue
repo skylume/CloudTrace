@@ -173,6 +173,30 @@ function isOpen(id: string): boolean {
 }
 const healthChecked = computed(() => settings.health !== null)
 const healthIssues = computed(() => settings.health?.issues ?? [])
+
+/**
+ * 服务状态默认收起。
+ *
+ * 设置页是来改设置的；健康检查、归属地库、服务面板、诊断与危险操作都是「出了
+ * 事才来找」的东西。摊在同一屏里，八十几项设置还没开始看，先被四张运维卡压住。
+ */
+const serviceOpen = ref(false)
+
+/** 收起时标题右侧那一行：有事没事得一眼看出来，不能靠展开才知道。 */
+const serviceSummary = computed(() => {
+  const issues = healthIssues.value.length
+  const health = !healthChecked.value
+    ? t('settings.serviceUnchecked')
+    : issues > 0
+      ? t('settings.serviceIssues', { count: issues })
+      : t('settings.serviceHealthy')
+  const geoCount = geo.status?.status.records ?? 0
+  return [
+    health,
+    t('settings.serviceGeo', { count: geoCount }),
+    t('settings.serviceHistory', { count: history.total }),
+  ].join(' · ')
+})
 const confirmingReset = ref(false)
 const confirmingClear = ref(false)
 const confirmingDir = ref(false)
@@ -408,7 +432,26 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
         </section>
       </div>
 
-      <div v-if="!searching" class="side">
+    </div>
+
+    <!--
+      服务状态：健康检查、归属地库、服务面板、诊断与危险操作。
+      默认收起，标题右侧留一行摘要——「有事没事」不展开就能看见。
+    -->
+    <section v-if="!searching" class="ct-card service">
+      <h2 class="ct-card-title">
+        <button
+          type="button"
+          class="ct-link disclosure"
+          :aria-expanded="serviceOpen"
+          @click="serviceOpen = !serviceOpen"
+        >
+          {{ serviceOpen ? '▾' : '▸' }} {{ t('settings.serviceState') }}
+        </button>
+        <span class="spacer" />
+        <span class="ct-subtle summary">{{ serviceSummary }}</span>
+      </h2>
+      <div v-if="serviceOpen" class="service-body">
         <section class="ct-card">
           <h2 class="ct-card-title">
             <span>{{ t('health.title') }}</span>
@@ -450,7 +493,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 
         <DiagPanel />
 
-        <section class="ct-card danger">
+        <section class="danger">
           <h2 class="ct-card-title">{{ t('settings.dangerZone') }}</h2>
           <p class="ct-subtle">{{ t('settings.dangerHint') }}</p>
 
@@ -513,7 +556,7 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
           </p>
         </section>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -585,6 +628,8 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+  /* 一行铺满超宽屏时，标签与输入框隔得太远，扫读反而更慢。 */
+  max-width: 920px;
 }
 
 .disclosure {
@@ -594,16 +639,25 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 }
 
 .columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
+  display: block;
 }
 
-.side {
-  display: flex;
-  flex-direction: column;
+.summary {
+  font-size: var(--font-size-xs);
+}
+
+/* 展开后四张运维卡按可用宽度两列排开；窄屏自动落成一列。 */
+.service-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: var(--space-4);
+  align-items: start;
+  margin-top: var(--space-3);
+}
+
+/* 危险区跨满整行：与某张卡并排，会让人以为两者有关。 */
+.service-body .danger {
+  grid-column: 1 / -1;
 }
 
 .spacer {
@@ -657,7 +711,8 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
 }
 
 .danger {
-  border-color: var(--color-bad-border);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-bad-border);
 }
 
 /* 危险区的每一行：左边是说明，右边是动作。 */
@@ -703,9 +758,4 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
   color: var(--color-bad);
 }
 
-@media (max-width: 1024px) {
-  .columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 </style>

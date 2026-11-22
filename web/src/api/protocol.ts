@@ -4,7 +4,7 @@
  * 命令名与事件名刻意用字符串字面量而不是枚举：它们就是后端 handlers 表里的
  * 键，改错一个字母时希望是运行时报「未注册的命令」，而不是编译期悄悄改名。
  */
-import type { Funnel } from './types'
+import type { Funnel, IPRecord } from './types'
 
 /** 客户端 → 服务端：命令。 */
 export const CMD = {
@@ -67,6 +67,8 @@ export const EVT = {
   scanAbort: 'scan/abort',
   /* 失败：载荷与完成事件同形，额外带阶段、耗时与告警——「卡在哪」全靠它。 */
   scanFailed: 'scan/failed',
+  /** 一条都没达标时补发的「最接近阈值」那批，用来判断是不是条件太严。 */
+  scanNearest: 'scan/nearest',
   speedDone: 'speed/done',
   speedAbort: 'speed/abort',
   speedFailed: 'speed/failed',
@@ -114,6 +116,12 @@ export const EVT = {
 
 export type CommandName = (typeof CMD)[keyof typeof CMD]
 export type EventName = (typeof EVT)[keyof typeof EVT]
+
+/** 零结果回看：本次的延迟上限与最接近它的若干条探测结果。 */
+export interface NearestPayload {
+  threshold: number
+  items: IPRecord[]
+}
 
 /** 错误事件的数据体。 */
 export interface ErrorPayload {
