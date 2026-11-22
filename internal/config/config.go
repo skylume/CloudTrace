@@ -12,10 +12,9 @@ import (
 //     护栏（填个天文数字会真的去开那么多协程），不是产品意义上的上限——真正决定
 //     能开多少并发的是 net.max_workers，而那个值用户自己可以调。
 //   - MaxWorkersDefault 是 **net.max_workers 的默认值**，同时就是默认能填到的
-//     最大并发。它不能取内置档位的 200：档位上限是「一键填充时最多给多少」，
-//     与「用户自己最多能填多少」是两件事，混在一起会让一份本来合法的配置
-//     被判成非法。
-//   - MaxWorkersPreset 是**内置档位上限**（「不再提供 400 档」的原意）。
+//     最大并发。
+//   - MaxWorkers 是**扫描深度一键填充时的并发上限**，比默认值保守：一键
+//     填充要照顾大多数机器，用户仍可自己往上调。
 //   - WarnWorkers 是**警示阈值**：允许手填，但界面显示警示色、配置体检告警。
 //
 // 并发这件事刻意不设死上限：网卡、路由器、运营商各不相同，能跑多少只有用户
@@ -23,7 +22,7 @@ import (
 const (
 	MaxWorkersCeiling = 10000
 	MaxWorkersDefault = 2000
-	MaxWorkersPreset  = 200
+	MaxWorkers        = 200
 	WarnWorkers       = 300
 	MaxSampleMax      = 5000
 	WarnLatency       = 100
@@ -107,7 +106,7 @@ type UIConfig struct {
 	Contrast            bool   `json:"contrast"`              // 高对比度（可访问性，与深浅正交）
 	RememberState       bool   `json:"remember_state"`        // 状态记忆
 	AdaptiveEnabled     bool   `json:"adaptive_enabled"`      // 自适应总开关
-	AdaptiveAllowPreset bool   `json:"adaptive_allow_preset"` // 是否允许调整内置档位填入的值
+	AdaptiveAllowPreset bool   `json:"adaptive_allow_preset"` // 是否允许自适应修改一键填充的参数
 	// CloseToTray 决定关掉窗口是收进托盘还是退出。
 	//
 	// 默认收进托盘：扫描要跑几分钟，用户关窗口多半是想让它去后台跑，而不是

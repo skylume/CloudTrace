@@ -147,54 +147,54 @@ async function onDrop(event: DragEvent): Promise<void> {
     <details class="extra">
       <summary class="ct-link">{{ t('source.extra') }}</summary>
 
-    <!-- ③ 自定义文本 -->
-    <div class="block">
-      <div class="block-head">
-        <span>{{ t('source.text') }}</span>
-        <span class="ct-subtle">{{ t('source.text.desc') }}</span>
-      </div>
-      <textarea
-        v-model="source.customText"
-        class="ct-textarea ct-mono"
-        rows="6"
-        spellcheck="false"
-        :placeholder="t('source.text.placeholder')"
-      />
-      <div class="preview">
-        <span :class="invalidCount > 0 ? 'warn' : 'ok'">
-          {{ t('source.preview', { cidrs: preview.cidrs, single: preview.single, hosts: preview.hosts, comments: preview.comments }) }}
-        </span>
-        <span v-if="invalidCount > 0" class="warn">
-          · {{ t('source.preview.invalid', { count: invalidCount }) }}
-        </span>
-      </div>
-    </div>
-
-    <!-- ④ 本地文件 -->
-    <div class="block">
-      <div class="block-head">
-        <span>{{ t('source.file') }}</span>
-        <span class="ct-subtle">{{ t('source.file.hint') }}</span>
-      </div>
-      <div
-        class="ct-drop"
-        :class="{ 'ct-drop--active': dragging }"
-        @dragover.prevent="dragging = true"
-        @dragleave="dragging = false"
-        @drop.prevent="onDrop"
-      >
-        <span>{{ t('source.file.drop') }}</span>
-        <button type="button" class="ct-btn" @click="fileInput?.click()">{{ t('source.file.pick') }}</button>
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".txt,.csv,.json,.list,text/plain"
-          class="hidden-input"
-          @change="readFiles(($event.target as HTMLInputElement).files)"
+      <!-- ③ 自定义文本 -->
+      <div class="block">
+        <div class="block-head">
+          <span>{{ t('source.text') }}</span>
+          <span class="ct-subtle">{{ t('source.text.desc') }}</span>
+        </div>
+        <textarea
+          v-model="source.customText"
+          class="ct-textarea ct-mono"
+          rows="6"
+          spellcheck="false"
+          :placeholder="t('source.text.placeholder')"
         />
+        <div class="preview">
+          <span :class="invalidCount > 0 ? 'warn' : 'ok'">
+            {{ t('source.preview', { cidrs: preview.cidrs, single: preview.single, hosts: preview.hosts, comments: preview.comments }) }}
+          </span>
+          <span v-if="invalidCount > 0" class="warn">
+            · {{ t('source.preview.invalid', { count: invalidCount }) }}
+          </span>
+        </div>
       </div>
-    </div>
+
+      <!-- ④ 本地文件 -->
+      <div class="block">
+        <div class="block-head">
+          <span>{{ t('source.file') }}</span>
+          <span class="ct-subtle">{{ t('source.file.hint') }}</span>
+        </div>
+        <div
+          class="ct-drop"
+          :class="{ 'ct-drop--active': dragging }"
+          @dragover.prevent="dragging = true"
+          @dragleave="dragging = false"
+          @drop.prevent="onDrop"
+        >
+          <span>{{ t('source.file.drop') }}</span>
+          <button type="button" class="ct-btn" @click="fileInput?.click()">{{ t('source.file.pick') }}</button>
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            accept=".txt,.csv,.json,.list,text/plain"
+            class="hidden-input"
+            @change="readFiles(($event.target as HTMLInputElement).files)"
+          />
+        </div>
+      </div>
     </details>
   </section>
 </template>

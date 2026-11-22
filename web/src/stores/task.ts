@@ -25,7 +25,6 @@ function idleState(): TaskState {
     elapsed_s: 0,
     eta_s: 0,
     funnel: { generated: 0, latency_ok: 0, region_ok: 0, usable: 0 },
-    preset: '',
     started_at: 0,
   }
 }

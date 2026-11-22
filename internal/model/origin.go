@@ -5,15 +5,15 @@ package model
 // 规则（不可违反）：
 //   - 自适应逻辑**只能修改** OriginDefault / OriginPreset 的参数；
 //   - OriginUser 的参数一个字节都不改，只能产生「建议」；
-//   - 用户保存的「我的档位」载入的参数一律标记为 OriginUser。
+//   - 用户在设置页改过的参数一律标记为 OriginUser。
 type ParamOrigin string
 
 const (
 	// OriginDefault 系统内置默认值，用户从未碰过。
 	OriginDefault ParamOrigin = "default"
-	// OriginPreset 由内置档位（快速 / 标准 / 精细）填入。
+	// OriginPreset 由扫描深度一键填入（旧配置里也来自已下线的档位）。
 	OriginPreset ParamOrigin = "preset"
-	// OriginUser 用户手改过，或来自「我的档位」。
+	// OriginUser 用户手改过。
 	OriginUser ParamOrigin = "user"
 )
 

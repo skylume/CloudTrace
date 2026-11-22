@@ -2,7 +2,7 @@
 /**
  * 命令面板。
  *
- * 存在的理由是「不想用鼠标找东西」：熟练用户想跳页、想切档位、想开始扫描时，
+ * 存在的理由是「不想用鼠标找东西」：熟练用户想跳页、想开始扫描时，
  * 手不必离开键盘。因此它的内容不是「所有功能的清单」，而是**最常用的动作**，
  * 并且按用途分组——列表长了就退化成又一个需要找东西的界面。
  *
@@ -13,7 +13,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
-import { usePresetsStore } from '@/stores/presets'
 import { useActionStore } from '@/stores/actions'
 import { useExportStore } from '@/stores/export'
 import { useFieldsStore } from '@/stores/fields'
@@ -29,7 +28,6 @@ const ui = useUIStore()
 const task = useTaskStore()
 const results = useResultsStore()
 const actions = useActionStore()
-const presets = usePresetsStore()
 const settings = useSettingsStore()
 const fields = useFieldsStore()
 const exporter = useExportStore()
@@ -79,7 +77,7 @@ const commands = computed<Command[]>(() => {
       label: t('scan.start'),
       hint: 'Ctrl + Enter',
       // 走扫描页注册的动作，而不是自己拼一份参数——否则快捷键启动的任务
-      // 会丢掉用户在扫描页选的来源与档位。
+      // 会丢掉用户在扫描页选的来源与参数。
       run: () => {
         ui.activeView = 'scan'
         if (!actions.runStartScan()) {
@@ -141,19 +139,7 @@ const commands = computed<Command[]>(() => {
     { id: 'health', group: 'action', label: t('health.run'), run: () => sendCommand(CMD.healthCheck) },
   ]
 
-  // 档位命令直接应用档位：命令面板的价值就是「不离开键盘把事办了」，只跳过去
-  // 还得再点一下就没意义了。
-  const presetCommands: Command[] = presets.list.map((preset) => ({
-    id: `preset-${preset.id}`,
-    group: 'preset',
-    label: preset.name,
-    run: () => {
-      ui.activeView = 'scan'
-      presets.use(preset.id)
-    },
-  }))
-
-  return [...pages, ...operations, ...presetCommands]
+  return [...pages, ...operations]
 })
 
 /** 匹配：标签里包含关键词即可。刻意不做模糊打分——命令总共十几条，打分只会让顺序变得难以预期。 */
@@ -164,7 +150,7 @@ const matched = computed(() => {
 })
 
 const groups = computed(() => {
-  const order = ['nav', 'action', 'preset']
+  const order = ['nav', 'action']
   return order
     .map((id) => ({ id, items: matched.value.filter((command) => command.group === id) }))
     .filter((group) => group.items.length > 0)
@@ -212,8 +198,7 @@ function onKeydown(event: KeyboardEvent): void {
 /** 分组标题。 */
 function groupLabel(id: string): string {
   if (id === 'nav') return t('nav.command')
-  if (id === 'action') return t('common.more')
-  return t('task.preset')
+  return t('common.more')
 }
 </script>
 

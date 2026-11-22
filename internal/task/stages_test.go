@@ -42,7 +42,6 @@ func (r *stagesRecorder) Context() context.Context { return context.Background()
 func (r *stagesRecorder) SetTotal(total int)       { r.total = total }
 func (r *stagesRecorder) SetDone(done int)         { r.done = done }
 func (r *stagesRecorder) SetFunnel(model.Funnel)   {}
-func (r *stagesRecorder) SetPreset(string)         {}
 func (r *stagesRecorder) Emit(string, any)         {}
 
 func (r *stagesRecorder) want(t *testing.T, done, total int, what string) {

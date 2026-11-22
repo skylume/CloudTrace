@@ -1,22 +1,18 @@
 <script setup lang="ts">
 /**
- * 档位与参数。
+ * 参数面板。
  *
- * 关键决定：**选档位与调参数是同一个界面**。档位只是「批量填一组值」，
- * 填完立刻可以改——如果参数藏在另一个「高级模式」里，用户会以为档位是
- * 一道关卡，而规格明确要求它只是快捷填充。
+ * 只做三件事：渲染参数、提示组合不合理的取值、把自适应建议摆出来。选深度在
+ * 动作行里（DepthPicker），改默认值在设置页——这个面板不承担任何「保存」语义。
  *
  * 参数的中文标签、范围、说明都来自 i18n 映射表，组件里不硬编码。
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
-import PresetManager from '@/components/scan/PresetManager.vue'
 import PresetParams from '@/components/scan/PresetParams.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
-import { paramPaths } from '@/i18n/params'
 import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
-import { usePresetsStore } from '@/stores/presets'
 import { useUIStore } from '@/stores/ui'
 import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
@@ -26,7 +22,6 @@ defineProps<{ disabled?: boolean }>()
 
 const ui = useUIStore()
 const adaptive = useAdaptiveStore()
-const presets = usePresetsStore()
 
 /**
  * 建议的整句话。
@@ -41,7 +36,7 @@ function suggestionText(item: AdaptiveNotice): string {
 /**
  * 是否展开全部参数。
  *
- * 由 `ui.density` 决定而不是组件自己的状态：披露是「首次默认」，不是每次的
+ * 由 ui.density 决定而不是组件自己的状态：披露是「首次默认」，不是每次的
  * 关卡——用户展开过一次，下次进来就该直接是展开的，不该让他再点一次。
  */
 const expanded = computed(() => ui.showAdvanced)
@@ -49,40 +44,12 @@ const expanded = computed(() => ui.showAdvanced)
 /**
  * 展开 / 收起。
  *
- * 用户的最近一次选择说了算：展开记成「高级」，收起记成「简单」。`auto` 只在
+ * 用户的最近一次选择说了算：展开记成「高级」，收起记成「简单」。auto 只在
  * 用户还没表过态时起作用（默认简单）。这比「展开过就再也收不回去」更符合
  * 直觉，而想回到简单还有 Ctrl+Shift+A。
  */
 function toggleExpanded(): void {
   ui.setDensity(expanded.value ? 'simple' : 'advanced')
-}
-
-// ---- 另存为我的档位 ----
-
-const saving = ref(false)
-const draftName = ref('')
-const draftNote = ref('')
-
-function startSave(): void {
-  draftName.value = ''
-  draftNote.value = ''
-  saving.value = true
-}
-
-/** 存的是面板上当前这组值，不是档位里那组——用户要的是「把现在这些存下来」。 */
-function confirmSave(): void {
-  const name = draftName.value.trim()
-  const ok = presets.save({ name, note: draftNote.value.trim(), values: paramPaths(params.value) })
-  ui.pushToast(
-    ok
-      ? { kind: 'ok', message: t('preset.saved', { name }) }
-      : { kind: 'warn', message: t('preset.saveFailed') },
-  )
-  if (ok) {
-    saving.value = false
-    draftName.value = ''
-    draftNote.value = ''
-  }
 }
 
 /**
@@ -95,42 +62,19 @@ const warnings = computed<ParamWarning[]>(() => checkScanParams(params.value))
 
 /** 把命中时的取值填进文案。模板里不拼字符串，避免被工具链吃掉。 */
 function warningText(item: ParamWarning): string {
-  return t(`paramRule.${item.rule}` as never, { a: item.values[0] ?? 0, b: item.values[1] ?? 0 })
+  return t(('paramRule.' + item.rule) as never, { a: item.values[0] ?? 0, b: item.values[1] ?? 0 })
 }
 </script>
 
 <template>
   <section class="ct-card">
     <h2 class="ct-card-title">
-      <span>{{ t('preset.summary') }}</span>
+      <span>{{ t('param.panel') }}</span>
       <span class="spacer" />
-      <button type="button" class="ct-link" @click="startSave">{{ t('preset.saveAs') }}</button>
       <button type="button" class="ct-link" @click="toggleExpanded">
-        {{ expanded ? t('preset.collapse') : t('preset.all') }}
+        {{ expanded ? t('param.collapse') : t('param.all') }}
       </button>
     </h2>
-
-    <!-- 另存为：就地展开一行输入，不弹窗——弹窗会打断「调完参数顺手存一下」这个动作。 -->
-    <div v-if="saving" class="save-row">
-      <input
-        v-model="draftName"
-        class="ct-input"
-        type="text"
-        :placeholder="t('preset.namePlaceholder')"
-        @keyup.enter="confirmSave"
-        @keyup.esc="saving = false"
-      />
-      <input
-        v-model="draftNote"
-        class="ct-input"
-        type="text"
-        :placeholder="t('preset.notePlaceholder')"
-        @keyup.enter="confirmSave"
-        @keyup.esc="saving = false"
-      />
-      <button type="button" class="ct-btn ct-btn--primary" @click="confirmSave">{{ t('common.save') }}</button>
-      <button type="button" class="ct-btn" @click="saving = false">{{ t('common.cancel') }}</button>
-    </div>
 
     <div v-if="adaptive.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
       <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
@@ -158,25 +102,15 @@ function warningText(item: ParamWarning): string {
       />
     </div>
 
-    <!--
-      这里改的是配置本身，不是「本次运行」的临时值。说明必须写在面板上方：用户
-      默认会以为只影响这一次，等下次打开发现值还在，只会怀疑程序记错了。
-    -->
-    <p class="persist-hint">{{ t('preset.persistHint') }}</p>
+    <p class="persist-hint">{{ t('param.persistHint') }}</p>
 
     <PresetParams v-model:params="params" :disabled="disabled" />
-
-    <PresetManager v-model:params="params" />
   </section>
 </template>
 
 <style scoped>
 .spacer {
   flex: 1;
-}
-
-.notice {
-  margin: var(--space-2) 0 0;
 }
 
 /* 卡片本身是块级容器，子元素之间没有间距，这里补上。 */
@@ -191,22 +125,5 @@ function warningText(item: ParamWarning): string {
   margin: var(--space-3) 0 0;
   color: var(--color-text-subtle);
   font-size: var(--font-size-xs);
-}
-
-.save-row {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.save-row .ct-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.deviated {
-  color: var(--color-warn);
-  font-size: var(--font-size-xs);
-  font-weight: 400;
 }
 </style>

@@ -201,13 +201,11 @@ func (s *server) scanOptions(params model.ScanParams) scan.Options {
 /**
  * scanStartReq 是 scan/start 的载荷。
  *
- * 档位名与任务参数分开：档位名只用于历史归档，不进参数快照。参数快照要能被
- * 「用同样的参数再跑一次」直接复用，多混一个字段就多一处要过滤的地方。
+ * 参数快照要能被「用同样的参数再跑一次」直接复用，因此只有真正影响扫描的
+ * 字段才放进来。
  */
 type scanStartReq struct {
 	model.ScanParams
-	// Preset 是本次使用的档位标识；空表示用户是手调的，历史里不记档位。
-	Preset string `json:"preset"`
 	// Skip 是已经测过的地址，续测时跳过。不进参数快照：它描述的是「上一轮
 	// 做过什么」，不是这次怎么扫。
 	Skip []string `json:"skip,omitempty"`
@@ -250,16 +248,16 @@ func (s *server) handleScanStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseScan, s.runScanTask(runner, params, s.presetName(req.Preset)))
+	return s.startTask(model.PhaseScan, s.runScanTask(runner, params))
 }
 
 // runScanTask 把扫描执行器包成任务体，并在跑完后存档。
-func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams, preset string) task.RunFunc {
+func (s *server) runScanTask(runner *scan.Runner, params model.ScanParams) task.RunFunc {
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(preset, runner.Run, func(duration float64, aborted bool) {
-		s.archiveScan(params, s.currentPreset(), res, duration, aborted)
+	return taskRunner(runner.Run, func(duration float64, aborted bool) {
+		s.archiveScan(params, res, duration, aborted)
 	})
 }
 
@@ -274,7 +272,6 @@ func (s *server) geoEnrich() func(*model.IPRecord) {
 // speedStartReq 是 speed/start 的载荷，结构与 scan/start 一致。
 type speedStartReq struct {
 	model.SpeedParams
-	Preset string `json:"preset"`
 }
 
 // handleSpeedStart 校验参数并启动测速任务。
@@ -300,50 +297,17 @@ func (s *server) handleSpeedStart(_ *wsConn, data json.RawMessage) error {
 		return fail(CodeInvalidParam, err.Error())
 	}
 
-	return s.startTask(model.PhaseSpeed, s.runSpeedTask(runner, params, s.presetName(req.Preset)))
+	return s.startTask(model.PhaseSpeed, s.runSpeedTask(runner, params))
 }
 
 // runSpeedTask 把测速执行器包成任务体，并在跑完后存档。
-func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams, preset string) task.RunFunc {
+func (s *server) runSpeedTask(runner *speed.Runner, params model.SpeedParams) task.RunFunc {
 	var res model.TaskResult
 	runner.SetOnDone(func(r model.TaskResult) { res = r })
 
-	return taskRunner(preset, runner.Run, func(duration float64, aborted bool) {
-		s.archiveSpeed(params, s.currentPreset(), res, duration, aborted)
+	return taskRunner(runner.Run, func(duration float64, aborted bool) {
+		s.archiveSpeed(params, res, duration, aborted)
 	})
-}
-
-// currentPreset 取本次任务使用的档位名。
-//
-// 从编排层取而不是让任务体自己记：档位是任务体通过 Reporter 上报的，
-// 编排层才是它唯一的存放处。
-func (s *server) currentPreset() string {
-	return s.svc.Tasks.Snapshot().Preset
-}
-
-/**
- * presetName 把档位标识翻译成名字，供历史归档显示。
- *
- * 认不出来的标识原样返回：前端可能报上一个自定义的标签，丢掉它不如留着。
- * 空标识表示用户手调的参数，不属于任何档位，历史里就空着。
- */
-func (s *server) presetName(id string) string {
-	return presetLabel(s.svc.Presets, id)
-}
-
-// presetLabel 是 presetName 的实现，抽成独立函数以便直接断言——它没有别的
-// 依赖，只认档位库。
-func presetLabel(store *config.PresetStore, id string) string {
-	if id == "" {
-		return ""
-	}
-	if store == nil {
-		return id
-	}
-	if preset, ok := store.Get(id); ok {
-		return preset.Name
-	}
-	return id
 }
 
 // startTask 启动任务并把编排层的失败翻译成错误码。

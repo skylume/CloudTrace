@@ -29,7 +29,7 @@ const (
 // 都取内置档位的口径而不是「刚好越过告警线」：修一次就该回到一个公认好用
 // 的值，而不是停在临界点上、下次稍微一调又报警。
 const (
-	fixedWorkers = config.MaxWorkersPreset // 200
+	fixedWorkers = config.MaxWorkers // 200
 	fixedLatency = 200
 )
 
@@ -88,7 +88,7 @@ func checkWorkers(_ context.Context, cfg config.Config, _ Options) *Issue {
 		Level:   LevelWarning,
 		Problem: fmt.Sprintf("并发 %d 过高，可能导致断网或路由器过载", cfg.Scan.Workers),
 		Suggestion: fmt.Sprintf("降到 %d 以内；想更快出结果可以提高延迟阈值，而不是一味加并发",
-			config.MaxWorkersPreset),
+			config.MaxWorkers),
 		Field:   "scan.workers",
 		Fixable: true,
 		Fix:     &Fix{Key: "scan.workers", Value: fixedWorkers, Label: fmt.Sprintf("降到 %d", fixedWorkers)},

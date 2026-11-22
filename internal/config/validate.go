@@ -183,7 +183,7 @@ func (c Config) Warnings() []FieldError {
 		out = append(out, FieldError{
 			Key:    "scan.workers",
 			Value:  c.Scan.Workers,
-			Reason: fmt.Sprintf("并发超过 %d 可能导致断网或路由器过载，建议降到 %d 以内", WarnWorkers, MaxWorkersPreset),
+			Reason: fmt.Sprintf("并发超过 %d 可能导致断网或路由器过载，建议降到 %d 以内", WarnWorkers, MaxWorkers),
 		})
 	}
 	if c.Scan.LatencyThreshold < WarnLatency {

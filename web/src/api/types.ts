@@ -82,7 +82,6 @@ export interface TaskState {
    * 组件直接抛错（扫描页的过程面板与结果页的漏斗条都中过）。
    */
   funnel: Funnel
-  preset: string
   started_at: number
   error?: string
 }
@@ -133,31 +132,6 @@ export interface SpeedParams {
 export type ParamOrigin = 'default' | 'preset' | 'user'
 export type ParamOrigins = Record<string, ParamOrigin>
 
-/**
- * 一个档位：一批参数值的快照。
- *
- * `values` 的键是配置里的点号路径（`scan.workers`），与 `origins` 同形——两份
- * 表用同一套键，「这一项是从哪个档位来的」才对得上。
- */
-export interface Preset {
-  id: string
-  name: string
-  note?: string
-  /** 内置档位只读：不可改、不可删。 */
-  builtin: boolean
-  icon?: string
-  color?: string
-  order: number
-  values: Record<string, unknown>
-  origins?: ParamOrigins
-}
-
-export interface PresetsPayload {
-  presets: Preset[]
-  /** 启动档位的 id。 */
-  default: string
-}
-
 /** 一次旧版数据迁移的结果。 */
 export interface MigrateReport {
   /** 备份目录；出问题能翻回去。 */
@@ -188,13 +162,35 @@ export interface MigrateStatus {
   report?: MigrateReport
 }
 
+/** 档位下线前用户存下的一条自定义档位。 */
+export interface LegacyPreset {
+  id: string
+  name: string
+  /** 点号路径 → 值，原样保留旧文件里的写法。 */
+  values: Record<string, unknown>
+}
+
+/** 旧档位库的状态。 */
+export interface LegacyPresetsStatus {
+  /** 数据目录里还有 presets.json。 */
+  found: boolean
+  /** 已经导入过（有标记文件），不再提示。 */
+  migrated: boolean
+  /** 旧库里记的默认档位名。 */
+  default?: string
+  presets?: LegacyPreset[]
+  /** 刚导入成功的档位名。 */
+  imported?: string[]
+  /** 新版已不支持的参数，按档位列出。 */
+  skipped?: string[]
+}
+
 export interface HistoryRecord {
   id: string
   type: 'scan' | 'speed'
   ip_version: number
   created_at: string
   duration_s: number
-  preset?: string
   /** 参数快照，内容按 type 决定是 ScanParams 还是 SpeedParams。 */
   params: unknown
   origins?: ParamOrigins
@@ -214,7 +210,6 @@ export interface HistoryIndexEntry {
   ip_version: number
   created_at: string
   duration_s?: number
-  preset?: string
   count: number
   tags?: string[]
   note?: string

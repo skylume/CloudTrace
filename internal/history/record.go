@@ -56,8 +56,6 @@ type HistoryRecord struct {
 	// 但必须标出来——一份没扫完的结果和一份扫完的看起来一模一样，用户会
 	// 按「全部地址都试过了」去理解它。
 	Aborted bool `json:"aborted,omitempty"`
-	// Preset 是当时使用的档位名，回看时能知道这份结果是什么条件下跑出来的。
-	Preset string `json:"preset,omitempty"`
 
 	// Params 是参数快照，内容按 Type 决定：scan 对应 model.ScanParams，
 	// speed 对应 model.SpeedParams。
@@ -140,7 +138,6 @@ func (r HistoryRecord) Entry() HistoryIndexEntry {
 		CreatedAt:    r.CreatedAt,
 		Duration:     r.Duration,
 		Aborted:      r.Aborted,
-		Preset:       r.Preset,
 		Count:        r.Count,
 		Tags:         cloneStrings(r.Tags),
 		Note:         r.Note,
@@ -161,7 +158,6 @@ type HistoryIndexEntry struct {
 	CreatedAt  time.Time `json:"created_at"`
 	Duration   float64   `json:"duration_s,omitempty"`
 	Aborted    bool      `json:"aborted,omitempty"`
-	Preset     string    `json:"preset,omitempty"`
 	Count      int       `json:"count"`
 	Tags       []string  `json:"tags,omitempty"`
 	Note       string    `json:"note,omitempty"`

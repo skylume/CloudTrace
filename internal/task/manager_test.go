@@ -140,7 +140,6 @@ func TestManagerDonePublishesOutcome(t *testing.T) {
 	rec := newRecorder(t, bus, "scan"+suffixDone, TopicState)
 
 	run := func(rep Reporter) (Outcome, error) {
-		rep.SetPreset("fast")
 		rep.SetTotal(10)
 		rep.SetDone(10)
 		return Outcome{Count: 10, ID: "hist-1"}, nil
@@ -162,7 +161,7 @@ func TestManagerDonePublishesOutcome(t *testing.T) {
 	}
 
 	st := m.Snapshot()
-	if st.Status != model.StatusDone || st.Preset != "fast" || st.Done != 10 {
+	if st.Status != model.StatusDone || st.Done != 10 {
 		t.Errorf("完成快照 = %+v", st)
 	}
 	if st.ErrorMsg != "" {

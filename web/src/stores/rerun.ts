@@ -17,8 +17,6 @@ export interface RerunRequest {
   params: Record<string, number | boolean>
   /** 自定义文本来源。官方网段与远端地址取自配置，不随记录走。 */
   customText: string
-  /** 记录里带的档位名；为空表示手调参数。 */
-  preset: string
 }
 
 export const useRerunStore = defineStore('rerun', () => {

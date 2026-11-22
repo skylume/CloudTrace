@@ -352,7 +352,7 @@ func (s *server) commands() map[string]commandHandler {
 		s.taskHandlers(),
 		s.historyHandlers(),
 		s.settingsHandlers(),
-		s.presetsHandlers(),
+		s.legacyPresetsHandlers(),
 		s.migrateHandlers(),
 		s.healthHandlers(),
 		s.diagHandlers(),

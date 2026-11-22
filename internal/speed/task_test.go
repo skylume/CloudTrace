@@ -52,8 +52,6 @@ func (f *fakeReporter) SetFunnel(m model.Funnel) {
 	f.funnel = m
 }
 
-func (f *fakeReporter) SetPreset(string) {}
-
 func (f *fakeReporter) Emit(topic string, payload any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

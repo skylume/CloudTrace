@@ -75,7 +75,6 @@ function latencyOf(record: IPRecord): string {
         <p class="ct-subtle meta">
           {{ formatAbsolute(record.created_at, props.timeFormat) }}
           · {{ t(`task.phase.${record.type}`) }}
-          <template v-if="record.preset"> · {{ t('task.preset') }} {{ record.preset }}</template>
           <template v-if="record.duration_s"> · {{ record.duration_s }}s</template>
         </p>
         <p v-if="record.aborted" class="stopped">{{ t('history.abortedHint') }}</p>

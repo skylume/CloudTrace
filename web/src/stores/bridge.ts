@@ -15,8 +15,8 @@ import { useExportStore } from './export'
 import { useGeoStore } from './geo'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
 import { useLogStore } from './log'
+import { useLegacyPresetsStore } from './legacyPresets'
 import { useMigrateStore } from './migrate'
-import { usePresetsStore } from './presets'
 import { useResultsStore } from './results'
 import { useSystemStore } from './system'
 import { clearSnapshot, saveSnapshot } from '@/utils/sessionSnapshot'
@@ -41,8 +41,8 @@ import type {
   GeoStatus,
   HealthReport,
   IPRecord,
+  LegacyPresetsStatus,
   MigrateStatus,
-  PresetsPayload,
   SettingsPayload,
   ServerStatus,
   SourceStatus,
@@ -141,14 +141,14 @@ function syncSessionSnapshot(state: TaskState): void {
   }
 }
 
+/** refreshLegacyPresets 拉一次旧档位库的状态。 */
+export function refreshLegacyPresets(): void {
+  useLegacyPresetsStore().refresh()
+}
+
 /** refreshMigrate 拉一次旧版数据的迁移状态。 */
 export function refreshMigrate(): void {
   useMigrateStore().refresh()}
-
-/** refreshPresets 拉一次档位列表。 */
-export function refreshPresets(): void {
-  usePresetsStore().refresh()
-}
 
 /**
  * wireEvents 建立事件 → store 的映射，并处理重连后的状态恢复。
@@ -169,8 +169,8 @@ export function wireEvents(): void {
   const diag = useDiagStore()
   const system = useSystemStore()
   const adaptive = useAdaptiveStore()
-  const presets = usePresetsStore()
   const migrate = useMigrateStore()
+  const legacy = useLegacyPresetsStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -184,8 +184,8 @@ export function wireEvents(): void {
   wsClient().onOpen(() => {
     // 首连与每次重连都会走到这里。
     refreshSettings()
-    refreshPresets()
     refreshMigrate()
+    refreshLegacyPresets()
     refreshHistory()
     refreshGeo()
     system.refresh()
@@ -260,8 +260,8 @@ export function wireEvents(): void {
   })
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
-  onEvent(EVT.presets, (data) => presets.apply(data as PresetsPayload))
   onEvent(EVT.migrate, (data) => migrate.apply(data as MigrateStatus))
+  onEvent(EVT.legacyPresets, (data) => legacy.apply(data as LegacyPresetsStatus))
   onEvent(EVT.geo, (data) => {
     const next = data as GeoStatus
     const before = geo.status?.status.records ?? 0
@@ -310,6 +310,7 @@ export function wireEvents(): void {
     exporter.fail()
     adaptive.recommendSettled()
     migrate.fail()
+    legacy.fail()
   })
 
   onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))

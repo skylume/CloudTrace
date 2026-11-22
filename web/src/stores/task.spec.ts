@@ -23,7 +23,6 @@ function serverState(patch: Partial<TaskState> = {}): TaskState {
     elapsed_s: 8.5,
     eta_s: 27,
     funnel: { generated: 500, latency_ok: 342, region_ok: 318, usable: 8 },
-    preset: '标准',
     started_at: 1_700_000_000,
     ...patch,
   }

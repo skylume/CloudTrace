@@ -24,13 +24,24 @@ const props = withDefaults(
     note?: string
     /** 可选的「怎么办」，直接写动作，不要写「点击这里」。 */
     actionLabel?: string
+    /**
+     * 可选的第二个动作。
+     *
+     * 只在两条路都合理、且都不该藏起来时用：比如旧档位既能导入也能导出，
+     * 让用户先点进设置再找导出，等于默认替他做了选择。
+     */
+    action2Label?: string
     /** 是否可关闭。熔断这类必须看到的提示不给关闭。 */
     closable?: boolean
   }>(),
   { tone: 'info', closable: true },
 )
 
-const emit = defineEmits<{ (event: 'action'): void; (event: 'close'): void }>()
+const emit = defineEmits<{
+  (event: 'action'): void
+  (event: 'action2'): void
+  (event: 'close'): void
+}>()
 
 /** 图标路径：四态各有自己的形状，不靠颜色单独区分。 */
 const ICONS: Record<string, string> = {
@@ -52,6 +63,9 @@ const ICONS: Record<string, string> = {
     </span>
     <button v-if="props.actionLabel" type="button" class="action" @click="emit('action')">
       {{ props.actionLabel }}
+    </button>
+    <button v-if="props.action2Label" type="button" class="action" @click="emit('action2')">
+      {{ props.action2Label }}
     </button>
     <span class="spacer" />
     <button v-if="props.closable" type="button" class="close" :aria-label="t('common.close')" @click="emit('close')">

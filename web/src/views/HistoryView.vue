@@ -73,7 +73,7 @@ const filtered = computed(() => {
       if (!selectedTags.value.every((tag) => tags.includes(tag))) return false
     }
     if (text === '') return true
-    const haystack = [entry.preset, entry.note, ...(entry.tags ?? []), ...(entry.regions ?? [])]
+    const haystack = [entry.note, ...(entry.tags ?? []), ...(entry.regions ?? [])]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -163,7 +163,6 @@ function rerun(record: HistoryRecord): void {
   rerunStore.request({
     params: paramsFromSnapshot(record.params),
     customText: typeof snapshot.custom_source === 'string' ? snapshot.custom_source : '',
-    preset: record.preset ?? '',
   })
   history.closeDetail()
   ui.activeView = 'scan'

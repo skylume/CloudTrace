@@ -9,6 +9,7 @@ import { CMD } from '@/api/protocol'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
+import DepthPicker from '@/components/scan/DepthPicker.vue'
 import LogPanel from '@/components/scan/LogPanel.vue'
 import PresetPanel from '@/components/scan/PresetPanel.vue'
 import ProcessPanel from '@/components/scan/ProcessPanel.vue'
@@ -16,27 +17,28 @@ import SourcePanel, { type ScanSource } from '@/components/scan/SourcePanel.vue'
 import Banner from '@/components/ui/Banner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
-import { CUSTOM_PRESET, PARAM_WIRE_KEYS, matchPreset, presetValues } from '@/i18n/params'
-import PresetPicker from '@/components/scan/PresetPicker.vue'
+import { DEFAULT_DEPTH, depthValues, type ScanDepth } from '@/i18n/depth'
+import { PARAM_WIRE_KEYS } from '@/i18n/params'
 import { useActionStore } from '@/stores/actions'
-import { useRerunStore } from '@/stores/rerun'
 import { useAdaptiveStore } from '@/stores/adaptive'
 import { useGeoStore } from '@/stores/geo'
 import { useLogStore } from '@/stores/log'
+import { useLegacyPresetsStore } from '@/stores/legacyPresets'
 import { useMigrateStore } from '@/stores/migrate'
+import { useRerunStore } from '@/stores/rerun'
+import { useResultsStore } from '@/stores/results'
+import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
+import { useTaskStore } from '@/stores/task'
+import { useUIStore } from '@/stores/ui'
 import { rememberScanRequest } from '@/utils/lastScan'
+import { parseSourceText, sourceEntryCount } from '@/utils/sourceText'
 import {
   clearSnapshot,
   loadSnapshot,
   worthRestoring,
   type SessionSnapshot,
 } from '@/utils/sessionSnapshot'
-import { usePresetsStore } from '@/stores/presets'
-import { useResultsStore } from '@/stores/results'
-import { useSettingsStore } from '@/stores/settings'
-import { useTaskStore } from '@/stores/task'
-import { useUIStore } from '@/stores/ui'
 import { isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
 
 const task = useTaskStore()
@@ -45,11 +47,11 @@ const log = useLogStore()
 const results = useResultsStore()
 const settings = useSettingsStore()
 const actions = useActionStore()
-const presets = usePresetsStore()
 const ui = useUIStore()
 const rerun = useRerunStore()
 const adaptive = useAdaptiveStore()
 const migrate = useMigrateStore()
+const legacy = useLegacyPresetsStore()
 const system = useSystemStore()
 
 /**
@@ -104,6 +106,17 @@ const migrateResult = computed(() => {
   return text
 })
 
+/** 旧档位横幅的文案。同样在脚本里拼，避开模板字面量。 */
+const legacyOffer = computed(() => t('legacy.offer', { count: legacy.status?.presets?.length ?? 0 }))
+
+const legacyResult = computed(() => {
+  const s = legacy.justRanResult
+  if (!s) return ''
+  let text = t('legacy.done', { count: s.imported?.length ?? 0 })
+  if (s.skipped && s.skipped.length > 0) text += t('legacy.doneSkipped', { count: s.skipped.length })
+  return text
+})
+
 /** 展开 / 收起详细设置。与参数面板的「全部参数」共用同一个状态，不会各说各话。 */
 function toggleDetails(): void {
   ui.setDensity(ui.showAdvanced ? 'simple' : 'advanced')
@@ -116,7 +129,14 @@ function toggleDetails(): void {
  * 内置档位等于把后端那份定义又抄了一遍。
  */
 const params = ref<Record<string, number | boolean>>({})
-const presetId = ref(CUSTOM_PRESET)
+
+/**
+ * 最近点过的深度，只用来给那三个按钮加高亮。
+ *
+ * 它不参与请求、不进历史、不落盘：改完参数之后高亮会停在最后点的那一档，
+ * 界面不会跳出来说「已偏离」——那正是档位体系变得难用的起点。
+ */
+const depth = ref<ScanDepth>(DEFAULT_DEPTH)
 const source = ref<ScanSource>({ official: true, remote: [], customText: '' })
 /**
  * 官方网段条数。由后端下发（见 stores/system）。
@@ -128,6 +148,22 @@ const officialCount = computed(() => system.officialV4)
 
 const running = computed(() => task.running)
 const showEmpty = computed(() => !running.value && results.total === 0)
+
+/**
+ * 启动前就能判定、发出去也只会空转的来源问题。
+ *
+ * 空地址的远程源会被后端静默跳过，全部关掉则会让任务跑完一分钟再返回零结果——
+ * 这两件事都能在本地先拦住，不必等结果页才发现自己没填。
+ */
+const sourceIssue = computed(() => {
+  const blank = source.value.remote.filter((item) => item.enabled && item.url.trim() === '').length
+  if (blank > 0) return t('source.remote.invalid', { count: blank })
+
+  const hasRemote = source.value.remote.some((item) => item.enabled && item.url.trim() !== '')
+  if (source.value.official || hasRemote) return ''
+  if (sourceEntryCount(parseSourceText(source.value.customText)) > 0) return ''
+  return source.value.customText.trim() === '' ? t('source.none') : t('source.unparsed')
+})
 
 /**
  * 把「开始扫描」注册给动作注册表。
@@ -189,15 +225,12 @@ watch(
 )
 
 /**
- * 按配置与档位列表初始化面板。
+ * 按配置初始化面板。
  *
- * 档位列表是异步来的，所以这里既要能在挂载时跑，也要在列表到达后再跑一次——
- * 否则首次进入会一直显示「自定义」，只因为档位还没到。
- *
- * 返回是否已经定下参数：定不下来（档位还没到）时留给下一次调用，而不是拿一份
- * 空参数当结果。
+ * 配置没被动过时从「标准」起步，动过就以配置为准。只填界面、不写配置：
+ * 这次填值不代表用户的选择，默认值归设置页管。
  */
-function syncFromSettings(): boolean {
+function syncFromSettings(): void {
   const scan = settings.values?.scan as Record<string, unknown> | undefined
 
   // 来源也从配置恢复：用户上次加过的远端地址与写过的文本不该每次重填。
@@ -212,24 +245,28 @@ function syncFromSettings(): boolean {
   }
 
   if (isUntouchedScan(settings.origins)) {
-    // 首次运行：从启动档位开始。
+    // 配置没被动过：从「标准」起步。
     //
     // 只填界面、不写配置：这次填值不代表用户的选择，写进配置等于替用户把一个
-    // 他没看过的档位定成了默认值。默认值归设置页管。
-    const preset = presets.byID(presets.defaultID)
-    if (!preset) return false
-    const values = presetValues(preset)
-    params.value = { ...params.value, ...values }
-    presetId.value = preset.id
-    presets.use(preset.id)
-    return true
+    // 他没看过的值定成了默认值。默认值归设置页管。
+    params.value = { ...params.value, ...depthValues(DEFAULT_DEPTH) }
+    return
   }
 
   const filled = scanParamsFromConfig(scan)
-  if (Object.keys(filled).length === 0) return false
+  if (Object.keys(filled).length === 0) return
   params.value = { ...params.value, ...filled }
-  presetId.value = matchPreset(params.value, presets.list)
-  return true
+}
+
+/**
+ * 套用某一档深度。
+ *
+ * 只覆盖这一档声明过的键，其余参数（端口、超时、重试）保持用户当前的值：
+ * 「快速」是少采一点，不是顺手把端口也改掉。
+ */
+function applyDepth(id: ScanDepth): void {
+  depth.value = id
+  params.value = { ...params.value, ...depthValues(id) }
 }
 
 /**
@@ -243,7 +280,6 @@ function applyRerun(): void {
   if (!request) return
   params.value = { ...params.value, ...request.params }
   if (request.customText !== '') source.value = { ...source.value, customText: request.customText }
-  presetId.value = request.preset !== '' ? request.preset : CUSTOM_PRESET
 }
 
 onMounted(() => {
@@ -256,14 +292,6 @@ onMounted(() => {
 
 // 页面可能一直挂着（比如从命令面板跳回来），因此不能只在挂载时取一次。
 watch(() => rerun.pending, applyRerun)
-
-// 档位列表到达后补一次初始化。已经定下参数时只补判定档位，不重填参数——用户
-// 可能已经在改了，把参数覆盖回去比显示「自定义」更糟。
-watch(() => presets.loaded, () => {
-  if (!presets.loaded) return
-  if (Object.keys(params.value).length === 0) syncFromSettings()
-  else presetId.value = matchPreset(params.value, presets.list)
-})
 
 onBeforeUnmount(() => {
   unregister?.()
@@ -284,13 +312,15 @@ function buildRequest(): Record<string, unknown> {
   else if (source.value.official) payload.source_mode = 'official'
   else payload.source_mode = 'custom'
   payload.custom_source = source.value.customText
-  // 档位标识只用于历史归档，不进参数快照。手调的参数不属于任何档位，留空——
-  // 硬塞一个「自定义」进去，历史里就会出现一个并不存在的档位名。
-  payload.preset = presetId.value === CUSTOM_PRESET ? '' : presetId.value
   return payload
 }
 
 function start(): void {
+  // 来源不成立时不发请求：让用户改完再跑，比跑完一分钟给个空结果更省事。
+  if (sourceIssue.value !== '') {
+    log.push(sourceIssue.value, 'warn')
+    return
+  }
   const payload = buildRequest()
   if (!sendCommand(CMD.scanStart, payload)) return
   // 记下这份请求：零结果时结果页要用同一份参数放宽重跑。
@@ -321,6 +351,22 @@ function stop(): void {
       @close="migrate.dismiss()"
     />
     <!--
+      档位已下线，但旧 presets.json 里的自定义档位是用户自己调过的参数：只提示，
+      点「设为默认参数」才写配置，点「导出保存」则把原样 JSON 交给他。
+    -->
+    <Banner
+      v-if="legacy.shouldOffer"
+      tone="info"
+      :message="legacyOffer"
+      :note="t('legacy.note')"
+      :action-label="legacy.running ? t('legacy.running') : t('legacy.import')"
+      :action2-label="t('legacy.export')"
+      @action="legacy.run()"
+      @action2="legacy.exportFile()"
+      @close="legacy.dismiss()"
+    />
+    <Banner v-else-if="legacyResult !== ''" tone="ok" :message="legacyResult" @close="legacy.dismiss()" />
+    <!--
       上次没跑完的结果：只提示，用户点了才动。扫描要跑一分钟，这期间刷新或
       崩掉就白跑了，而历史只保存已完成的任务——中途的结果按设计不写历史。
     -->
@@ -344,6 +390,9 @@ function stop(): void {
       明细、过程、日志全部收进「详细设置」，默认不展开——首次进来的用户不需要
       先读懂六个面板才敢点按钮。
     -->
+    <!-- 来源不成立时直接挡在按钮前：这条不是提醒，是「现在点也没用」。 -->
+    <Banner v-if="sourceIssue !== ''" tone="warn" :message="sourceIssue" :closable="false" />
+
     <div class="actions">
       <button v-if="!running" type="button" class="ct-btn ct-btn--primary ct-btn--lg" @click="start">
         {{ t('scan.start') }}
@@ -351,7 +400,7 @@ function stop(): void {
       <button v-else type="button" class="ct-btn ct-btn--lg" @click="stop">
         {{ t('scan.stop') }}
       </button>
-      <PresetPicker v-model:params="params" v-model:preset-id="presetId" />
+      <DepthPicker :depth="depth" :disabled="running" @apply="applyDepth" />
       <!--
         「智能推荐」是显式操作：点了才生效，且不受来源限制（可以改用户手填过的
         值）。它是自动自适应的手动对应物——那条自动路径只在 default/preset 来源
@@ -368,7 +417,7 @@ function stop(): void {
       </button>
       <span class="spacer" />
       <button type="button" class="ct-link" :aria-expanded="ui.showAdvanced" @click="toggleDetails">
-        {{ ui.showAdvanced ? t('preset.collapse') : t('scan.details') }}
+        {{ ui.showAdvanced ? t('param.collapse') : t('scan.details') }}
       </button>
     </div>
 

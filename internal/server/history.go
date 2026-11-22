@@ -296,15 +296,15 @@ func (s *server) history() *history.Store { return s.svc.History }
 // --- 任务完成后存档 ---
 
 // archiveScan 把一次扫描的结果存进历史。
-func (s *server) archiveScan(params model.ScanParams, preset string, res model.TaskResult, duration float64, aborted bool) {
-	s.archive(model.PhaseScan, params.IPVersion, preset, params, res, duration, score.Version, aborted)
+func (s *server) archiveScan(params model.ScanParams, res model.TaskResult, duration float64, aborted bool) {
+	s.archive(model.PhaseScan, params.IPVersion, params, res, duration, score.Version, aborted)
 }
 
 // archiveSpeed 把一次测速的结果存进历史。
 //
 // 评分版本传 0：测速结果不参与评分，带一个版本号只会让人以为它能比。
-func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model.TaskResult, duration float64, aborted bool) {
-	s.archive(model.PhaseSpeed, params.IPVersion, preset, params, res, duration, 0, aborted)
+func (s *server) archiveSpeed(params model.SpeedParams, res model.TaskResult, duration float64, aborted bool) {
+	s.archive(model.PhaseSpeed, params.IPVersion, params, res, duration, 0, aborted)
 }
 
 // archive 写入一份历史记录。
@@ -313,7 +313,7 @@ func (s *server) archiveSpeed(params model.SpeedParams, preset string, res model
 // 而列表里必须能看出它没跑完——一份没扫完的记录和一份扫完的看起来一模一样，
 // 用户会按「这些地址都试过了」去理解它。真正的失败（出错退出）不写：那种结果
 // 连「扫到哪儿了」都说不清。
-func (s *server) archive(typ string, ipVersion int, preset string, params any, res model.TaskResult, duration float64, scoreVersion int, aborted bool) {
+func (s *server) archive(typ string, ipVersion int, params any, res model.TaskResult, duration float64, scoreVersion int, aborted bool) {
 	store := s.history()
 	if store == nil {
 		return
@@ -343,7 +343,6 @@ func (s *server) archive(typ string, ipVersion int, preset string, params any, r
 		IPVersion:    ipVersion,
 		Duration:     duration,
 		Aborted:      aborted,
-		Preset:       preset,
 		Params:       raw,
 		Origins:      s.cfg.Get().Origins.Clone(),
 		ScoreVersion: scoreVersion,
@@ -376,15 +375,8 @@ func countMeasured(records []model.IPRecord) int {
 //
 // 存档发生在任务体内部、仍在运行态时：任务体返回之后编排层就落定终态了，
 // 那时再存会把一份已经结束的任务的存档算在下一个任务头上。
-//
-// preset 是本次使用的档位名，进来就先记到任务状态上。存档时要读它，而存档
-// 发生在任务跑完之后——档位名不能等任务结束再传，那时编排层已经在准备下一
-// 个任务的状态了。
-func taskRunner(preset string, run func(task.Reporter) (int, error), done func(duration float64, aborted bool)) task.RunFunc {
+func taskRunner(run func(task.Reporter) (int, error), done func(duration float64, aborted bool)) task.RunFunc {
 	return func(rep task.Reporter) (task.Outcome, error) {
-		if preset != "" {
-			rep.SetPreset(preset)
-		}
 		started := time.Now()
 		count, err := run(rep)
 		outcome := task.Outcome{Count: count}

@@ -227,7 +227,6 @@ func (h *harness) saveScan(ipVersion int, params model.ScanParams, results []mod
 		IPVersion: ipVersion,
 		Params:    raw,
 		Origins:   model.ParamOrigins{"scan.workers": model.OriginUser},
-		Preset:    "标准",
 		Duration:  12.5,
 		Summary:   model.Summarize(results),
 		Results:   results,

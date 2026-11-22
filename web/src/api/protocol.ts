@@ -28,14 +28,12 @@ export const CMD = {
   settingsUpdate: 'settings/update',
   settingsReset: 'settings/reset',
 
-  presetsList: 'presets/list',
-  presetsApply: 'presets/apply',
-  presetsSave: 'presets/save',
-  presetsDelete: 'presets/delete',
-  presetsSetDefault: 'presets/set_default',
-
   migrateStatus: 'migrate/status',
   migrateRun: 'migrate/run',
+
+  /* 档位已下线：只读出旧 presets.json，导入与导出都由前端发起。 */
+  legacyPresets: 'presets/legacy',
+  legacyPresetsImport: 'presets/legacy/import',
 
   export: 'export',
   healthCheck: 'health/check',
@@ -105,10 +103,10 @@ export const EVT = {
   historyChanged: 'history/changed',
 
   settings: 'settings',
-  /** 档位列表：既是一次读取的结果，也是任何一次档位变更的广播。 */
-  presets: 'presets',
   /** 旧版数据迁移：同样读与变更共用一个事件名。 */
   migrate: 'migrate',
+  /** 旧档位库还在不在，以及刚导入的结果。 */
+  legacyPresets: 'presets/legacy',
   export: 'export',
   health: 'health',
   geo: 'geo',

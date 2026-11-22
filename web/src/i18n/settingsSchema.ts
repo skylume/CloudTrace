@@ -269,7 +269,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
     'ui.adaptive_enabled': { label: '智能自适应', hint: '按网络环境自动调整参数。只填空白，绝不覆盖你改过的值' },
     'ui.close_to_tray': { label: '关闭窗口时收进托盘', hint: '关掉窗口后继续在后台跑；真要退出请用托盘菜单里的「退出」' },
-    'ui.adaptive_allow_preset': { label: '自适应可改档位值', hint: '关掉后自适应只提示、不修改档位填进去的参数' },
+    'ui.adaptive_allow_preset': { label: '自适应可改参数', hint: '关掉后自适应只提示、不修改参数' },
 
     'scan.workers': {
       label: '并发',
@@ -374,7 +374,7 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
     'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },
     'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
     'ui.close_to_tray': { label: 'Minimise to tray on close', hint: 'Closing the window keeps it running in the background; use "Quit" in the tray menu to exit' },
-    'ui.adaptive_allow_preset': { label: 'Adaptation may change preset values', hint: 'When off, adaptation suggests instead of changing preset values' },
+    'ui.adaptive_allow_preset': { label: 'Adaptation may change parameters', hint: 'When off, adaptation suggests instead of changing parameters' },
 
     'scan.workers': {
       label: 'Concurrency',

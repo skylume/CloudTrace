@@ -104,7 +104,6 @@ function stateFrame(over: Partial<TaskState> = {}): TaskState {
     elapsed_s: 0,
     eta_s: 0,
     funnel: { generated: 0, latency_ok: 0, region_ok: 0, usable: 0 },
-    preset: '',
     started_at: 0,
     ...over,
   }
@@ -373,7 +372,6 @@ describe('任务结果端到端', { timeout: 20_000 }, () => {
     expect(sentTypes(first)).toEqual(
       expect.arrayContaining([
         'settings/get',
-        'presets/list',
         'migrate/status',
         'history/list',
         'geo/status',
@@ -405,7 +403,7 @@ describe('任务结果端到端', { timeout: 20_000 }, () => {
 
     // 新连接上重新拉了一遍全量状态。
     expect(sentTypes(last())).toEqual(
-      expect.arrayContaining(['settings/get', 'presets/list', 'history/list', 'geo/status']),
+      expect.arrayContaining(['settings/get', 'history/list', 'geo/status']),
     )
 
     last().message({ type: 'state', data: stateFrame({ done: 50, total: 100 }) })

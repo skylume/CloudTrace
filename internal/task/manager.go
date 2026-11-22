@@ -101,8 +101,6 @@ type Reporter interface {
 	SetDone(done int)
 	// SetFunnel 更新漏斗计数。
 	SetFunnel(f model.Funnel)
-	// SetPreset 记录本次任务使用的档位名。
-	SetPreset(name string)
 	// Emit 发布一条业务事件（例如扫描结果增量）。
 	Emit(topic string, payload any)
 }
@@ -307,7 +305,7 @@ func (m *Manager) execute(r *run, runFn RunFunc, cancel context.CancelFunc) {
 
 // finish 落定终态并广播最终快照。
 func (m *Manager) finish(r *run, status, errMsg string) {
-	done, total, funnel, preset := r.counters()
+	done, total, funnel := r.counters()
 
 	m.mu.Lock()
 	m.running = false
@@ -320,7 +318,6 @@ func (m *Manager) finish(r *run, status, errMsg string) {
 		Total:     total,
 		Elapsed:   elapsed,
 		Funnel:    funnel,
-		Preset:    preset,
 		StartedAt: m.started.Unix(),
 		ErrorMsg:  errMsg,
 	}
@@ -367,7 +364,6 @@ type run struct {
 	done     int
 	total    int
 	funnel   model.Funnel
-	preset   string
 	warnings []string
 }
 
@@ -390,13 +386,6 @@ func (r *run) SetDone(done int) {
 func (r *run) SetFunnel(f model.Funnel) {
 	r.mu.Lock()
 	r.funnel = f
-	r.mu.Unlock()
-	r.publish()
-}
-
-func (r *run) SetPreset(name string) {
-	r.mu.Lock()
-	r.preset = name
 	r.mu.Unlock()
 	r.publish()
 }
@@ -439,24 +428,23 @@ func (r *run) decorate(out Outcome) Outcome {
 	return out
 }
 
-func (r *run) counters() (done, total int, funnel model.Funnel, preset string) {
+func (r *run) counters() (done, total int, funnel model.Funnel) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.done, r.total, r.funnel, r.preset
+	return r.done, r.total, r.funnel
 }
 
 // publish 把进度同步进状态快照，并按节流上报 progress 事件。
 //
 // 快照每次都更新（重连后要能立刻看到正确进度），事件则受节流约束。
 func (r *run) publish() {
-	done, total, funnel, preset := r.counters()
+	done, total, funnel := r.counters()
 
 	r.mgr.mu.Lock()
 	if r.mgr.state.Status == model.StatusRunning {
 		r.mgr.state.Done = done
 		r.mgr.state.Total = total
 		r.mgr.state.Funnel = funnel
-		r.mgr.state.Preset = preset
 	}
 	r.mgr.mu.Unlock()
 
@@ -473,6 +461,6 @@ func (r *run) publish() {
 }
 
 func (r *run) eta() float64 {
-	done, total, _, _ := r.counters()
+	done, total, _ := r.counters()
 	return estimateETA(r.mgr.now().Sub(r.started).Seconds(), done, total)
 }

@@ -43,7 +43,6 @@ type TaskState struct {
 	Elapsed   float64 `json:"elapsed_s"`  // 已耗时（秒）
 	ETA       float64 `json:"eta_s"`      // 预计剩余（秒）
 	Funnel    Funnel  `json:"funnel"`     // 实时漏斗
-	Preset    string  `json:"preset"`     // 当前档位名
 	StartedAt int64   `json:"started_at"` // Unix 秒；0 表示尚未开始
 	ErrorMsg  string  `json:"error,omitempty"`
 }

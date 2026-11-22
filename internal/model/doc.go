@@ -7,6 +7,5 @@
 //
 // 当前定义了任务状态快照（TaskState / Funnel）、扫描参数快照
 // （ScanParams）、参数来源三态（ParamOrigin / ParamOrigins）、单个 IP 的
-// 结果记录（IPRecord）与统计摘要（Summary）；档位（Preset）与历史记录
-// 随后续功能一并补齐。
+// 结果记录（IPRecord）、统计摘要（Summary）与任务结果（TaskResult）。
 package model

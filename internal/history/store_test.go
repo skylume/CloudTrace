@@ -95,9 +95,6 @@ func TestParamsSnapshotRoundTrip(t *testing.T) {
 	if loaded.Origins.Get("scan.workers") != model.OriginUser {
 		t.Fatalf("参数来源 = %q，期望 %q", loaded.Origins.Get("scan.workers"), model.OriginUser)
 	}
-	if loaded.Preset != "标准" {
-		t.Fatalf("档位 = %q，期望 标准", loaded.Preset)
-	}
 }
 
 // 测速参数与扫描参数是两种类型，装在同一份记录的同一个字段里。
