@@ -1,10 +1,13 @@
 /**
  * 扫描页参数的取值来源。
  *
- * 面板上的参数有三个可能的来源，优先级不能含糊：
+ * 面板上的参数有两个可能的来源，优先级不能含糊：
  *   1. 用户显式设置过（配置里有 `scan.*` 的来源标记）→ 用配置里的值；
- *   2. 从没设置过（首次运行）→ 用**启动档位**填一遍，并写进配置；
+ *   2. 从没设置过（首次运行）→ 用**启动档位**填一遍；
  *   3. 配置里没有这一项 → 保持面板初值，不凭空造一个数。
+ *
+ * 面板上改的值只影响本次任务，不写回配置——那是设置页的事。曾经这里会把改动
+ * 差分后写回，用户以为在「调一下试试」，实际改了全局默认。
  *
  * 为什么首次运行不直接用配置里的默认值：配置的默认值是给无人值守的调用方
  * 用的保守取值（采满、并发拉高），而界面上的第一印象应该是「点一下就能出结
@@ -38,33 +41,4 @@ export function scanParamsFromConfig(
   return out
 }
 
-export interface ScanParamPatch {
-  /** 任务载荷命名的补丁片段，调用方把它套进 `{scan: ...}`。 */
-  patch: Record<string, number | boolean>
-  /** 与 patch 同形的来源标记，点号路径 → user。 */
-  origins: ParamOrigins
-}
 
-/**
- * 算出「用户改过、还没写回去」的那几个键。
- *
- * 只写改动过的键，不整组写：整组写会把用户没碰过的项也标成 `user`，自适应
- * 从此再也不能动它们——而用户只是改了其中一个。来源标记是自适应唯一的判断
- * 依据，标错一次是静默的，用户只会觉得「这个开关怎么不灵了」。
- */
-export function diffScanParams(
-  current: Record<string, number | boolean>,
-  synced: Record<string, number | boolean>,
-): ScanParamPatch {
-  const patch: Record<string, number | boolean> = {}
-  const origins: ParamOrigins = {}
-  for (const [name, wire] of Object.entries(PARAM_WIRE_KEYS)) {
-    const value = current[name]
-    // undefined 表示这一项还没定下来（档位列表没到、配置里也没有），
-    // 写回去等于凭空造一个值。
-    if (value === undefined || value === synced[name]) continue
-    patch[wire] = value
-    origins[`scan.${wire}`] = 'user'
-  }
-  return { patch, origins }
-}

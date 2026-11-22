@@ -36,7 +36,7 @@ import { useResultsStore } from '@/stores/results'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/task'
 import { useUIStore } from '@/stores/ui'
-import { diffScanParams, isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
+import { isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
 
 const task = useTaskStore()
 const geo = useGeoStore()
@@ -164,30 +164,12 @@ function schedulePersistSource(): void {
 watch(() => source.value.remote, schedulePersistSource, { deep: true })
 watch(() => source.value.customText, schedulePersistSource)
 
-/**
- * 上一次与服务端对齐过的参数。
+/*
+ * 面板上的参数只影响本次任务。
  *
- * 用它做差分，而不是每次把整组参数写回去：整组写会把用户没碰过的项也标成
- * `user`，自适应从此再也不能动它们——而用户只是改了其中一个。
+ * 曾经这里把改动差分后写回配置：用户以为在「调一下试试」，实际改掉了全局默认，
+ * 下次启动还是这个值，自适应也把它当成了用户的长期选择。要改默认就去设置页。
  */
-const synced = ref<Record<string, number | boolean>>({})
-
-let persistParamsTimer: ReturnType<typeof setTimeout> | null = null
-
-/** 把用户改过的参数写回配置，带防抖。 */
-function schedulePersistParams(): void {
-  if (persistParamsTimer !== null) clearTimeout(persistParamsTimer)
-  persistParamsTimer = setTimeout(flushParams, 400)
-}
-
-function flushParams(): void {
-  persistParamsTimer = null
-  const { patch, origins } = diffScanParams(params.value, synced.value)
-  if (Object.keys(patch).length === 0) return
-  sendCommand(CMD.settingsUpdate, { patch: { scan: patch }, origins })
-}
-
-watch(() => params.value, schedulePersistParams, { deep: true })
 
 /**
  * 配置一变就以它为准。
@@ -201,7 +183,6 @@ watch(
     const scan = settings.values?.scan as Record<string, unknown> | undefined
     const filled = scanParamsFromConfig(scan)
     if (Object.keys(filled).length === 0) return
-    synced.value = filled
     params.value = { ...params.value, ...filled }
   },
 )
@@ -230,17 +211,14 @@ function syncFromSettings(): boolean {
   }
 
   if (isUntouchedScan(settings.origins)) {
-    // 首次运行：从启动档位开始，并把它真的写进配置。
+    // 首次运行：从启动档位开始。
     //
-    // 只填界面不写配置是不够的：配置里那份参数来源表是自适应逻辑的唯一依据，
-    // 不写的话自适应会把档位填的值当成「用户从未碰过的默认值」，一识别到移动
-    // 宽带就把并发降下去——而那正是用户刚选的档位。
+    // 只填界面、不写配置：这次填值不代表用户的选择，写进配置等于替用户把一个
+    // 他没看过的档位定成了默认值。默认值归设置页管。
     const preset = presets.byID(presets.defaultID)
     if (!preset) return false
     const values = presetValues(preset)
     params.value = { ...params.value, ...values }
-    // 这次填值不算用户改动，因此先把对齐基线推上去，别被差分当成手改写回去。
-    synced.value = values
     presetId.value = preset.id
     presets.use(preset.id)
     return true
@@ -248,7 +226,6 @@ function syncFromSettings(): boolean {
 
   const filled = scanParamsFromConfig(scan)
   if (Object.keys(filled).length === 0) return false
-  synced.value = filled
   params.value = { ...params.value, ...filled }
   presetId.value = matchPreset(params.value, presets.list)
   return true
@@ -289,11 +266,8 @@ watch(() => presets.loaded, () => {
 
 onBeforeUnmount(() => {
   unregister?.()
-  // 离开页面时把还没落盘的改动补写一次：防抖窗口里离开的话，那点改动就丢了，
-  // 而用户会以为它已经保存。
+  // 来源文本仍是配置项，离开页面时把防抖窗口里没写回的那点改动补上。
   if (persistTimer !== null) clearTimeout(persistTimer)
-  if (persistParamsTimer !== null) clearTimeout(persistParamsTimer)
-  flushParams()
 })
 
 /** 组装后端要的扫描参数。 */

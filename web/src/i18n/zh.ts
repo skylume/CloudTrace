@@ -243,7 +243,7 @@ export const zh = {
   'preset.custom': '自定义',
   'preset.deviated': '已偏离「{name}」',
   'preset.summary': '参数',
-  'preset.persistHint': '这里改的值会存为默认，下次打开仍是这个值。',
+  'preset.persistHint': '这里改的值只影响本次扫描；要改默认值请去设置页。',
   'preset.all': '全部参数',
   'preset.collapse': '收起参数',
   'preset.saveAs': '另存为我的档位',
