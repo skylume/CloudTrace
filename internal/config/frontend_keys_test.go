@@ -88,6 +88,83 @@ func frontendPaths(t *testing.T) []string {
 	return out
 }
 
+/** compositeField 是设置页里的合成项：一个控件写多个配置键。 */
+type compositeField struct {
+	path string
+	keys []string
+}
+
+// pointKeyRE 抓声明表里形如 'scan.workers' 的点号键。
+var pointKeyRE = regexp.MustCompile(`'([a-z][a-z0-9_]*\.[a-z0-9_]+)'`)
+
+/**
+ * frontendCompositeFields 解析出设置页里「一个控件写多个配置键」的项。
+ *
+ * 这类项的 path 不是配置键，而是界面自己起的名字：scan.node_check 实际写的是
+ * scan.verify_nodes 与 scan.usability_check 两个键。所以不能拿 path 去配置结构
+ * 里找，要找的是它背后写的那些键——否则一个拼错的键照样会被静默丢弃。
+ */
+func frontendCompositeFields(t *testing.T) []compositeField {
+	t.Helper()
+
+	lines := strings.Split(string(skipWithoutFrontend(t)), "\n")
+	var out []compositeField
+	current := ""
+
+	for i, line := range lines {
+		if m := pathRE.FindStringSubmatch(line); m != nil {
+			current = m[1]
+			continue
+		}
+		if current == "" {
+			continue
+		}
+		start := strings.Index(line, "writes:")
+		if start < 0 {
+			start = strings.Index(line, "toggles:")
+		}
+		if start < 0 {
+			continue
+		}
+
+		// 从 writes/toggles 起收到括号平衡为止，免得把后面字段的键也算进来。
+		var buf strings.Builder
+		depth := 0
+		opened := false
+		for _, body := range lines[i:] {
+			buf.WriteString(body)
+			buf.WriteString("\n")
+			for _, r := range body {
+				switch r {
+				case '{':
+					depth++
+					opened = true
+				case '}':
+					depth--
+				}
+			}
+			if opened && depth <= 0 {
+				break
+			}
+		}
+
+		seen := map[string]bool{}
+		var keys []string
+		for _, m := range pointKeyRE.FindAllStringSubmatch(buf.String(), -1) {
+			if seen[m[1]] {
+				continue
+			}
+			seen[m[1]] = true
+			keys = append(keys, m[1])
+		}
+		if len(keys) > 0 {
+			out = append(out, compositeField{path: current, keys: keys})
+		}
+		current = ""
+	}
+	return out
+}
+
 /** frontendRange 是声明表里某个数值项的取值范围。 */
 type frontendRange struct {
 	path string
@@ -149,7 +226,17 @@ func configKeys() map[string]bool {
  * 取舍，没法自动判断。
  */
 func TestFrontendEnumOptionsAreAccepted(t *testing.T) {
+	composite := map[string]bool{}
+	for _, field := range frontendCompositeFields(t) {
+		composite[field.path] = true
+	}
+
 	for _, item := range frontendEnumOptions(t) {
+		// 合成项的取值是档位名（off/detail/precheck），不是配置值，没有可校验的
+		// 目标；它真正写下去的键由 TestFrontendDeclaresOnlyKnownConfigKeys 管。
+		if composite[item.path] {
+			continue
+		}
 		obj, err := toObject(Default())
 		if err != nil {
 			t.Fatalf("转对象失败：%v", err)
@@ -194,8 +281,21 @@ func complainsAbout(err error, key string) bool {
 
 func TestFrontendDeclaresOnlyKnownConfigKeys(t *testing.T) {
 	known := configKeys()
+	composite := map[string][]string{}
+	for _, field := range frontendCompositeFields(t) {
+		composite[field.path] = field.keys
+	}
 
 	for _, path := range frontendPaths(t) {
+		if keys, ok := composite[path]; ok {
+			// 合成项的 path 是界面自己的名字，不是配置键；要查的是它写下去的键。
+			for _, key := range keys {
+				if !known[key] {
+					t.Errorf("设置页的合成项 %q 会写配置里没有的键 %q：改它会被静默丢弃", path, key)
+				}
+			}
+			continue
+		}
 		if !known[path] {
 			t.Errorf("设置页声明了配置里没有的键 %q：改它会被静默丢弃，界面上表现为「保存成功了又变回去」", path)
 		}

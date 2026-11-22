@@ -22,6 +22,7 @@ import {
   settingsText,
   type SettingField,
 } from './settingsSchema'
+import { PARAM_PATHS } from './params'
 
 const allFields = SETTING_GROUPS.flatMap((group) => group.fields)
 
@@ -111,6 +112,27 @@ describe('设置项声明', () => {
    *
    * 路径拼错时那一项永远不显示，而界面上只是「少了一项」，没有任何报错。
    */
+  /**
+   * 扫描页能改的参数，设置页必须也声明得到。
+   *
+   * 两个页面编辑的是同一批配置。设置页少声明一个，用户在扫描页调完会以为
+   * 设置页里也有这一项；更糟的是「恢复默认」碰不到它，那一项就永远回不到出厂值。
+   * 合成项（一个控件写多个键）要把背后的键一并算作已声明，否则这条守卫会把
+   * 正常的合并项判成缺失。
+   */
+  it('扫描页能改的参数都在设置页声明里', () => {
+    const known = new Set(declared)
+    for (const field of allFields) {
+      for (const patch of Object.values(field.writes ?? {})) {
+        for (const key of Object.keys(patch)) known.add(key)
+      }
+      for (const key of Object.values(field.toggles ?? {})) known.add(key)
+    }
+    for (const [name, path] of Object.entries(PARAM_PATHS)) {
+      expect(known.has(path), `扫描页的 ${name} 写 ${path}，设置页没有声明它`).toBe(true)
+    }
+  })
+
   it('显示条件引用的都是已声明的项', () => {
     const known = new Set(declared)
     for (const field of allFields) {
