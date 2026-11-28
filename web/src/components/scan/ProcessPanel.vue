@@ -14,7 +14,7 @@ import Funnel, { type FunnelStep } from '@/components/ui/Funnel.vue'
 import RegionChips from '@/components/result/RegionChips.vue'
 import RadarPulse from '@/components/ui/RadarPulse.vue'
 import { durationText, t } from '@/i18n'
-import { useTaskStore } from '@/stores/task'
+import { useTaskStore } from '@/stores/conn'
 
 const task = useTaskStore()
 

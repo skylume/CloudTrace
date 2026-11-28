@@ -5,7 +5,7 @@
  * 只做编排。表格、详情、统计都在子组件里——页面模板短，结构才会被逼着拆开。
  */
 import { CMD } from '@/api/protocol'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import DataTable from '@/components/result/DataTable.vue'
@@ -29,7 +29,7 @@ import { useSpeedStore } from '@/stores/results'
 import { useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 import { recallScanRequest } from '@/utils/lastScan'
-import { formatLatency, formatSpeed } from '@/utils/latency'
+import { formatLatency, formatSpeed, thresholdMultiplier } from '@/utils/latency'
 import { useLatencyScale } from '@/utils/latencyMode'
 import { buildSpeedParams } from '@/utils/speedParams'
 import { useNarrow } from '@/utils/useMediaQuery'
@@ -159,16 +159,119 @@ const quotaPerRegion = computed(() => {
 })
 const selectedCount = computed(() => results.selected.size)
 
-/** 漏斗条：与扫描页右栏同一份数据，这里用紧凑版。 */
+/**
+ * 漏斗四段是并列的观察角度，不是必须按顺序走的步骤。
+ *
+ * active 只表示「当前筛选最像哪一段」：generated 是清筛选态，所以它总是兜底。
+ */
+const funnelActive = computed(() => {
+  if (results.qualifiedOnly) return 'usable'
+  if (results.groupBy === 'region') return 'region_ok'
+  if (results.maxLatency !== null) return 'latency_ok'
+  return 'generated'
+})
+
+/** 漏斗条：与扫描页右栏同一份数据；这里的可点，点击直接筛结果。 */
 const funnelSteps = computed<FunnelStep[]>(() => [
-  { label: t('funnel.generated'), value: task.funnel.generated },
-  { label: t('funnel.latencyOk'), value: task.funnel.latency_ok },
-  { label: t('funnel.regionOk'), value: task.funnel.region_ok },
-  { label: t('funnel.usable'), value: task.funnel.usable, tone: 'ok' },
+  {
+    key: 'generated',
+    label: t('funnel.generated'),
+    value: task.funnel.generated,
+    active: funnelActive.value === 'generated',
+  },
+  {
+    key: 'latency_ok',
+    label: t('funnel.latencyOk'),
+    value: task.funnel.latency_ok,
+    active: funnelActive.value === 'latency_ok',
+  },
+  {
+    key: 'region_ok',
+    label: t('funnel.regionOk'),
+    value: task.funnel.region_ok,
+    active: funnelActive.value === 'region_ok',
+  },
+  {
+    key: 'usable',
+    label: t('funnel.usable'),
+    value: task.funnel.usable,
+    tone: 'ok',
+    active: funnelActive.value === 'usable',
+  },
 ])
 
 /** 有本次任务的过程数据、且看的不是历史那一份，漏斗才有意义。 */
 const showFunnel = computed(() => results.sourceId === '' && task.funnel.generated > 0)
+
+const listAnchor = ref<HTMLElement | null>(null)
+
+/**
+ * 点漏斗前只归零筛选。
+ *
+ * 不用 resetView()：那个连列预设、列宽与排序一起回出厂，用户点一下漏斗不该
+ * 丢掉自己调好的表格形态。
+ */
+function clearFilters(): void {
+  results.regionFilter = []
+  results.maxLatency = null
+  results.maxLoss = null
+  results.qualifiedOnly = false
+  results.keyword = ''
+  results.groupBy = 'none'
+}
+
+/** 本次扫描的延迟阈值：优先取实际发出的请求，取不到再读设置。 */
+function scanThreshold(): number | null {
+  const fromRequest = recallScanRequest()?.latency_threshold
+  if (typeof fromRequest === 'number' && fromRequest > 0) return fromRequest
+  const fromSettings = settings.values?.scan?.latency_threshold
+  return typeof fromSettings === 'number' && fromSettings > 0 ? fromSettings : null
+}
+
+/**
+ * 「延迟达标」段对应的表格上限。
+ *
+ * 这里有两套口径，同时存在但不矛盾：
+ *   - 后端 probe.go 逐候选按 use_tls 放大阈值（TLS 4.0、明文 1.3），「达标」
+ *     是按行判的。
+ *   - 表格只有一个 maxLatency 标量，只能取批内最大倍率做保守近似：有 TLS
+ *     行就 4.0，否则 1.3。宁可多显示几行，也不能把后端判达标、但原始延迟
+ *     高于阈值的 TLS 节点筛掉。
+ *   - SignalBar 的分档仍按每行 use_tls 逐条算等效值，两者互不替代。
+ * 历史结果与 TCP 的倍率是 1。
+ */
+function latencyLimit(): number | null {
+  const threshold = scanThreshold()
+  if (threshold === null) return null
+  if (latencyScale.value !== 'httping') return threshold
+  const hasTls = results.visibleRecords.some((record) => record.use_tls)
+  return Math.round(threshold * thresholdMultiplier('httping', hasTls))
+}
+
+async function scrollToList(): Promise<void> {
+  await nextTick()
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  listAnchor.value?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+}
+
+function onFunnelSelect(key: string): void {
+  clearFilters()
+  if (key === 'latency_ok') {
+    const limit = latencyLimit()
+    if (limit !== null) results.maxLatency = limit
+  } else if (key === 'region_ok') {
+    results.groupBy = 'region'
+  } else if (key === 'usable') {
+    // 未测速时 speed_mbps 全是 0，只看合格会得到空表而漏斗数字非零。
+    if (results.visibleRecords.some((record) => record.speed_mbps > 0)) {
+      results.qualifiedOnly = true
+    } else {
+      ui.pushToast({ kind: 'info', message: t('result.funnelUntested') })
+    }
+  }
+  view.value = 'result'
+  void scrollToList()
+}
 
 /**
  * 放宽延迟上限重跑。
@@ -385,7 +488,22 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         数据，但漏斗是空的——两种情况显示出来都是一排没有意义的 0。
       -->
       <section v-if="showFunnel" class="ct-card funnel-card">
-        <Funnel :steps="funnelSteps" compact />
+        <!-- 桌面用一行漏斗；窄屏竖排四段会占掉半屏，压成一行 chip。 -->
+        <Funnel v-if="!narrow" :steps="funnelSteps" compact @select="onFunnelSelect" />
+        <div v-else class="funnel-chips" role="group" :aria-label="t('funnel.groupLabel')">
+          <button
+            v-for="step in funnelSteps"
+            :key="step.key"
+            type="button"
+            class="funnel-chip"
+            :class="{ active: step.active, ok: step.tone === 'ok' }"
+            :aria-pressed="step.active ? 'true' : 'false'"
+            @click="onFunnelSelect(step.key ?? '')"
+          >
+            <span class="chip-label">{{ step.label }}</span>
+            <span class="chip-value tnum">{{ step.value }}</span>
+          </button>
+        </div>
       </section>
 
       <RegionChips />
@@ -398,21 +516,23 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         @resume="resumeScan"
       />
 
-      <RecordCardList
-        v-if="narrow"
-        :records="results.paged"
-        :speed-view="view === 'speed'"
-        :scale="latencyScale"
-      />
-      <DataTable
-        v-else
-        v-model:expanded="expanded"
-        :columns="fields.columns"
-        :records="results.paged"
-        :speed-view="view === 'speed'"
-        :scale="latencyScale"
-        @speed="onGroupSpeed"
-      />
+      <div ref="listAnchor" class="list-anchor">
+        <RecordCardList
+          v-if="narrow"
+          :records="results.paged"
+          :speed-view="view === 'speed'"
+          :scale="latencyScale"
+        />
+        <DataTable
+          v-else
+          v-model:expanded="expanded"
+          :columns="fields.columns"
+          :records="results.paged"
+          :speed-view="view === 'speed'"
+          :scale="latencyScale"
+          @speed="onGroupSpeed"
+        />
+      </div>
       <p class="ct-subtle foot">
         {{ results.visible.length }} / {{ results.total }}
         <button v-if="results.total > 0" type="button" class="ct-link" @click="clearResults">
@@ -501,6 +621,60 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
   padding: var(--space-3) var(--space-4);
 }
 
+/*
+ * 窄屏把四段漏斗压成一行 chip。
+ *
+ * 竖排四段在手机上要占掉半屏，而这一块只是筛选入口；chip 之间换行，
+ * 每个按钮给足 44px 触摸高度。
+ */
+.funnel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.funnel-chip {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.funnel-chip.active {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.funnel-chip .chip-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.funnel-chip.active .chip-label {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.funnel-chip .chip-value {
+  font-weight: 600;
+}
+
+.funnel-chip.ok .chip-value {
+  color: var(--color-ok);
+}
+
+/* 点漏斗后滚到这里：顶栏是 fixed，留出它的高度，否则首行被盖住。 */
+.list-anchor {
+  scroll-margin-top: calc(var(--topbar-height) + var(--space-3));
+}
+
 .spacer {
   flex: 1;
 }
@@ -519,6 +693,11 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
 }
 
 @media (max-width: 768px) {
+  /* 四宫格在窄屏压成两列：四个大数字横排会把每个挤到看不清。 */
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   /* 给固定的底部操作栏让位，否则最后一行结果会被压在它下面。 */
   .page {
     padding-bottom: 76px;

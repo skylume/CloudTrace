@@ -50,10 +50,24 @@ const color = computed(() => tierColorVar(tier.value))
 const text = computed(() => formatLatency(props.latency, props.digits))
 const dead = computed(() => text.value === '—')
 
+/** 等效值按每行自己的 use_tls 算：同一批里 TLS 与非 TLS 的倍率不同。 */
+const equiv = computed(() =>
+  Math.round(props.latency / thresholdMultiplier('httping', props.useTls)),
+)
+
 /** 倍率说明写在 title 里：同一个数字为什么是黄的，得能查。 */
 const hint = computed(() => {
   if (dead.value || props.scale !== 'httping') return ''
-  return t('latency.normalizedHint', { multiplier: thresholdMultiplier('httping', props.useTls) })
+  return t('latency.normalizedHint', { raw: Math.round(props.latency), equiv: equiv.value })
+})
+
+/** 屏幕阅读器读不到 title，数值后面补一句等效值。 */
+const spoken = computed(() => {
+  if (dead.value) return t('common.unreachable')
+  const base = `${text.value} ${props.unit}`
+  return props.scale === 'httping'
+    ? `${base}，${t('latency.equivHint', { equiv: equiv.value })}`
+    : base
 })
 </script>
 
@@ -65,8 +79,8 @@ const hint = computed(() => {
     <span v-if="showValue" class="val tnum">
       {{ text }}<template v-if="!dead">{{ unit }}</template>
     </span>
-    <!-- 格数是给眼睛的，屏幕阅读器读数值就够。 -->
-    <span class="sr-only">{{ dead ? t('common.unreachable') : `${text} ${unit}` }}</span>
+    <!-- 格数是给眼睛的，屏幕阅读器读数值与等效值。 -->
+    <span class="sr-only">{{ spoken }}</span>
   </span>
 </template>
 

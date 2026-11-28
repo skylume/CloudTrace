@@ -86,9 +86,10 @@ it('质量排序不进导出参数：后端不认这个键', () => {
   expect(store.visibleRecords.map((item) => item.recv > 0)).toEqual([true, false])
 })
 
-it('按钮说明交代了只影响界面的三项', () => {
+it('按钮说明交代了只影响界面的四项', () => {
   const hint = zh['result.exportHint']
   expect(hint).toContain('地区筛选')
   expect(hint).toContain('丢包上限')
   expect(hint).toContain('仅显示达标')
+  expect(hint).toContain('搜索')
 })

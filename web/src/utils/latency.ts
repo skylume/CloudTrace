@@ -88,6 +88,11 @@ export function formatLoss(loss: number, sent: number): string {
  * HTTPing 多了一次完整请求，RTT 天然比 TCP 握手长；后端判「延迟达标」时按
  * 这个倍率放宽，前端分档必须用同一个数，否则同一节点会一处合格、一处标红。
  * 只有 httping 才乘，tcping 无论是否 TLS 都是 1。
+ *
+ * 调用方有两种用法，不要合并成一个全局开关：
+ *   - SignalBar / normalizedLatency 逐行传该记录的 use_tls，得到每行自己的
+ *     等效值；
+ *   - 结果页的 maxLatency 是单一标量，只能取批内最大倍率做保守近似。
  */
 export function thresholdMultiplier(mode: LatencyMode, useTLS: boolean): number {
   if (mode !== 'httping') return 1

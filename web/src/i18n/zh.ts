@@ -77,6 +77,8 @@ export const zh = {
   'funnel.latencyOk': '延迟达标',
   'funnel.regionOk': '地区解析',
   'funnel.usable': '最终可用',
+  'funnel.selectHint': '筛选结果并跳到列表',
+  'funnel.groupLabel': '扫描漏斗',
 
   'scan.title': '开始扫描',
   'scan.subtitle': '默认参数已够用，点一下就能拿到可用 IP',
@@ -351,7 +353,8 @@ export const zh = {
   'quality.qualified': '合格',
   'quality.below': '低于阈值',
   'quality.untested': '未测速',
-  'latency.normalizedHint': 'HTTPing 延迟已按 ×{multiplier} 归一化后分档',
+  'latency.normalizedHint': '{raw}ms，HTTPing 等效 TCP 约 {equiv}ms，按等效值分档',
+  'latency.equivHint': 'HTTPing 等效 TCP 约 {equiv}ms，按等效值分档',
   'latency.rawHint': '历史结果按原始延迟着色',
 
   'result.view.result': '结果',
@@ -374,7 +377,8 @@ export const zh = {
   'result.copySelectedRows': '复制选中 {count} 条',
   'result.copyAddress': '复制为 ip:port',
   'result.copyTop': '复制前三名',
-  'result.exportHint': '地区筛选、丢包上限、仅显示达标与搜索只影响界面，不作用于导出',
+  'result.exportHint': '地区筛选、丢包上限、仅显示达标、搜索只影响界面，不作用于导出',
+  'result.funnelUntested': '本批尚未测速，显示全部可用节点',
   'result.speedAll': '完全测速',
   'result.speedRegion': '测速所选地区',
   'settings.dataDir': '数据目录',
