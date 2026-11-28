@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { TaskDonePayload } from '@/api/protocol'
 import type { TaskState } from '@/api/types'
-import { useTaskStore } from './task'
+import { useTaskStore } from './conn'
 
 /** 与后端 `model.TaskState` 的 json 形状一致。 */
 function serverState(patch: Partial<TaskState> = {}): TaskState {

@@ -16,7 +16,7 @@ import { computed } from 'vue'
 
 import { t } from '@/i18n'
 import type { DiagStatus } from '@/api/types'
-import { useDiagStore } from '@/stores/diag'
+import { useDiagStore } from '@/stores/conn'
 
 const diag = useDiagStore()
 

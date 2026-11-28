@@ -7,7 +7,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import type { TaskOutcome } from '@/stores/task'
+import type { TaskOutcome } from '@/stores/conn'
 
 import TaskOutcomeNotice from './TaskOutcomeNotice.vue'
 

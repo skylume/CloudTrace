@@ -40,7 +40,7 @@ const (
 type Options struct {
 	// Enabled 对应 ui.adaptive_enabled；关掉后只提示、不动手。
 	Enabled bool
-	// AllowPreset 对应 ui.adaptive_allow_preset；关掉后内置档位填的值也不改。
+	// AllowPreset 对应 ui.adaptive_allow_preset；关掉后一键填充的参数也不改。
 	AllowPreset bool
 }
 

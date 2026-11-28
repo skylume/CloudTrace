@@ -9,7 +9,7 @@ import { computed } from 'vue'
 
 import Banner from '@/components/ui/Banner.vue'
 import { durationMsText, phaseText, t } from '@/i18n'
-import type { TaskOutcome } from '@/stores/task'
+import type { TaskOutcome } from '@/stores/conn'
 
 const props = defineProps<{ outcome: TaskOutcome | null }>()
 

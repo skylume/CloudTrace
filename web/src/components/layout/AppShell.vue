@@ -14,7 +14,7 @@ import TopBar from './TopBar.vue'
 import BrandMark from '@/components/ui/BrandMark.vue'
 import BottomTabs from './BottomTabs.vue'
 import { t } from '@/i18n'
-import { useTaskStore } from '@/stores/task'
+import { useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 import { useNarrow } from '@/utils/useMediaQuery'
 

@@ -129,7 +129,7 @@ async function boot() {
   const { mount } = await import('@vue/test-utils')
   const client = await import('@/api/client')
   const bridge = await import('@/stores/bridge')
-  const { useTaskStore } = await import('@/stores/task')
+  const { useTaskStore } = await import('@/stores/conn')
   const { useResultsStore } = await import('@/stores/results')
   const { useUIStore } = await import('@/stores/ui')
   const { default: TopBar } = await import('@/components/layout/TopBar.vue')
