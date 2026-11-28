@@ -15,6 +15,7 @@ import { readPath } from '@/i18n/settingsSchema'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 import { pickOutputTarget } from '@/utils/outputTarget'
+import { qualityRank, reachable } from '@/utils/quality'
 
 export type GroupBy = 'none' | 'colo' | 'region' | 'asn'
 
@@ -29,7 +30,15 @@ export interface RecordGroup {
   bestSpeed: number
 }
 
-export type SortKey = 'latency' | 'latency_avg' | 'loss' | 'jitter' | 'score' | 'speed_mbps' | 'region'
+export type SortKey =
+  | 'latency'
+  | 'latency_avg'
+  | 'loss'
+  | 'jitter'
+  | 'score'
+  | 'speed_mbps'
+  | 'region'
+  | 'quality'
 
 const NATURAL_DESC: Record<SortKey, boolean> = {
   latency: false,
@@ -39,6 +48,7 @@ const NATURAL_DESC: Record<SortKey, boolean> = {
   score: true,
   speed_mbps: true,
   region: false,
+  quality: true,
 }
 
 export function naturalDesc(key: SortKey): boolean {
@@ -50,10 +60,12 @@ export function recordKey(record: IPRecord): string {
   return `${record.ip}:${record.port}`
 }
 
-/** reachable 判断这条记录是否探测成功过。 */
-export function reachable(record: IPRecord): boolean {
-  return record.recv > 0 && record.latency !== UNREACHABLE
-}
+/**
+ * reachable 判定只在 utils/quality 里写一次，这里转出以保持既有导入点不变。
+ *
+ * 表格标签、排序与统计各写一遍的话，同一行会在两处得出不同结论。
+ */
+export { reachable }
 
 /**
  * mergeRecord 用新记录覆盖旧记录。
@@ -94,7 +106,7 @@ interface StoredView {
   groupBy: GroupBy
 }
 
-const SORT_KEYS: SortKey[] = ['latency', 'latency_avg', 'loss', 'jitter', 'score', 'speed_mbps', 'region']
+const SORT_KEYS: SortKey[] = ['latency', 'latency_avg', 'loss', 'jitter', 'score', 'speed_mbps', 'region', 'quality']
 const GROUP_KEYS: GroupBy[] = ['none', 'colo', 'region', 'asn']
 
 /** loadView 只收认得出的值：坏掉的一项回默认，而不是让整张表消失。 */
@@ -317,6 +329,8 @@ export const useResultsStore = defineStore('results', () => {
       list = list.filter((record) => record.speed_mbps > 0 && record.speed_mbps >= floor)
     }
 
+    // 质量是多轴结论，不走单一数值比较，单独排。
+    if (sortKey.value === 'quality') return sortByQuality(list, sortDesc.value, minSpeed.value)
     return sortRecords(list, sortKey.value, sortDesc.value)
   })
 
@@ -327,6 +341,46 @@ export const useResultsStore = defineStore('results', () => {
     const value = readPath(values as unknown as Record<string, unknown>, 'speed.min_speed')
     return typeof value === 'number' && value > 0 ? value : 0
   })
+
+  /** 复制与导出读同一份，保证「看到 = 复制 = 导出」。 */
+  const visibleRecords = visible
+
+  /** copyPayload 按当前顺序拼地址，条数默认跟随可见行。 */
+  function copyPayload(count = visible.value.length): string {
+    return visibleRecords.value
+      .slice(0, count)
+      .map((record) => `${record.ip}:${record.port}`)
+      .join('\n')
+  }
+
+  /**
+   * exportPayload 给出导出所需的字段、过滤与排序。
+   *
+   * 导出由后端从服务端结果集生成，前端只交代这三样。以下三项只影响界面，
+   * 不跟着导出——按钮上的说明与这里保持同一口径：
+   *   - 地区筛选：前端按 colo || region_name 匹配并保留未知地区，后端只认
+   *     colo 且丢掉空 code，原样传会悄悄少行。
+   *   - 丢包上限、仅显示达标、搜索词：后端 Filter 没有对应字段。
+   * 质量排序后端不认（ParseSortKey 会直接报错），给空串走默认维度。
+   */
+  function exportPayload(): {
+    fields: string[]
+    filter: { max_latency: number; include_unreached: boolean }
+    sort: string
+    desc?: boolean
+  } {
+    const fields = useFieldsStore()
+    const qualitySort = sortKey.value === 'quality'
+    const payload = {
+      fields: [...fields.visibleKeys],
+      filter: {
+        max_latency: maxLatency.value ?? 0,
+        include_unreached: true,
+      },
+      sort: qualitySort ? '' : (sortKey.value as string),
+    }
+    return qualitySort ? payload : { ...payload, desc: sortDesc.value }
+  }
 
   // ---- 分页 ----
   //
@@ -479,6 +533,9 @@ export const useResultsStore = defineStore('results', () => {
   return {
     all,
     visible,
+    visibleRecords,
+    copyPayload,
+    exportPayload,
     paged,
     snapshot,
     clearRecords,
@@ -502,6 +559,7 @@ export const useResultsStore = defineStore('results', () => {
     qualifiedOnly,
     sortKey,
     sortDesc,
+    minSpeed,
     resetView,
     addChunk,
     nearest,
@@ -531,6 +589,21 @@ export function sortRecords(list: IPRecord[], key: SortKey, desc: boolean): IPRe
 
     const diff = compareValue(a, b, key)
     if (diff !== 0) return desc ? -diff : diff
+    return compareKey(a, b)
+  })
+  return out
+}
+
+/**
+ * sortByQuality 按质量档位排序：合格在前，不可达在后。
+ *
+ * 同档内沿用 compareKey（延迟、地址），与其它维度的兜底一致。
+ */
+function sortByQuality(list: IPRecord[], desc: boolean, floor: number): IPRecord[] {
+  const out = [...list]
+  out.sort((a, b) => {
+    const diff = qualityRank(b, floor) - qualityRank(a, floor)
+    if (diff !== 0) return desc ? diff : -diff
     return compareKey(a, b)
   })
   return out
@@ -986,7 +1059,15 @@ export const useExportStore = defineStore('export', () => {
    *
    * fields 为空表示用后端的默认字段集——前端不猜，字段清单本来就是后端给的。
    */
-  function request(options: { fields?: string[]; format?: string; id?: string; type?: string }): boolean {
+  function request(options: {
+    fields?: string[]
+    format?: string
+    id?: string
+    type?: string
+    filter?: Record<string, unknown>
+    sort?: string
+    desc?: boolean
+  }): boolean {
     pending.value = true
     const ok = sendCommand(CMD.export, {
       // 留空表示「最新一份」，优先测速结果——这正是结果页展示的东西。
@@ -995,6 +1076,9 @@ export const useExportStore = defineStore('export', () => {
       id: options.id ?? '',
       fields: options.fields ?? [],
       format: options.format ?? '',
+      ...(options.filter ? { filter: options.filter } : {}),
+      ...(options.sort ? { sort: options.sort } : {}),
+      ...(options.desc === undefined ? {} : { desc: options.desc }),
     })
     if (!ok) pending.value = false
     return ok

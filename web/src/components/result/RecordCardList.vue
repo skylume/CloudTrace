@@ -11,6 +11,7 @@
  */
 import { ref } from 'vue'
 
+import QualityBadge from './QualityBadge.vue'
 import RecordDetail from './RecordDetail.vue'
 import SignalBar from '@/components/ui/SignalBar.vue'
 import { t } from '@/i18n'
@@ -20,15 +21,26 @@ import { useUIStore } from '@/stores/ui'
 import { recordKey, useResultsStore } from '@/stores/results'
 import { formatField } from '@/utils/recordFormat'
 import { formatLoss, formatSpeed } from '@/utils/latency'
+import type { LatencyScale } from '@/utils/latencyMode'
+import { qualityOf } from '@/utils/quality'
 
 const props = defineProps<{
   records: IPRecord[]
+  /** 测速视图：质量看速度，否则看可达性。 */
+  speedView?: boolean
+  /** 延迟分档口径，与桌面表格同一套。 */
+  scale?: LatencyScale
 }>()
 
 const results = useResultsStore()
 const fields = useFieldsStore()
 const ui = useUIStore()
 const expanded = ref<string[]>([])
+
+/** 卡片与表格同一套质量判定，手机上结论不会变形。 */
+function markOf(record: IPRecord) {
+  return qualityOf(record, props.speedView === true, results.minSpeed)
+}
 
 /** 左滑阈值：小于这个位移才算误触，不做任何事。 */
 const SWIPE_THRESHOLD = 60
@@ -77,7 +89,7 @@ async function copy(record: IPRecord): Promise<void> {
 
 <template>
   <ul class="cards">
-    <li v-for="record in props.records" :key="recordKey(record)" class="card">
+    <li v-for="record in props.records" :key="recordKey(record)" :class="[`q-${markOf(record).tone}`, 'card']">
       <div
         class="head"
         :style="{ transform: `translateX(${swiping?.key === recordKey(record) ? swiping.dx : 0}px)` }"
@@ -95,6 +107,7 @@ async function copy(record: IPRecord): Promise<void> {
           @change="results.toggleSelect(recordKey(record))"
         />
         <span class="ip ct-mono">{{ record.ip }}:{{ record.port }}</span>
+        <QualityBadge :mark="markOf(record)" />
         <span class="spacer" />
         <span class="ct-subtle">{{ expanded.includes(recordKey(record)) ? '▾' : '▸' }}</span>
       </div>
@@ -106,7 +119,7 @@ async function copy(record: IPRecord): Promise<void> {
         </div>
         <div>
           <dt>{{ fields.byKey.get('latency')?.label ?? 'latency' }}</dt>
-          <dd><SignalBar :latency="record.latency" /></dd>
+          <dd><SignalBar :latency="record.latency" :scale="props.scale ?? 'raw'" :use-tls="record.use_tls" /></dd>
         </div>
         <div>
           <dt>{{ fields.byKey.get('loss')?.label ?? 'loss' }}</dt>
@@ -151,6 +164,23 @@ async function copy(record: IPRecord): Promise<void> {
   background: var(--color-surface);
   box-shadow: var(--elevation-1);
   overflow: hidden;
+}
+
+/* 左侧色条与表格同一套语义：文字标签仍在，色条只是扫读加速。 */
+.card.q-ok {
+  box-shadow: inset 3px 0 0 var(--color-ok), var(--elevation-1);
+}
+
+.card.q-warn {
+  box-shadow: inset 3px 0 0 var(--color-warn), var(--elevation-1);
+}
+
+.card.q-muted {
+  box-shadow: inset 3px 0 0 var(--color-border-strong), var(--elevation-1);
+}
+
+.card.q-bad {
+  box-shadow: inset 3px 0 0 var(--color-bad), var(--elevation-1);
 }
 
 .head {

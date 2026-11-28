@@ -17,6 +17,7 @@ import { t } from '@/i18n'
 import type { FieldDef, IPRecord } from '@/api/types'
 import { recordKey, useResultsStore, type SortKey } from '@/stores/results'
 import { useFieldsStore } from '@/stores/results'
+import type { LatencyScale } from '@/utils/latencyMode'
 import { renderSpec } from '@/utils/recordFormat'
 import { useColumnResize } from '@/utils/useColumnResize'
 import { useRowContextMenu } from '@/utils/useRowContextMenu'
@@ -24,6 +25,10 @@ import { useRowContextMenu } from '@/utils/useRowContextMenu'
 const props = defineProps<{
   columns: FieldDef[]
   records: IPRecord[]
+  /** 测速视图：质量列看速度，否则看可达性。 */
+  speedView?: boolean
+  /** 延迟分档口径，透传给每一行。 */
+  scale?: LatencyScale
 }>()
 
 const results = useResultsStore()
@@ -53,6 +58,7 @@ const SORTABLE: Record<string, SortKey> = {
   score: 'score',
   colo: 'region',
   region_name: 'region',
+  quality: 'quality',
 }
 
 function sortBy(key: string): void {
@@ -63,12 +69,20 @@ function sortBy(key: string): void {
     return
   }
   results.sortKey = target
-  results.sortDesc = target === 'speed_mbps' || target === 'score'
+  results.sortDesc = target === 'speed_mbps' || target === 'score' || target === 'quality'
 }
 
 function isSorted(key: string): 'asc' | 'desc' | '' {
   if (SORTABLE[key] !== results.sortKey) return ''
   return results.sortDesc ? 'desc' : 'asc'
+}
+
+/** aria-sort 给读屏器：箭头只是视觉提示，不能替代语义。 */
+function ariaSort(key: string): 'ascending' | 'descending' | 'none' {
+  const state = isSorted(key)
+  if (state === 'desc') return 'descending'
+  if (state === 'asc') return 'ascending'
+  return 'none'
 }
 
 function toggleRow(record: IPRecord): void {
@@ -124,6 +138,7 @@ function selectGroup(records: IPRecord[]): void {
         <col class="col-check" />
         <col class="col-expand" />
         <col class="col-rank" />
+        <col class="col-quality" />
         <col v-for="column in props.columns" :key="column.key" :style="{ width: fields.widthOf(column.key) }" />
       </colgroup>
       <thead>
@@ -139,13 +154,22 @@ function selectGroup(records: IPRecord[]): void {
           </th>
           <th class="narrow ct-sticky ct-sticky-2" />
           <th class="narrow num ct-sticky ct-sticky-3">#</th>
+          <!-- 状态列常驻：它不属于后端字段，所以手写一格。 -->
+          <th
+            class="quality ct-sticky ct-sticky-4 sortable"
+            :aria-sort="ariaSort('quality')"
+            @click="sortBy('quality')"
+          >
+            {{ t('quality.column') }}
+            <span v-if="isSorted('quality')" class="arrow">{{ isSorted('quality') === 'desc' ? '↓' : '↑' }}</span>
+          </th>
           <th
             v-for="(column, index) in props.columns"
             :key="column.key"
             :class="{
               sortable: SORTABLE[column.key],
               num: renderSpec(column.key).align === 'right',
-              'ct-sticky ct-sticky-4': index === 0,
+              'ct-sticky ct-sticky-5': index === 0,
             }"
             @click="sortBy(column.key)"
           >
@@ -184,6 +208,8 @@ function selectGroup(records: IPRecord[]): void {
                 :columns="props.columns"
                 :rank="ranks.get(recordKey(record)) ?? 0"
                 :expanded="expandedRows.includes(recordKey(record))"
+                :speed-view="props.speedView"
+                :scale="props.scale"
                 @toggle="toggleRow(record)"
                 @menu="openMenu($event.record, $event.event)"
               />
@@ -198,6 +224,8 @@ function selectGroup(records: IPRecord[]): void {
             :columns="props.columns"
             :rank="ranks.get(recordKey(record)) ?? 0"
             :expanded="expandedRows.includes(recordKey(record))"
+            :speed-view="props.speedView"
+            :scale="props.scale"
             @toggle="toggleRow(record)"
             @menu="openMenu($event.record, $event.event)"
           />
@@ -234,6 +262,10 @@ function selectGroup(records: IPRecord[]): void {
 .col-expand,
 .col-rank {
   width: var(--table-narrow-width);
+}
+
+.col-quality {
+  width: var(--table-quality-width);
 }
 
 th,
@@ -313,6 +345,11 @@ tbody tr.picked td:first-child {
 
 .narrow {
   width: 34px;
+  padding: 0 var(--space-2);
+}
+
+.quality {
+  width: var(--table-quality-width);
   padding: 0 var(--space-2);
 }
 

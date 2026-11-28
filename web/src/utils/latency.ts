@@ -8,6 +8,9 @@ import { UNREACHABLE } from '@/api/types'
 
 export type LatencyTier = 'fastest' | 'fast' | 'mid' | 'slow' | 'dead'
 
+/** 探测模式。与配置里的 scan.mode 同值。 */
+export type LatencyMode = 'tcping' | 'httping'
+
 /** 分档边界，单位毫秒。由快到慢，取「小于该值即落入此档」。 */
 const BOUNDS: { tier: LatencyTier; max: number }[] = [
   { tier: 'fastest', max: 100 },
@@ -77,4 +80,32 @@ export function formatSpeed(speed: number, digits = 1): string {
 export function formatLoss(loss: number, sent: number): string {
   if (sent <= 0) return '—'
   return `${Math.round(loss * 100)}%`
+}
+
+/**
+ * 与后端 probe 同源的阈值倍率。
+ *
+ * HTTPing 多了一次完整请求，RTT 天然比 TCP 握手长；后端判「延迟达标」时按
+ * 这个倍率放宽，前端分档必须用同一个数，否则同一节点会一处合格、一处标红。
+ * 只有 httping 才乘，tcping 无论是否 TLS 都是 1。
+ */
+export function thresholdMultiplier(mode: LatencyMode, useTLS: boolean): number {
+  if (mode !== 'httping') return 1
+  return useTLS ? 4 : 1.3
+}
+
+/**
+ * 把延迟换算到「与 tcping 可比的尺度」，用于分档。
+ *
+ * 显示值仍是原始延迟：用户测到多少就该看到多少，归一化只影响颜色与格数。
+ */
+export function normalizedLatency(latency: number, mode: LatencyMode, useTLS: boolean): number {
+  if (latencyTier(latency) === 'dead') return latency
+  const multiplier = thresholdMultiplier(mode, useTLS)
+  return multiplier === 1 ? latency : latency / multiplier
+}
+
+/** 按当前探测模式分档。latencyTier 保持原签名，只给需要归一化的调用点用这个。 */
+export function latencyTierFor(latency: number, mode: LatencyMode, useTLS: boolean): LatencyTier {
+  return latencyTier(normalizedLatency(latency, mode, useTLS))
 }

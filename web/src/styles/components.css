@@ -216,6 +216,7 @@
  */
 :root {
   --table-narrow-width: 34px;
+  --table-quality-width: 76px;
 }
 
 .ct-sticky-1 {
@@ -232,6 +233,10 @@
 
 .ct-sticky-4 {
   left: calc(var(--table-narrow-width) * 3);
+}
+
+.ct-sticky-5 {
+  left: calc(var(--table-narrow-width) * 3 + var(--table-quality-width));
 }
 
 /*
@@ -256,4 +261,45 @@ tbody tr:hover .ct-sticky {
 
 tbody tr.picked .ct-sticky {
   background-image: linear-gradient(var(--color-primary-soft), var(--color-primary-soft));
+}
+
+/*
+ * 质量徽章：淡底 + 描边 + 深字，与主题里的语义色同一套表达。
+ *
+ * 文字标签始终在场——颜色只是加速扫读，不是唯一信号。
+ */
+.ct-quality {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.ct-quality.is-ok {
+  border-color: var(--color-ok-border);
+  background: var(--color-ok-bg);
+  color: var(--color-ok);
+}
+
+.ct-quality.is-warn {
+  border-color: var(--color-warn-border);
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+}
+
+.ct-quality.is-bad {
+  border-color: var(--color-bad-border);
+  background: var(--color-bad-bg);
+  color: var(--color-bad);
+}
+
+.ct-quality.is-muted {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-subtle);
 }

@@ -30,6 +30,7 @@ import { useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 import { recallScanRequest } from '@/utils/lastScan'
 import { formatLatency, formatSpeed } from '@/utils/latency'
+import { useLatencyScale } from '@/utils/latencyMode'
 import { buildSpeedParams } from '@/utils/speedParams'
 import { useNarrow } from '@/utils/useMediaQuery'
 
@@ -40,6 +41,8 @@ const speed = useSpeedStore()
 const settings = useSettingsStore()
 const exporter = useExportStore()
 const history = useHistoryStore()
+/** 延迟分档口径随结果来源切换：历史快照按原始值，实时结果按探测模式归一化。 */
+const latencyScale = useLatencyScale()
 
 /**
  * 下拉刷新。
@@ -221,10 +224,7 @@ function clearResults(): void {
 
 /** 复制前几条：按当前排序取，与用户看到的顺序一致。 */
 async function copyTop(count: number): Promise<void> {
-  const text = results.visible
-    .slice(0, count)
-    .map((record) => `${record.ip}:${record.port}`)
-    .join('\n')
+  const text = results.copyPayload(count)
   if (text === '') return
   try {
     await navigator.clipboard.writeText(text)
@@ -279,7 +279,8 @@ function startSpeed(scope: 'single' | 'region' | 'all', targets: typeof results.
 function exportResult(): void {
   if (results.visible.length === 0) return
   // 带上来历：显示的是历史加载的那一份时，导「最新」会导出完全不同的数据。
-  exporter.request({ fields: fields.visibleKeys, id: results.sourceId })
+  // 字段、过滤与排序和界面同源；后端不认的三项只在按钮说明里交代。
+  exporter.request({ id: results.sourceId, ...results.exportPayload() })
 }
 
 /**
@@ -397,8 +398,21 @@ function applyBreakerFix(patch: Record<string, unknown>): void {
         @resume="resumeScan"
       />
 
-      <RecordCardList v-if="narrow" :records="results.paged" />
-      <DataTable v-else v-model:expanded="expanded" :columns="fields.columns" :records="results.paged" @speed="onGroupSpeed" />
+      <RecordCardList
+        v-if="narrow"
+        :records="results.paged"
+        :speed-view="view === 'speed'"
+        :scale="latencyScale"
+      />
+      <DataTable
+        v-else
+        v-model:expanded="expanded"
+        :columns="fields.columns"
+        :records="results.paged"
+        :speed-view="view === 'speed'"
+        :scale="latencyScale"
+        @speed="onGroupSpeed"
+      />
       <p class="ct-subtle foot">
         {{ results.visible.length }} / {{ results.total }}
         <button v-if="results.total > 0" type="button" class="ct-link" @click="clearResults">

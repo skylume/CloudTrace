@@ -124,7 +124,13 @@ const weightNote = computed(() => {
       >
         {{ t('result.speedSelected', { count: selectedCount }) }}
       </button>
-      <button type="button" class="ct-btn dup" :disabled="exporter.pending" @click="emit('export')">
+      <button
+        type="button"
+        class="ct-btn dup"
+        :disabled="exporter.pending"
+        :title="t('result.exportHint')"
+        @click="emit('export')"
+      >
         {{ t('common.export') }}
       </button>
       <button

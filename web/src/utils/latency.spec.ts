@@ -9,7 +9,17 @@ import { describe, expect, it } from 'vitest'
 
 import { UNREACHABLE } from '@/api/types'
 
-import { formatLatency, formatLoss, formatSpeed, latencyTier, tierBars, tierColorVar } from './latency'
+import {
+  formatLatency,
+  formatLoss,
+  formatSpeed,
+  latencyTier,
+  latencyTierFor,
+  normalizedLatency,
+  thresholdMultiplier,
+  tierBars,
+  tierColorVar,
+} from './latency'
 
 describe('latencyTier 分档', () => {
   it('按文档给定的边界分档', () => {
@@ -77,5 +87,21 @@ describe('格式化', () => {
     expect(formatLoss(0, 3)).toBe('0%')
     expect(formatLoss(1, 3)).toBe('100%')
     expect(formatLoss(1 / 3, 3)).toBe('33%')
+  })
+})
+
+describe('归一化倍率', () => {
+  it('只有 HTTPing 才乘倍率，TCP 探测保持原值', () => {
+    expect(thresholdMultiplier('tcping', false)).toBe(1)
+    expect(thresholdMultiplier('tcping', true)).toBe(1)
+    expect(thresholdMultiplier('httping', false)).toBe(1.3)
+    expect(thresholdMultiplier('httping', true)).toBe(4)
+  })
+
+  it('归一化后按同一套边界分档，不可达原样保留', () => {
+    // 260ms 的 HTTPS 探测除以 4 是 65ms，落在极快档。
+    expect(latencyTierFor(260, 'httping', true)).toBe('fastest')
+    expect(latencyTierFor(260, 'tcping', true)).toBe('slow')
+    expect(normalizedLatency(UNREACHABLE, 'httping', true)).toBe(UNREACHABLE)
   })
 })

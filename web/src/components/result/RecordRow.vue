@@ -8,14 +8,17 @@
  * 组件有两个根节点（数据行 + 详情行），这是刻意的：详情要插在数据行下方，
  * 包一层容器就会破坏表格结构。
  */
-import { onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 
+import QualityBadge from './QualityBadge.vue'
 import RecordDetail from './RecordDetail.vue'
 import SignalBar from '@/components/ui/SignalBar.vue'
 import { t } from '@/i18n'
 import type { FieldDef, IPRecord } from '@/api/types'
 import { recordKey, useResultsStore } from '@/stores/results'
 import { useFieldsStore } from '@/stores/results'
+import type { LatencyScale } from '@/utils/latencyMode'
+import { qualityOf } from '@/utils/quality'
 import { formatField, renderSpec } from '@/utils/recordFormat'
 
 const props = defineProps<{
@@ -24,6 +27,10 @@ const props = defineProps<{
   /** 名次，从 1 开始。 */
   rank: number
   expanded: boolean
+  /** 测速视图：质量看速度，否则看可达性。 */
+  speedView?: boolean
+  /** 延迟分档口径：历史结果是原始值，实时结果按探测模式归一化。 */
+  scale?: LatencyScale
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +42,9 @@ const results = useResultsStore()
 const fields = useFieldsStore()
 
 const valuesOf = (record: IPRecord) => record as unknown as Record<string, unknown>
+
+/** 一行一个结论：文字标签负责说清，色条只是加速扫读。 */
+const mark = computed(() => qualityOf(props.record, props.speedView === true, results.minSpeed))
 
 /**
  * 点整行也能展开详情。
@@ -72,7 +82,7 @@ async function copyCell(key: string): Promise<void> {
 <template>
   <tr
     class="expandable"
-    :class="{ picked: results.selected.has(recordKey(props.record)) }"
+    :class="[`q-${mark.tone}`, { picked: results.selected.has(recordKey(props.record)) }]"
     @click="onRowClick"
     @contextmenu.prevent="emit('menu', { record: props.record, event: $event })"
   >
@@ -98,13 +108,22 @@ async function copyCell(key: string): Promise<void> {
       </button>
     </td>
     <td class="narrow num tnum ct-sticky ct-sticky-3">{{ props.rank }}</td>
+    <td class="quality ct-sticky ct-sticky-4">
+      <QualityBadge :mark="mark" />
+    </td>
     <td
       v-for="(column, index) in props.columns"
       :key="column.key"
-      :class="{ num: renderSpec(column.key).align === 'right', 'ct-sticky ct-sticky-4': index === 0 }"
+      :class="{ num: renderSpec(column.key).align === 'right', 'ct-sticky ct-sticky-5': index === 0 }"
+      :title="renderSpec(column.key).render === 'latency' && props.scale === 'raw' ? t('latency.rawHint') : undefined"
       @dblclick="copyCell(column.key)"
     >
-      <SignalBar v-if="renderSpec(column.key).render === 'latency'" :latency="props.record.latency" />
+      <SignalBar
+        v-if="renderSpec(column.key).render === 'latency'"
+        :latency="props.record.latency"
+        :scale="props.scale ?? 'raw'"
+        :use-tls="props.record.use_tls"
+      />
       <span
         v-else
         :class="{
@@ -117,7 +136,7 @@ async function copyCell(key: string): Promise<void> {
     </td>
   </tr>
   <tr v-if="props.expanded" class="detail-row">
-    <td :colspan="props.columns.length + 3">
+    <td :colspan="props.columns.length + 4">
       <RecordDetail :record="props.record" :fields="fields.fields" />
     </td>
   </tr>
@@ -129,9 +148,34 @@ async function copyCell(key: string): Promise<void> {
   padding: 0 var(--space-2);
 }
 
+.quality {
+  width: var(--table-quality-width);
+  padding: 0 var(--space-2);
+}
+
 /* 整行可点，指针提示一下；单元格里的文字仍可正常选中。 */
 .expandable {
   cursor: pointer;
+}
+
+/*
+ * 质量色条：只在第一列内侧画一道，不涂整行——整行涂色会和选中态打架，
+ * 而色条与文字标签同时在场，颜色不是唯一信号。
+ */
+.expandable.q-ok td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-ok);
+}
+
+.expandable.q-warn td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-warn);
+}
+
+.expandable.q-muted td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-border-strong);
+}
+
+.expandable.q-bad td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-bad);
 }
 
 .expand {
