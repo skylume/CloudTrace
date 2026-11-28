@@ -4,7 +4,7 @@
  * 命令名与事件名刻意用字符串字面量而不是枚举：它们就是后端 handlers 表里的
  * 键，改错一个字母时希望是运行时报「未注册的命令」，而不是编译期悄悄改名。
  */
-import type { Funnel, IPRecord } from './types'
+import type { Funnel, IPRecord, StageStat } from './types'
 
 /** 客户端 → 服务端：命令。 */
 export const CMD = {
@@ -154,6 +154,8 @@ export interface ProgressPayload {
   eta: number
   /** 已耗时，秒。运行期间 state 不重发，计时器只能读这里。 */
   elapsed: number
+  /** 流水线各阶段的统计；旧后端不带这个字段。 */
+  stages?: StageStat[]
 }
 
 /** 任务终止事件的载荷。 */

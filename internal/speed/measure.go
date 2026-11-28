@@ -20,13 +20,16 @@ import (
 type measured struct {
 	rec model.IPRecord
 	ok  bool
+	// skipped 表示这一项没有真正测到：熔断、中止或收敛后未派发。
+	// 它与「测了但没达标」不同，阶段统计要分开计数。
+	skipped bool
 }
 
 // measure 对全部目标执行下载测速，返回合格的结果。
 //
 // 三个提前退出条件都在这里汇合：熔断、收敛、用户中止。前两个属于正常结束，
 // 只有中止会以错误返回，调用方据父 context 区分。
-func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages, url string, targets []model.IPRecord) ([]model.IPRecord, error) {
+func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages, url string, targets []model.IPRecord) ([]model.IPRecord, int, error) {
 	breaker := NewBreaker(r.params.Breaker429)
 	pusher := newPusher(rep, r.now, partialInterval)
 
@@ -54,12 +57,12 @@ func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages
 			// 熔断后不再派发新目标，并让在跑的那些一起停下来：剩下的目标
 			// 只会继续拿到被限速的假速度。
 			if breaker.Tripped() {
-				return measured{rec: rec}, true
+				return measured{rec: rec, skipped: true}, true
 			}
 
 			// 串行间隔从第二个目标起生效，第一个目标不必白等。
 			if n := started.Add(1); n > 1 && !sleepCtx(ctx, interval) {
-				return measured{rec: rec}, true
+				return measured{rec: rec, skipped: true}, true
 			}
 
 			return r.measureOne(ctx, rec, url, duration, maxBytes, breaker, &qualified, goal, pusher, &tripped)
@@ -68,10 +71,18 @@ func (r *Runner) measure(ctx context.Context, rep task.Reporter, st *task.Stages
 	)
 	pusher.flush()
 
-	if tripped.Load() {
-		return keepQualified(out), rateLimitedError(breaker)
+	// 未派发的目标（收敛、熔断）加上已派发但跳过的，都是「没测到」。
+	skipped := len(targets) - len(out)
+	for _, item := range out {
+		if item.skipped {
+			skipped++
+		}
 	}
-	return keepQualified(out), err
+
+	if tripped.Load() {
+		return keepQualified(out), skipped, rateLimitedError(breaker)
+	}
+	return keepQualified(out), skipped, err
 }
 
 // measureOne 测一个目标，并决定是否就此收敛。
@@ -95,14 +106,14 @@ func (r *Runner) measureOne(
 		if breaker.RateLimited() {
 			tripped.Store(true)
 			r.logger.Warn("测速源连续限流，已熔断", "streak", breaker.Streak(), "ip", rec.IP)
-			return measured{rec: rec}, true
+			return measured{rec: rec, skipped: true}, true
 		}
 		return measured{rec: rec}, false
 
 	case err != nil:
 		// 取消导致的中止不是失败，别记成一条错误日志。
 		if ctx.Err() != nil {
-			return measured{rec: rec}, true
+			return measured{rec: rec, skipped: true}, true
 		}
 		// 非限流的失败同样打断「连续限流」的计数：连不上不等于被限速。
 		breaker.Success()

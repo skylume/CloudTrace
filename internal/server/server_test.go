@@ -676,6 +676,8 @@ func TestWSReceivesStateBroadcast(t *testing.T) {
 	t.Cleanup(release)
 
 	if err := st.svc.Tasks.Start(model.PhaseScan, func(rep task.Reporter) (task.Outcome, error) {
+		// 先报阶段统计：它触发的领先沿就是下面收到的那条 progress。
+		task.SetStages(rep, []model.StageStat{model.NewStageStat(model.StagePool, 100, 80, 0, 20, 0.2)})
 		rep.SetTotal(10)
 		rep.SetDone(3)
 		rep.SetFunnel(model.Funnel{Generated: 100, LatencyOK: 40})
@@ -696,12 +698,15 @@ func TestWSReceivesStateBroadcast(t *testing.T) {
 		t.Errorf("phase = %q，期望 %q", running.Phase, model.PhaseScan)
 	}
 
-	// 进度事件按 250ms 节流，能收到的第一条是 SetTotal 触发的领先沿，
-	// 因此只断言总数透传；逐次推进的数值由最终快照断言。
+	// 进度事件按 250ms 节流，能收到的第一条是 SetStages 触发的领先沿，
+	// 此时总数还没设置；这里断言阶段统计已经透传，进度数值由最终快照断言。
 	var progress task.Progress
 	decode(t, mustEvent(t, msgs, eventProgress), &progress)
-	if progress.Phase != model.PhaseScan || progress.Total != 10 {
-		t.Errorf("phase/total = %q/%d，期望 scan/10", progress.Phase, progress.Total)
+	if progress.Phase != model.PhaseScan {
+		t.Errorf("phase = %q，期望 scan", progress.Phase)
+	}
+	if len(progress.Stages) != 1 || progress.Stages[0].Name != model.StagePool || progress.Stages[0].Done != 100 {
+		t.Errorf("progress.Stages = %+v，期望 pool 100", progress.Stages)
 	}
 
 	// 收尾后是 done 快照与 scan/done 事件，后者带上结果条数。
@@ -727,6 +732,9 @@ func TestWSReceivesStateBroadcast(t *testing.T) {
 	}
 	if final.Done != 3 || final.Total != 10 {
 		t.Errorf("最终进度 = %d/%d，期望 3/10", final.Done, final.Total)
+	}
+	if len(final.Stages) != 1 || final.Stages[0].Name != model.StagePool {
+		t.Errorf("最终快照 Stages = %+v，期望 pool", final.Stages)
 	}
 	if final.Funnel.Generated != 100 || final.Funnel.LatencyOK != 40 {
 		t.Errorf("最终漏斗数据未透传：%+v", final.Funnel)

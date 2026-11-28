@@ -51,6 +51,17 @@ export interface Funnel {
   usable: number
 }
 
+/** 流水线一个阶段的统计；Done = OK + Failed + Skipped。 */
+export interface StageStat {
+  name: string
+  total: number
+  ok: number
+  failed: number
+  skipped?: number
+  done: number
+  elapsed_s?: number
+}
+
 export interface Summary {
   funnel: Funnel
   region_dist: Record<string, number>
@@ -82,6 +93,8 @@ export interface TaskState {
    * 组件直接抛错（扫描页的过程面板与结果页的漏斗条都中过）。
    */
   funnel: Funnel
+  /** 流水线各阶段的统计；任务体不报阶段时为空。 */
+  stages?: StageStat[]
   started_at: number
   error?: string
 }

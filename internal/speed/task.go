@@ -277,6 +277,13 @@ func (r *Runner) SetOnDone(fn func(model.TaskResult)) { r.onDone = fn }
 func (r *Runner) Run(rep task.Reporter) (int, error) {
 	ctx := rep.Context()
 
+	// 阶段统计按完成顺序追加；每次整体替换，编排层负责拷贝。
+	stages := make([]model.StageStat, 0, 2)
+	report := func(stat model.StageStat) {
+		stages = append(stages, stat)
+		task.SetStages(rep, stages)
+	}
+
 	targets := selectTargets(r.params)
 	if len(targets) == 0 {
 		return 0, errors.New("没有可测速的目标")
@@ -293,8 +300,10 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	st := task.NewStages(rep)
 	usable := targets
 	if r.params.UsabilityCheck {
+		usabilityStart := time.Now()
 		st.Begin(len(targets))
 		usable, err = r.checkUsable(ctx, st, targets)
+		report(model.NewStageStat(model.StageUsability, len(targets), len(usable), len(targets)-len(usable), 0, time.Since(usabilityStart).Seconds()))
 		if err != nil {
 			return 0, err
 		}
@@ -305,7 +314,13 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	rep.SetFunnel(model.Funnel{Generated: len(targets), LatencyOK: len(usable)})
 
 	st.Begin(len(usable))
-	results, err := r.measure(ctx, rep, st, url, usable)
+	measureStart := time.Now()
+	results, skipped, err := r.measure(ctx, rep, st, url, usable)
+	failed := len(usable) - len(results) - skipped
+	if failed < 0 {
+		failed = 0
+	}
+	report(model.NewStageStat(model.StageMeasure, len(usable), len(results), failed, skipped, time.Since(measureStart).Seconds()))
 	rep.SetFunnel(model.Funnel{
 		Generated: len(targets),
 		LatencyOK: len(usable),

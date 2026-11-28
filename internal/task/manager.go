@@ -66,6 +66,8 @@ type Progress struct {
 	Funnel  model.Funnel `json:"funnel"`
 	ETA     float64      `json:"eta"`
 	Elapsed float64      `json:"elapsed"`
+	// Stages 是流水线各阶段的统计；任务体不报阶段时为空。
+	Stages []model.StageStat `json:"stages,omitempty"`
 }
 
 // Outcome 是任务结束时随终止事件下发的信息。
@@ -121,6 +123,22 @@ type Warner interface {
 func Warn(rep Reporter, msg string) {
 	if w, ok := rep.(Warner); ok {
 		w.AddWarning(msg)
+	}
+}
+
+// StageReporter 是 Reporter 的可选扩展：能接收流水线阶段统计。
+//
+// 与 Warner 同理，设为可选接口而不是往 Reporter 里加方法：多数 Reporter
+// 实现并不产生阶段统计，只为它改接口会让所有实现跟着改一遍。
+type StageReporter interface {
+	// SetStages 用一份完整的阶段统计替换当前值。
+	SetStages(stages []model.StageStat)
+}
+
+// SetStages 把阶段统计交给支持它的 Reporter，不支持时静默忽略。
+func SetStages(rep Reporter, stages []model.StageStat) {
+	if sr, ok := rep.(StageReporter); ok {
+		sr.SetStages(stages)
 	}
 }
 
@@ -255,6 +273,7 @@ func (m *Manager) Running() bool {
 func (m *Manager) Snapshot() model.TaskState {
 	m.mu.RLock()
 	st := m.state
+	st.Stages = cloneStages(st.Stages)
 	started := m.started
 	running := m.running
 	m.mu.RUnlock()
@@ -305,7 +324,7 @@ func (m *Manager) execute(r *run, runFn RunFunc, cancel context.CancelFunc) {
 
 // finish 落定终态并广播最终快照。
 func (m *Manager) finish(r *run, status, errMsg string) {
-	done, total, funnel := r.counters()
+	done, total, funnel, stages := r.counters()
 
 	m.mu.Lock()
 	m.running = false
@@ -318,6 +337,7 @@ func (m *Manager) finish(r *run, status, errMsg string) {
 		Total:     total,
 		Elapsed:   elapsed,
 		Funnel:    funnel,
+		Stages:    stages,
 		StartedAt: m.started.Unix(),
 		ErrorMsg:  errMsg,
 	}
@@ -364,6 +384,7 @@ type run struct {
 	done     int
 	total    int
 	funnel   model.Funnel
+	stages   []model.StageStat
 	warnings []string
 }
 
@@ -388,6 +409,24 @@ func (r *run) SetFunnel(f model.Funnel) {
 	r.funnel = f
 	r.mu.Unlock()
 	r.publish()
+}
+
+func (r *run) SetStages(stages []model.StageStat) {
+	r.mu.Lock()
+	r.stages = cloneStages(stages)
+	r.mu.Unlock()
+	r.publish()
+}
+
+// cloneStages 复制阶段切片。
+//
+// 阶段统计会被 Snapshot、state 与 progress 三处共享，任何一处拿到原切片
+// 都可能与下一次替换踩到同一个底层数组；统一在边界上拷贝。
+func cloneStages(stages []model.StageStat) []model.StageStat {
+	if len(stages) == 0 {
+		return nil
+	}
+	return append([]model.StageStat(nil), stages...)
 }
 
 func (r *run) Emit(topic string, payload any) { r.mgr.bus.Publish(topic, payload) }
@@ -428,23 +467,24 @@ func (r *run) decorate(out Outcome) Outcome {
 	return out
 }
 
-func (r *run) counters() (done, total int, funnel model.Funnel) {
+func (r *run) counters() (done, total int, funnel model.Funnel, stages []model.StageStat) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.done, r.total, r.funnel
+	return r.done, r.total, r.funnel, cloneStages(r.stages)
 }
 
 // publish 把进度同步进状态快照，并按节流上报 progress 事件。
 //
 // 快照每次都更新（重连后要能立刻看到正确进度），事件则受节流约束。
 func (r *run) publish() {
-	done, total, funnel := r.counters()
+	done, total, funnel, stages := r.counters()
 
 	r.mgr.mu.Lock()
 	if r.mgr.state.Status == model.StatusRunning {
 		r.mgr.state.Done = done
 		r.mgr.state.Total = total
 		r.mgr.state.Funnel = funnel
+		r.mgr.state.Stages = cloneStages(stages)
 	}
 	r.mgr.mu.Unlock()
 
@@ -456,11 +496,12 @@ func (r *run) publish() {
 			Funnel:  funnel,
 			ETA:     r.eta(),
 			Elapsed: r.mgr.now().Sub(r.started).Seconds(),
+			Stages:  cloneStages(stages),
 		})
 	})
 }
 
 func (r *run) eta() float64 {
-	done, total, _ := r.counters()
+	done, total, _, _ := r.counters()
 	return estimateETA(r.mgr.now().Sub(r.started).Seconds(), done, total)
 }

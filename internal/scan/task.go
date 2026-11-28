@@ -302,7 +302,15 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	st := task.NewStages(rep)
 	sink := &resultSink{rep: rep}
 
+	// 阶段统计按完成顺序追加；每次整体替换，编排层负责拷贝。
+	stages := make([]model.StageStat, 0, 4)
+	report := func(stat model.StageStat) {
+		stages = append(stages, stat)
+		task.SetStages(rep, stages)
+	}
+
 	// ① 生成候选池。
+	poolStart := time.Now()
 	pool, err := buildPool(ctx, poolOptions{
 		Params:     r.params,
 		Host:       r.host,
@@ -318,6 +326,8 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 		pool.Candidates = dropKnown(pool.Candidates, r.skip)
 	}
 	funnel.Set(StageGenerated, len(pool.Candidates))
+	// 生成阶段：OK 是进入探测的候选，Skipped 是已测过被跳过的那些。
+	report(model.NewStageStat(model.StagePool, generated, len(pool.Candidates), 0, generated-len(pool.Candidates), time.Since(poolStart).Seconds()))
 	r.logger.Info("候选池生成完毕",
 		"candidates", len(pool.Candidates),
 		"skipped_known", generated-len(pool.Candidates),
@@ -334,11 +344,14 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	}
 
 	// ② 前置过滤：这是「省掉无效探测」的唯一机会，放到探测之后等于白做。
+	filterStart := time.Now()
 	filtered := PreFilter(pool.Candidates, PreFilterOptions{
 		Ports:          r.params.PreFilterPorts,
 		BlockedRegions: r.params.BlockedRegions,
 		AllowedRegions: r.params.AllowedRegions,
 	})
+	filterRejected := filtered.PortRejected + filtered.BlockRejected + filtered.AllowRejected
+	report(model.NewStageStat(model.StageFilter, len(pool.Candidates), len(filtered.Kept), filterRejected, 0, time.Since(filterStart).Seconds()))
 	r.logger.Info("前置过滤完成",
 		"kept", len(filtered.Kept),
 		"port_rejected", filtered.PortRejected,
@@ -349,13 +362,17 @@ func (r *Runner) Run(rep task.Reporter) (int, error) {
 	}
 
 	// ③④ 延迟探测与阈值过滤。
+	probeStart := time.Now()
 	passing, rejected, err := r.probeStages(ctx, rep, st, funnel, filtered.Kept)
+	report(model.NewStageStat(model.StageProbe, len(filtered.Kept), len(passing), len(rejected), 0, time.Since(probeStart).Seconds()))
 	if err != nil {
 		return 0, err
 	}
 
 	// ⑤⑥ 节点校验、明细采集与归属地解析。
+	collectStart := time.Now()
 	records, err := r.collect(ctx, rep, st, sink, passing)
+	report(model.NewStageStat(model.StageCollect, len(passing), len(records), len(passing)-len(records), 0, time.Since(collectStart).Seconds()))
 	// 无论成功还是中止，已经产出的结果都要推出去：中止时用户要能保留
 	// 已扫出的那部分。
 	sink.flush()

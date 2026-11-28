@@ -36,15 +36,17 @@ type Funnel struct {
 // 首连 / 断线重连时由服务端全量下发，前端据此恢复完整视图，
 // 保证切页、刷新、断线重连都不丢进度。
 type TaskState struct {
-	Phase     string  `json:"phase"`      // idle | scan | speed
-	Status    string  `json:"status"`     // idle | running | done | aborted | failed
-	Done      int     `json:"done"`       // 已完成数
-	Total     int     `json:"total"`      // 总数
-	Elapsed   float64 `json:"elapsed_s"`  // 已耗时（秒）
-	ETA       float64 `json:"eta_s"`      // 预计剩余（秒）
-	Funnel    Funnel  `json:"funnel"`     // 实时漏斗
-	StartedAt int64   `json:"started_at"` // Unix 秒；0 表示尚未开始
-	ErrorMsg  string  `json:"error,omitempty"`
+	Phase   string  `json:"phase"`     // idle | scan | speed
+	Status  string  `json:"status"`    // idle | running | done | aborted | failed
+	Done    int     `json:"done"`      // 已完成数
+	Total   int     `json:"total"`     // 总数
+	Elapsed float64 `json:"elapsed_s"` // 已耗时（秒）
+	ETA     float64 `json:"eta_s"`     // 预计剩余（秒）
+	Funnel  Funnel  `json:"funnel"`    // 实时漏斗
+	// Stages 是流水线各阶段的统计；任务体不报阶段时为空。
+	Stages    []StageStat `json:"stages,omitempty"`
+	StartedAt int64       `json:"started_at"` // Unix 秒；0 表示尚未开始
+	ErrorMsg  string      `json:"error,omitempty"`
 }
 
 // IdleState 返回空闲态快照，用于服务启动时以及任务结束后复位。

@@ -18,6 +18,7 @@ import type {
   DiagReport,
   Funnel,
   GeoStatus,
+  StageStat,
   ServerStatus,
   SourceStatus,
   TaskState,
@@ -59,6 +60,7 @@ export interface TaskProgress {
   eta: number
   elapsed: number
   funnel: Funnel | null
+  stages: StageStat[] | null
 }
 
 /**
@@ -82,6 +84,40 @@ function toFunnel(raw: unknown): Funnel | null {
   }
 }
 
+/**
+ * 把进度载荷里的阶段统计转成界面形状。
+ *
+ * 逐字段校验而不是整块 cast：一个字段类型不对就让整条阶段卡消失，
+ * 比渲染出 NaN 更容易发现是后端改了形状。
+ */
+function toStages(raw: unknown): StageStat[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: StageStat[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const value = item as Record<string, unknown>
+    if (
+      typeof value.name !== 'string' ||
+      typeof value.total !== 'number' ||
+      typeof value.ok !== 'number' ||
+      typeof value.failed !== 'number' ||
+      typeof value.done !== 'number'
+    ) {
+      continue
+    }
+    out.push({
+      name: value.name,
+      total: value.total,
+      ok: value.ok,
+      failed: value.failed,
+      skipped: typeof value.skipped === 'number' ? value.skipped : 0,
+      done: value.done,
+      elapsed_s: typeof value.elapsed_s === 'number' ? value.elapsed_s : 0,
+    })
+  }
+  return out
+}
+
 export const useTaskStore = defineStore('task', () => {
   const connection = ref<ConnectionState>('connecting')
   const retryInSeconds = ref(0)
@@ -103,6 +139,9 @@ export const useTaskStore = defineStore('task', () => {
   const liveElapsed = computed(() => live.value?.elapsed ?? state.value.elapsed_s)
 
   const funnel = computed<Funnel>(() => live.value?.funnel ?? state.value.funnel)
+
+  // 与漏斗同一套回退：重连时只有 state 全量下发，progress 可能还是空的。
+  const stages = computed<StageStat[]>(() => live.value?.stages ?? state.value.stages ?? [])
 
   const percent = computed(() => {
     const total = liveTotal.value
@@ -140,6 +179,7 @@ export const useTaskStore = defineStore('task', () => {
       eta: payload.eta ?? 0,
       elapsed: payload.elapsed ?? 0,
       funnel: toFunnel(payload.funnel),
+      stages: toStages(payload.stages),
     }
   }
 
@@ -157,6 +197,7 @@ export const useTaskStore = defineStore('task', () => {
     running,
     phase,
     funnel,
+    stages,
     percent,
     liveDone,
     liveTotal,
