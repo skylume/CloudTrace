@@ -8,8 +8,7 @@
 import { computed } from 'vue'
 
 import { durationMsText, durationText, phaseText, t } from '@/i18n'
-import { useGeoStore } from '@/stores/geo'
-import { useTaskStore } from '@/stores/task'
+import { useGeoStore, useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 
 const props = defineProps<{
@@ -86,10 +85,6 @@ function cycleTheme(): void {
   // 走 store 的 setter 而不是直接赋值：它会同时写回服务端，否则下次拉配置
   // 就把这次切换覆盖掉了。
   ui.setTheme(order[(index + 1) % order.length] ?? 'system')
-}
-
-function toggleLang(): void {
-  ui.setLang(ui.lang === 'zh' ? 'en' : 'zh')
 }
 </script>
 
@@ -169,7 +164,6 @@ function toggleLang(): void {
         <circle cx="12" cy="12" r="3.5" />
       </svg>
     </button>
-    <button type="button" class="text-button" @click="toggleLang">{{ t('lang.switch') }}</button>
 
     <!--
       后台下载库文件：一条贴着顶栏下沿的细进度条。不占位置、不弹窗，也不阻断

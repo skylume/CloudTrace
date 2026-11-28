@@ -11,7 +11,7 @@
 import { computed, ref } from 'vue'
 
 import { t } from '@/i18n'
-import { useSystemStore } from '@/stores/system'
+import { useSystemStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 
 const system = useSystemStore()

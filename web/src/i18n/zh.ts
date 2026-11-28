@@ -44,8 +44,6 @@ export const zh = {
   'nav.collapseSidebar': '收起侧栏',
   'task.remaining': '剩 {value}',
   'geo.ready': '就绪',
-  'lang.switch': 'EN',
-  'palette.keys': '↑↓ 选择 · Enter 执行 · Esc 关闭',
   'common.unreachable': '不可达',
   'history.diff.added': '新增',
   'history.diff.removed': '消失',

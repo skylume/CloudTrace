@@ -10,7 +10,6 @@ import { computed, ref, watchEffect } from 'vue'
 
 import { sendCommand } from '@/api/client'
 import type { UIConfig } from '@/api/types'
-import { setLocale, type Locale } from '@/i18n'
 
 export type Theme = 'dark' | 'light' | 'system'
 export type FontScale = 'small' | 'medium' | 'large'
@@ -28,7 +27,6 @@ interface PersistedUI {
   density: Density
   animation: boolean
   contrast: boolean
-  lang: Locale
   /** 侧栏是否收起。窄屏下不用它，侧栏本来就走抽屉。 */
   navCollapsed: boolean
   /** 上次停留的页面，下次打开直接回去。 */
@@ -43,7 +41,6 @@ const DEFAULTS: PersistedUI = {
   density: 'auto',
   animation: true,
   contrast: false,
-  lang: 'zh',
   navCollapsed: false,
   activeView: 'scan',
   pageSize: 50,
@@ -102,11 +99,10 @@ export const useUIStore = defineStore('ui', () => {
   /**
    * 结果页当前是「结果」还是「测速」视图。
    *
-   * 放在 store 而不是页面里：命令面板的「完全测速」要能直接把用户带到测速视图，
-   * 而它拿不到页面的局部状态。不持久化——每次打开都从「结果」开始是合理的默认。
+   * 放在 store 而不是页面里：顶栏与其他页面要能直接把用户带到测速视图，
+   * 而它们拿不到页面的局部状态。不持久化——每次打开都从「结果」开始是合理的默认。
    */
   const resultView = ref<'result' | 'speed'>('result')
-  const lang = ref<Locale>(saved.lang)
   const navCollapsed = ref(saved.navCollapsed)
   const activeView = ref(saved.activeView)
 
@@ -167,7 +163,6 @@ export const useUIStore = defineStore('ui', () => {
     density.value = ui.density
     animation.value = ui.animation
     contrast.value = ui.contrast
-    lang.value = ui.lang
 
     settleInitialView()
   }
@@ -219,12 +214,6 @@ export const useUIStore = defineStore('ui', () => {
     persist({ theme: next })
   }
 
-  /** setLang 切换语言并写回服务端。 */
-  function setLang(next: Locale): void {
-    lang.value = next
-    persist({ lang: next })
-  }
-
   /**
    * setContrast 切换高对比度并写回服务端。
    *
@@ -251,7 +240,6 @@ export const useUIStore = defineStore('ui', () => {
     root.dataset.tableDensity = tableDensity.value
     root.dataset.animation = animation.value ? 'on' : 'off'
     root.dataset.contrast = contrast.value ? 'high' : 'normal'
-    setLocale(lang.value)
 
     const payload: PersistedUI = {
       theme: theme.value,
@@ -259,7 +247,6 @@ export const useUIStore = defineStore('ui', () => {
       density: density.value,
       animation: animation.value,
       contrast: contrast.value,
-      lang: lang.value,
       navCollapsed: navCollapsed.value,
       activeView: activeView.value,
       pageSize: pageSize.value,
@@ -282,7 +269,6 @@ export const useUIStore = defineStore('ui', () => {
     animation,
     contrast,
     resultView,
-    lang,
     navCollapsed,
     activeView,
     timeFormat,
@@ -295,7 +281,6 @@ export const useUIStore = defineStore('ui', () => {
     applyFromSettings,
     setDensity,
     setTheme,
-    setLang,
     setContrast,
     setPageSize,
   }

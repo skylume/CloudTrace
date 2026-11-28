@@ -93,7 +93,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: 'ui',
     fields: [
       { path: 'ui.theme', kind: 'enum', options: ['system', 'dark', 'light'], primary: true },
-      { path: 'ui.lang', kind: 'enum', options: ['zh', 'en'] },
       { path: 'ui.font_scale', kind: 'enum', options: ['small', 'medium', 'large'], primary: true },
       { path: 'ui.animation', kind: 'bool', primary: true },
       { path: 'ui.contrast', kind: 'bool', primary: true },
@@ -260,10 +259,8 @@ interface FieldText {
   hint: string
 }
 
-export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
-  zh: {
+export const settingsText: Record<string, FieldText> = {
     'ui.theme': { label: '主题', hint: '深色、浅色或跟随系统。切换即时生效，不需要刷新' },
-    'ui.lang': { label: '界面语言', hint: '中英文切换' },
     'ui.font_scale': { label: '字号', hint: '小 / 中 / 大三档，整体缩放而不破坏布局' },
     'ui.animation': { label: '动效', hint: '关掉后所有过渡与动画变为瞬时。系统设置了减少动效时同样会关' },
     'ui.contrast': { label: '高对比度', hint: '把文字推到极值、边框加实、去掉投影。与深浅主题独立，可叠加使用' },
@@ -365,138 +362,22 @@ export const settingsText: Record<'zh' | 'en', Record<string, FieldText>> = {
 
     'advanced.log_keep_days': { label: '日志保留天数', hint: '超过天数的日志会被清理' },
     'advanced.check_update': { label: '自动检查更新', hint: '启动时问一次有没有新版本，结果显示在日志里。关掉之后一次请求都不发' },
-  },
-  en: {
-    'ui.theme': { label: 'Theme', hint: 'Dark, light, or follow the system. Applies instantly' },
-    'ui.lang': { label: 'Language', hint: 'Switch between Chinese and English' },
-    'ui.font_scale': { label: 'Font size', hint: 'Small / medium / large, scaled globally without breaking layout' },
-    'ui.animation': { label: 'Animations', hint: 'Turning this off makes every transition instant. Also honours reduced-motion' },
-    'ui.contrast': { label: 'High contrast', hint: 'Pushes text to the extremes, hardens borders and drops shadows. Independent of dark/light' },
-    'ui.adaptive_enabled': { label: 'Smart adaptation', hint: 'Adjusts parameters to your network. Fills blanks only, never overwrites your values' },
-    'ui.close_to_tray': { label: 'Minimise to tray on close', hint: 'Closing the window keeps it running in the background; use "Quit" in the tray menu to exit' },
-    'ui.adaptive_allow_preset': { label: 'Adaptation may change parameters', hint: 'When off, adaptation suggests instead of changing parameters' },
-
-    'scan.workers': {
-      label: 'Concurrency',
-      hint: 'How many addresses at once. 50-100 on weak networks; above 300 strains the router. The ceiling comes from "Concurrency ceiling"',
-    },
-    'scan.sample_max': { label: 'Max addresses to scan', hint: 'How many addresses to pick from the sources. 500 is enough; 5000 is thorough but slower' },
-    'scan.latency_threshold': { label: 'Latency ceiling', hint: 'Nodes above this latency are dropped' },
-    'scan.ping_times': { label: 'Ping count', hint: 'Probes per address. 0 means automatic' },
-    'scan.port': { label: 'Default port', hint: '443 by default. 2053 / 2083 are steadier on some networks' },
-    'scan.timeout_ms': { label: 'Probe timeout', hint: 'How long one probe waits before failing' },
-    'scan.retry': { label: 'Probe retries', hint: 'Retries after a single address fails to respond' },
-    'scan.mode': { label: 'Probe mode', hint: 'TCPing is faster; HTTPing is closer to real traffic but relaxes thresholds' },
-    'scan.two_phase': { label: 'Two-phase scan', hint: 'Coarse pass first, then a fine pass on survivors. Faster' },
-    'scan.node_check': {
-      label: 'Node details and precheck',
-      hint: 'Records region and operator; "Record and precheck" also re-confirms each node is alive before the speed test. Off sends far fewer requests and is much faster',
-    },
-
-    'speed.concurrency': { label: 'Test concurrency', hint: 'How many downloads at once, 16 max. Too many triggers rate limits and skews the numbers' },
-    'speed.target_qualified': { label: 'Stop after N qualified', hint: 'Ends the run once this many nodes pass' },
-    'speed.min_speed': { label: 'Minimum speed', hint: 'Below this a node does not qualify' },
-    'speed.url_mode': { label: 'Test source', hint: 'Auto picks by your ISP; you can also pin the official source or a custom URL' },
-    'speed.custom_url': {
-      label: 'Custom test URL',
-      hint: 'Only used when the source is set to custom. A real service URL or a node share page measures closer to what you actually get',
-    },
-    'speed.download_duration_s': { label: 'Test duration', hint: 'How long each node downloads' },
-    'speed.breaker_429': { label: 'Rate-limit breaker', hint: 'Stop after this many consecutive rate limits. 1 stops on the first one' },
-
-    'geo.asn_source': { label: 'ASN source', hint: 'iptoasn needs no account and is small; GeoLite2 is faster but larger. Off hides operator info' },
-    'geo.asn_db_path': { label: 'Database location', hint: 'A directory or a file. A manually placed file takes precedence' },
-    'geo.asn_auto_update': { label: 'Auto-update ASN database', hint: 'When off, no requests are made and the local copy is used as-is' },
-    'geo.asn_update_interval_days': { label: 'Update interval (days)', hint: 'Update in the background after this many days. 0 means manual only' },
-    'geo.geo_warn_enabled': { label: 'Location mismatch warning', hint: 'Shows a banner when your exit does not look domestic. Never blocks a task' },
-    'geo.filter_asn': { label: 'Operator filter', hint: 'Only show nodes from certain operators. Empty means no filter' },
-
-    'history.keep_count': { label: 'Keep count', hint: 'How many records to keep. Starred ones do not count' },
-    'history.keep_mode': { label: 'Retention mode', hint: 'Clean up by count or by age' },
-    'history.keep_days': { label: 'Keep days', hint: 'Used when retention mode is by age' },
-    'history.auto_save': { label: 'Auto-save', hint: 'Save a record automatically when a task finishes' },
-
-    'export.default_format': { label: 'Default format', hint: 'CSV includes a BOM so Excel opens it correctly' },
-
-    'server.port': { label: 'Panel port', hint: 'Requires a restart. Older builds used 18543; this one standardises on 17443' },
-    'server.bind': { label: 'Listen address', hint: 'Loopback keeps it to this machine. LAN lets any device on the network in, so set an access password in the service panel below first' },
-    'server.session_ttl_min': { label: 'Session lifetime (minutes)', hint: 'How long a sign-in lasts before the password is needed again' },
-    'server.open_browser': { label: 'Open browser on start', hint: 'Saves typing the address when double-clicking. Use --no-browser during development' },
-    'server.autostart': { label: 'Start on login', hint: 'Launches itself when you sign in, so you do not have to open it by hand' },
-
-    'notify.on_done': { label: 'Notify on completion', hint: 'One notification when a scan or speed test finishes' },
-    'notify.on_fail': { label: 'Notify on failure', hint: 'Notify when a task errors out' },
-    'notify.channels': {
-      label: 'Notify via',
-      hint: 'Pick any. Browser notifications need permission and are not asked for again after a denial; tray is desktop only',
-    },
-
-    'advanced.log_level': { label: 'Log level', hint: 'Use debug when troubleshooting. Requires a restart' },
-
-    'scan.source_mode': { label: 'Source mode', hint: 'Official ranges, custom sources, or both. The scan page sets this for you' },
-    'scan.allowed_regions': { label: 'Region allowlist', hint: 'Keep only nodes in these regions; empty means no limit. Unknown regions are kept' },
-    'scan.blocked_regions': { label: 'Region blocklist', hint: 'Drop nodes in these regions' },
-    'scan.pre_filter_ports': { label: 'Pre-filter ports', hint: 'Drop candidates on these ports before any TCP probe, saving time' },
-
-    'speed.interval_ms': { label: 'Test interval', hint: 'Wait this long between targets to reduce the chance of being rate limited' },
-    'speed.max_download_mb': { label: 'Max download per node', hint: 'Stop testing a node past this amount. 0 means unlimited' },
-    'speed.per_region_topn': { label: 'Per-region quota', hint: 'Take the top N from each region. 0 disables the per-region split' },
-    'speed.weight_speed': { label: 'Score weight · speed', hint: 'How much speed counts in the overall score' },
-    'speed.weight_latency': { label: 'Score weight · latency', hint: 'How much latency counts in the overall score' },
-    'speed.weight_jitter': { label: 'Score weight · jitter', hint: 'How much jitter counts. High jitter means inconsistent speed' },
-
-    'source.merge_strategy': { label: 'Merge strategy', hint: 'Union takes every address; intersect keeps only those present in all sources' },
-    'source.timeout_ms': { label: 'Fetch timeout', hint: 'How long a single remote source may take' },
-    'source.retry': { label: 'Source fetch retries', hint: 'Retries after a remote address fails to load' },
-    'source.retry_interval_ms': { label: 'Retry interval', hint: 'Wait between retries' },
-    'net.use_tls': { label: 'TLS probing', hint: 'Auto infers from the port: 443 and 8443 use TLS, others do not' },
-    'net.ip_version': { label: 'Address family', hint: 'IPv4 only, IPv6 only, or both' },
-    'net.max_workers': {
-      label: 'Concurrency ceiling',
-      hint: 'The largest concurrency the panel will accept. 2000 by default; lower it to guard yourself, raise it to lift the ceiling. It is your own limit, not a system restriction',
-    },
-    'net.proxy': { label: 'HTTP proxy', hint: 'Used for official ranges and remote sources. Empty means direct' },
-    'net.force_direct': { label: 'Force direct', hint: 'Ignore proxy settings from the environment. Node probing is always direct' },
-    'net.custom_dns': { label: 'Custom DNS', hint: 'Resolvers used for hostnames; empty uses the system ones' },
-    'net.user_agent': { label: 'Request User-Agent', hint: 'UA used when fetching sources. Useful when a source blocks the default' },
-
-    'history.auto_dedup': { label: 'Auto dedupe', hint: 'Merge records saved with the same parameters in a short window, so the list is not flooded' },
-    'data.dir': { label: 'Data directory', hint: 'History, cache and the ASN database live here. Empty follows portable mode' },
-    'data.portable': { label: 'Portable mode', hint: 'Keep data next to the binary so copying the folder moves everything' },
-
-    'export.default_fields': { label: 'Default field set', hint: 'The field set pre-selected when exporting' },
-    'export.filename_template': { label: 'Filename template', hint: 'Placeholders available: time, type, count' },
-
-    'advanced.log_keep_days': { label: 'Log retention (days)', hint: 'Logs older than this are cleaned up' },
-    'advanced.check_update': { label: 'Check for updates', hint: 'Look for a newer version on startup' },
-  },
 }
 
 /** 取一个字段的文案；缺文案时退回键本身，至少能看出是哪一项。 */
-export function fieldText(path: string, locale: 'zh' | 'en'): FieldText {
-  return settingsText[locale][path] ?? { label: path, hint: '' }
+export function fieldText(path: string): FieldText {
+  return settingsText[path] ?? { label: path, hint: '' }
 }
 
 /** 组名。 */
-export const groupText: Record<'zh' | 'en', Record<string, string>> = {
-  zh: {
-    ui: '界面',
-    scan: '扫描',
-    speed: '测速',
-    network: '网络与来源',
-    data: '数据与归属地',
-    export: '导出与提醒',
-    service: '服务与高级',
-  },
-  en: {
-    ui: 'Interface',
-    scan: 'Scan',
-    speed: 'Speed test',
-    network: 'Network & sources',
-    data: 'Data & geo',
-    export: 'Export & alerts',
-    service: 'Service & advanced',
-  },
+export const groupText: Record<string, string> = {
+  ui: '界面',
+  scan: '扫描',
+  speed: '测速',
+  network: '网络与来源',
+  data: '数据与归属地',
+  export: '导出与提醒',
+  service: '服务与高级',
 }
 
 /**
@@ -594,10 +475,10 @@ export function buildPatchMany(pairs: Record<string, unknown>): Record<string, u
  * 的开关」却记不住它叫「限速熔断阈值」就搜不到；路径是给按配置文件排查的人
  * 准备的；说明里往往写着代价与适用场景，正是要找的东西。
  */
-export function fieldMatches(field: SettingField, query: string, locale: 'zh' | 'en'): boolean {
+export function fieldMatches(field: SettingField, query: string): boolean {
   const needle = query.trim().toLowerCase()
   if (needle === '') return true
-  const text = fieldText(field.path, locale)
+  const text = fieldText(field.path)
   return [field.path, text.label, text.hint].some((value) => value.toLowerCase().includes(needle))
 }
 

@@ -9,20 +9,17 @@ import { EVT, onEvent, sendCommand, setSendFailureHandler, wsClient } from '@/ap
 import { t } from '@/i18n'
 import { notifyTaskEnd, type NotifyOutcome, type NotifyPrefs } from '@/utils/notify'
 
-import { useAdaptiveStore, type AdaptiveNotice } from './adaptive'
-import { useDiagStore } from './diag'
-import { useExportStore } from './export'
-import { useGeoStore } from './geo'
+import { useScanStore, type AdaptiveNotice } from './scan'
+import { useDiagStore } from './conn'
+import { useExportStore } from './results'
+import { useGeoStore } from './conn'
 import { useHistoryStore, type HistoryFilter, type LoadedHistory } from './history'
-import { useLogStore } from './log'
-import { useLegacyPresetsStore } from './legacyPresets'
-import { useMigrateStore } from './migrate'
 import { useResultsStore } from './results'
-import { useSystemStore } from './system'
+import { useSystemStore } from './conn'
 import { clearSnapshot, saveSnapshot } from '@/utils/sessionSnapshot'
 import { useSettingsStore } from './settings'
-import { useSpeedStore, type BreakerNotice, type SourceDecision } from './speed'
-import { useTaskStore } from './task'
+import { useSpeedStore, type BreakerNotice, type SourceDecision } from './results'
+import { useTaskStore } from './conn'
 import { useUIStore } from './ui'
 
 import { CMD } from '@/api/protocol'
@@ -141,15 +138,6 @@ function syncSessionSnapshot(state: TaskState): void {
   }
 }
 
-/** refreshLegacyPresets 拉一次旧档位库的状态。 */
-export function refreshLegacyPresets(): void {
-  useLegacyPresetsStore().refresh()
-}
-
-/** refreshMigrate 拉一次旧版数据的迁移状态。 */
-export function refreshMigrate(): void {
-  useMigrateStore().refresh()}
-
 /**
  * wireEvents 建立事件 → store 的映射，并处理重连后的状态恢复。
  *
@@ -163,14 +151,11 @@ export function wireEvents(): void {
   const history = useHistoryStore()
   const geo = useGeoStore()
   const ui = useUIStore()
-  const log = useLogStore()
+  const scan = useScanStore()
   const speed = useSpeedStore()
   const exporter = useExportStore()
   const diag = useDiagStore()
   const system = useSystemStore()
-  const adaptive = useAdaptiveStore()
-  const migrate = useMigrateStore()
-  const legacy = useLegacyPresetsStore()
 
   setSendFailureHandler((type) => {
     ui.pushToast({ kind: 'warn', message: t('conn.lost') })
@@ -184,8 +169,8 @@ export function wireEvents(): void {
   wsClient().onOpen(() => {
     // 首连与每次重连都会走到这里。
     refreshSettings()
-    refreshMigrate()
-    refreshLegacyPresets()
+    settings.refreshMigrate()
+    settings.refreshLegacy()
     refreshHistory()
     refreshGeo()
     system.refresh()
@@ -196,7 +181,7 @@ export function wireEvents(): void {
     const previous = task.state
     syncSessionSnapshot(next)
     if (next.phase !== previous.phase || next.status !== previous.status) {
-      log.push(t('task.' + next.status) + ' · ' + t('task.phase.' + next.phase))
+      scan.push(t('task.' + next.status) + ' · ' + t('task.phase.' + next.phase))
     }
     if (previous.status === 'running') {
       // 跑完就呈现结果：停在扫描页的话，用户得自己想到「结果在另一个页面」，
@@ -235,20 +220,20 @@ export function wireEvents(): void {
   onEvent(EVT.serverRestart, () => {
     // 回执到了就说明新进程正在起来，连接随后会断——这里不做别的，
     // 重连之后 system.refresh 会把新状态拉回来。
-    log.push(t('settings.restarting'))
+    scan.push(t('settings.restarting'))
   })
   onEvent(EVT.diag, (data) => diag.applyReport(data as DiagReport))
   onEvent(EVT.diagExport, (data) => diag.applyExport(data as DiagExportResult))
 
   onEvent(EVT.adaptiveApplied, (data) => {
     const notice = data as AdaptiveNotice
-    adaptive.applyApplied(notice)
+    scan.applyApplied(notice)
     // 「智能推荐」的结果也是走这条事件回来的，收到就说明那一次结束了。
-    adaptive.recommendSettled()
+    scan.recommendSettled()
     // 日志里也留一条：徽标会随参数变化消失，而「它什么时候改过」之后还得能查到。
-    log.push(t('adaptive.appliedLog', { key: notice.key, from: notice.from, to: notice.to }))
+    scan.push(t('adaptive.appliedLog', { key: notice.key, from: notice.from, to: notice.to }))
   })
-  onEvent(EVT.adaptiveSuggestion, (data) => adaptive.applySuggestion(data as AdaptiveNotice))
+  onEvent(EVT.adaptiveSuggestion, (data) => scan.applySuggestion(data as AdaptiveNotice))
 
   onEvent(EVT.speedSource, (data) => speed.applySource(data as SourceDecision))
 
@@ -256,18 +241,18 @@ export function wireEvents(): void {
     const notice = data as BreakerNotice
     speed.applyBreaker(notice)
     // 日志里也留一条：提示条会被关掉，而「刚才为什么停了」之后还得能查到。
-    log.push(notice.message, 'warn')
+    scan.push(notice.message, 'warn')
   })
 
   onEvent(EVT.settings, (data) => settings.apply(data as SettingsPayload))
-  onEvent(EVT.migrate, (data) => migrate.apply(data as MigrateStatus))
-  onEvent(EVT.legacyPresets, (data) => legacy.apply(data as LegacyPresetsStatus))
+  onEvent(EVT.migrate, (data) => settings.applyMigrate(data as MigrateStatus))
+  onEvent(EVT.legacyPresets, (data) => settings.applyLegacy(data as LegacyPresetsStatus))
   onEvent(EVT.geo, (data) => {
     const next = data as GeoStatus
     const before = geo.status?.status.records ?? 0
     geo.apply(next)
     if (next.status.records !== before) {
-      log.push(t('geo.records') + ' ' + String(next.status.records))
+      scan.push(t('geo.records') + ' ' + String(next.status.records))
     }
   })
 
@@ -297,7 +282,7 @@ export function wireEvents(): void {
     const change = data as HistoryChangePayload
     // 变更事件只带 id 与动作，列表要重新拉一次：本地拼不出准确的顺序，
     // 也算不出保留策略会把哪一条挤掉。
-    log.push(t('history.title') + ' · ' + change.action)
+    scan.push(t('history.title') + ' · ' + change.action)
     refreshHistory()
   })
 
@@ -305,12 +290,12 @@ export function wireEvents(): void {
     const payload = data as ErrorPayload
     const message = errorText(payload)
     ui.pushToast({ kind: 'bad', message })
-    log.push(message, 'bad')
+    scan.push(message, 'bad')
     // 出错时也要解除等待态，否则按钮会一直转下去。
     exporter.fail()
-    adaptive.recommendSettled()
-    migrate.fail()
-    legacy.fail()
+    scan.recommendSettled()
+    settings.failMigrate()
+    settings.failLegacy()
   })
 
   onEvent(EVT.health, (data) => settings.applyHealth(data as HealthReport))

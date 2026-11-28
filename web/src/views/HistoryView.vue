@@ -18,7 +18,7 @@ import { t } from '@/i18n'
 import { PARAM_WIRE_KEYS } from '@/i18n/params'
 import type { HistoryRecord } from '@/api/types'
 import { useHistoryStore } from '@/stores/history'
-import { useRerunStore } from '@/stores/rerun'
+import { useScanStore } from '@/stores/scan'
 import { useResultsStore } from '@/stores/results'
 import { useUIStore } from '@/stores/ui'
 import { formatLatency } from '@/utils/latency'
@@ -26,7 +26,7 @@ import { formatLatency } from '@/utils/latency'
 const history = useHistoryStore()
 const results = useResultsStore()
 const ui = useUIStore()
-const rerunStore = useRerunStore()
+const scan = useScanStore()
 
 const keyword = ref('')
 const starredOnly = ref(false)
@@ -160,7 +160,7 @@ function paramsFromSnapshot(raw: unknown): Record<string, number | boolean> {
 /** 以此参数重跑：把快照交给扫描页，然后切过去。 */
 function rerun(record: HistoryRecord): void {
   const snapshot = (record.params ?? {}) as Record<string, unknown>
-  rerunStore.request({
+  scan.request({
     params: paramsFromSnapshot(record.params),
     customText: typeof snapshot.custom_source === 'string' ? snapshot.custom_source : '',
   })

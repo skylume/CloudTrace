@@ -8,10 +8,10 @@
 import { computed } from 'vue'
 
 import { t } from '@/i18n'
-import { formatLogTime, useLogStore } from '@/stores/log'
+import { formatLogTime, useScanStore } from '@/stores/scan'
 import { useUIStore } from '@/stores/ui'
 
-const log = useLogStore()
+const log = useScanStore()
 const ui = useUIStore()
 
 const lines = computed(() => log.lines.slice(-60))

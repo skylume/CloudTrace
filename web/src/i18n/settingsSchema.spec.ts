@@ -35,19 +35,16 @@ function fieldOf(path: string): SettingField {
 const declared = SETTING_GROUPS.flatMap((group) => group.fields.map((field) => field.path))
 
 describe('设置项声明', () => {
-  it('每一项在中英文里都有文案', () => {
+  it('每一项都有文案', () => {
     for (const path of declared) {
-      expect(settingsText.zh[path], `中文缺文案：${path}`).toBeDefined()
-      expect(settingsText.en[path], `英文缺文案：${path}`).toBeDefined()
+      expect(settingsText[path], `缺文案：${path}`).toBeDefined()
     }
   })
 
   it('文案里没有已经不存在的设置项', () => {
     const known = new Set(declared)
-    for (const locale of ['zh', 'en'] as const) {
-      for (const path of Object.keys(settingsText[locale])) {
-        expect(known.has(path), `${locale} 里有孤儿文案：${path}`).toBe(true)
-      }
+    for (const path of Object.keys(settingsText)) {
+      expect(known.has(path), `孤儿文案：${path}`).toBe(true)
     }
   })
 
@@ -261,16 +258,16 @@ describe('常用区与生效时机', () => {
 
 describe('设置搜索', () => {
   it('空查询命中全部', () => {
-    expect(allFields.every((field) => fieldMatches(field, '  ', 'zh'))).toBe(true)
+    expect(allFields.every((field) => fieldMatches(field, '  '))).toBe(true)
   })
 
   it('按名称命中', () => {
-    const hits = allFields.filter((field) => fieldMatches(field, '延迟', 'zh'))
+    const hits = allFields.filter((field) => fieldMatches(field, '延迟'))
     expect(hits.map((field) => field.path)).toContain('scan.latency_threshold')
   })
 
   it('按配置路径命中，且只命中这一项', () => {
-    const hits = allFields.filter((field) => fieldMatches(field, 'speed.target_qualified', 'zh'))
+    const hits = allFields.filter((field) => fieldMatches(field, 'speed.target_qualified'))
     expect(hits.map((field) => field.path)).toEqual(['speed.target_qualified'])
   })
 
@@ -278,9 +275,9 @@ describe('设置搜索', () => {
    * 按说明命中：用户记得的是「那个会让扫描变慢的开关」，不是它的名字。
    */
   it('按说明命中', () => {
-    const hint = settingsText.zh['scan.timeout_ms']?.hint ?? ''
+    const hint = settingsText['scan.timeout_ms']?.hint ?? ''
     expect(hint.length).toBeGreaterThan(1)
-    const hits = allFields.filter((field) => fieldMatches(field, hint.slice(0, 2), 'zh'))
+    const hits = allFields.filter((field) => fieldMatches(field, hint.slice(0, 2)))
     expect(hits.map((field) => field.path)).toContain('scan.timeout_ms')
   })
 

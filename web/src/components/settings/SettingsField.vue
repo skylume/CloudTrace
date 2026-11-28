@@ -26,7 +26,6 @@ const props = defineProps<{
    * 「网卡够好、路由够强」的人没法用。
    */
   warning?: { reason: string }
-  locale: 'zh' | 'en'
   /** 搜索词：命中的字标出来，说明里命中时把说明提到行下。 */
   highlight?: string
 }>()
@@ -48,7 +47,7 @@ const emit = defineEmits<{
   (event: 'reset', path: string): void
 }>()
 
-const text = computed(() => fieldText(props.field.path, props.locale))
+const text = computed(() => fieldText(props.field.path))
 const hint = computed(() => (text.value.hint === '' ? t('common.none') : text.value.hint))
 const labelParts = computed(() => highlightParts(text.value.label, props.highlight ?? ''))
 

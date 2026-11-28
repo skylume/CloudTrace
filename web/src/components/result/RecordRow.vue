@@ -15,7 +15,7 @@ import SignalBar from '@/components/ui/SignalBar.vue'
 import { t } from '@/i18n'
 import type { FieldDef, IPRecord } from '@/api/types'
 import { recordKey, useResultsStore } from '@/stores/results'
-import { useFieldsStore } from '@/stores/fields'
+import { useFieldsStore } from '@/stores/results'
 import { formatField, renderSpec } from '@/utils/recordFormat'
 
 const props = defineProps<{

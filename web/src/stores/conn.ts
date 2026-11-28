@@ -1,18 +1,27 @@
 /**
- * 任务状态：连接状态、当前任务快照、实时进度。
+ * 连接与环境：任务状态、服务端事实、网络诊断、ASN 与地理。
  *
- * 权威状态只有一处：后端的 `state` 事件（首连与每次变更全量下发）。但运行
- * 期间后端只按节流发 `progress`、不重发 `state`——所以进度条、计时器、剩余
- * 时间与漏斗都必须读实时值。只读快照的话，整场任务会停在 0，结束时直接跳满。
- *
- * 实时值只在 running 时覆盖快照，任务一结束就回到快照：断线重连之后进度与
- * 状态不会对不上。
+ * 这四块同源——都是「此刻连着的这个后端是什么样」，都在连接建立后拉一次。
+ * 放在一个模块里是为了改一处就能看到全部，而不是为了共用一份 state：它们各自
+ * 是独立的 store，名字与职责都不混。
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import { CMD } from '@/api/protocol'
+import { sendCommand } from '@/api/client'
+import { api } from '@/api/rest'
 import type { ProgressPayload, TaskDonePayload } from '@/api/protocol'
-import type { Funnel, TaskState } from '@/api/types'
+import type {
+  AuthStatus,
+  DiagExportResult,
+  DiagReport,
+  Funnel,
+  GeoStatus,
+  ServerStatus,
+  SourceStatus,
+  TaskState,
+} from '@/api/types'
 import type { ConnectionState } from '@/api/ws'
 
 /** 空闲快照。首连之前用它占位，避免各处判空。 */
@@ -158,4 +167,141 @@ export const useTaskStore = defineStore('task', () => {
     applyOutcome,
     setConnection,
   }
+})
+
+export const useSystemStore = defineStore('system', () => {
+  /** 内置官方网段的段数。0 表示还没拿到。 */
+  const officialV4 = ref(0)
+  const officialV6 = ref(0)
+  const server = ref<ServerStatus | null>(null)
+  const auth = ref<AuthStatus>({ password_set: false, legacy: false })
+  /** 正在重启：连接马上会断，界面要给出「在重启」而不是「掉线了」。 */
+  const restarting = ref(false)
+
+  function refresh(): void {
+    sendCommand(CMD.sourceStatus)
+    sendCommand(CMD.serverStatus)
+    sendCommand(CMD.authStatus)
+  }
+
+  function applySource(status: SourceStatus): void {
+    officialV4.value = status.official_v4
+    officialV6.value = status.official_v6
+  }
+
+  function applyServer(status: ServerStatus): void {
+    server.value = status
+  }
+
+  function applyAuth(status: AuthStatus): void {
+    auth.value = status
+  }
+
+  /**
+   * 重启程序。
+   *
+   * 回执先到、连接后断，所以这里只负责把按钮置为「重启中」；真正的刷新由
+   * 重连后的 refresh 完成。
+   */
+  function restart(): boolean {
+    restarting.value = true
+    return sendCommand(CMD.serverRestart, {})
+  }
+
+  /**
+   * 设置访问密码。
+   *
+   * 明文只走这一趟：服务端收到就加盐哈希，之后再也拿不回来。所以界面上不做
+   * 「回填已设的密码」这种事——它做不到，也不该做。
+   */
+  function setPassword(password: string): boolean {
+    return sendCommand(CMD.authSetPassword, { password })
+  }
+
+  return {
+    officialV4,
+    officialV6,
+    server,
+    auth,
+    restarting,
+    refresh,
+    applySource,
+    applyServer,
+    applyAuth,
+    restart,
+    setPassword,
+  }
+})
+
+export const useDiagStore = defineStore('diag', () => {
+  const report = ref<DiagReport | null>(null)
+  /** 诊断进行中。四项检查最坏要十几秒，必须让用户看见「在跑」。 */
+  const running = ref(false)
+  const exporting = ref(false)
+
+  function run(): boolean {
+    running.value = true
+    const ok = sendCommand(CMD.diagRun, {})
+    if (!ok) running.value = false
+    return ok
+  }
+
+  function applyReport(next: DiagReport): void {
+    report.value = next
+    running.value = false
+  }
+
+  /**
+   * 导出诊断包。
+   *
+   * 把手上这份报告一起发过去：服务端不留诊断结果，导出的是用户此刻看到的
+   * 那一份。没跑过诊断也能导，包里会写明「本次没有跑诊断」。
+   */
+  function exportBundle(): boolean {
+    exporting.value = true
+    const ok = sendCommand(CMD.diagExport, { report: report.value })
+    if (!ok) exporting.value = false
+    return ok
+  }
+
+  function applyExport(result: DiagExportResult): void {
+    exporting.value = false
+    if (result.url) api.download(result.url, result.name)
+  }
+
+  /** 后端报错时解除等待，否则按钮会一直转下去。 */
+  function fail(): void {
+    running.value = false
+    exporting.value = false
+  }
+
+  return { report, running, exporting, run, applyReport, exportBundle, applyExport, fail }
+})
+
+export const useGeoStore = defineStore('geo', () => {
+  const status = ref<GeoStatus | null>(null)
+  /** 用户点过「不再提示」之后本次会话不再显示。 */
+  const warningDismissed = ref(false)
+
+  const loaded = computed(() => status.value?.status.loaded ?? false)
+  const quickFilters = computed(() => status.value?.quick_filters ?? [])
+  const warning = computed(() => {
+    if (warningDismissed.value) return null
+    return status.value?.warning ?? null
+  })
+
+  function apply(next: GeoStatus): void {
+    const previousCountry = status.value?.warning?.country
+    status.value = next
+    // 换了一条新的提示就重新显示：上一次的「不再提示」只对那一条生效。
+    if (next.warning?.country !== previousCountry) {
+      warningDismissed.value = false
+    }
+  }
+
+  function dismissWarning(): void {
+    warningDismissed.value = true
+  }
+
+  return { status, loaded, quickFilters, warning, apply, dismissWarning }
 })

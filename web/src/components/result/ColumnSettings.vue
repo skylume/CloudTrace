@@ -11,7 +11,7 @@
 import { computed, ref } from 'vue'
 
 import { t } from '@/i18n'
-import { useFieldsStore } from '@/stores/fields'
+import { useFieldsStore } from '@/stores/results'
 
 const fields = useFieldsStore()
 const open = ref(false)

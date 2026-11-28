@@ -322,7 +322,6 @@ export interface GeoStatus {
 /** 界面设置。字段与后端 Config 的 ui.* 一致。 */
 export interface UIConfig {
   theme: 'dark' | 'light' | 'system'
-  lang: 'zh' | 'en'
   font_scale: 'small' | 'medium' | 'large'
   density: 'auto' | 'simple' | 'advanced'
   table_density: 'compact' | 'normal' | 'comfortable'

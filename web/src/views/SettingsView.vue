@@ -27,7 +27,7 @@ import {
 } from '@/i18n/settingsSchema'
 import DiagPanel from '@/components/settings/DiagPanel.vue'
 import ServerPanel from '@/components/settings/ServerPanel.vue'
-import { useGeoStore } from '@/stores/geo'
+import { useGeoStore } from '@/stores/conn'
 import { useHistoryStore } from '@/stores/history'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
@@ -141,7 +141,7 @@ const groupsWithFields = computed(() =>
       .filter((field) => fieldVisible(field, values.value))
       .filter((field) =>
         searching.value
-          ? fieldMatches(field, query.value, ui.lang)
+          ? fieldMatches(field, query.value)
           : ui.showAdvanced || field.primary,
       ),
   })).filter((group) => group.fields.length > 0),
@@ -213,7 +213,7 @@ const values = computed<Record<string, unknown>>(
   () => (settings.values ?? {}) as unknown as Record<string, unknown>,
 )
 
-const groupLabel = (id: string) => groupText[ui.lang][id] ?? id
+const groupLabel = (id: string) => groupText[id] ?? id
 
 /**
  * 组合起来不合理的参数。
@@ -423,7 +423,6 @@ function applyFix(issue: { fix?: { key: string; value: unknown } }): void {
               :value="fieldValue(field, values)"
               :values="values"
               :warning="settings.warningOf(field.path)"
-              :locale="ui.lang"
               :highlight="query.trim()"
               @change="change"
               @reset="resetField"

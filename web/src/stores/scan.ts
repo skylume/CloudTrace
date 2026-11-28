@@ -1,13 +1,9 @@
 /**
- * 自适应状态。
+ * 扫描页的一组状态：可触发的动作、自适应调整、运行日志、重跑交接。
  *
- * 两类信息分开存：
- *   - **已调整**：值真的变了，界面要给徽标与「还原」，让用户看得见、改得回
- *   - **建议**：值没变（用户的显式选择），等他自己点「一键应用」
- *
- * 分开的理由是规格里那条红线：自动逻辑绝不覆盖用户的显式选择。两类混在一起
- * 存，迟早会有某处把建议当成已调整来处理，而那种错误是静默的——值被改了，
- * 用户不知道为什么。
+ * 它们都只服务扫描这一条线，生命周期也一致：页面挂载时注册动作、开始跑时
+ * 记日志、跑完把参数交给下一次重跑。拆成四个 store 只会让「扫描现在是什么
+ * 状态」散落在四处，合并之后一处就能看全。
  */
 import { CMD } from '@/api/protocol'
 import { defineStore } from 'pinia'
@@ -17,6 +13,9 @@ import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
 import { buildPatch } from '@/i18n/settingsSchema'
 
+/** 一个可被快捷键触发的动作。 */
+export type ActionHandler = () => void
+
 export interface AdaptiveNotice {
   key: string
   from: number
@@ -25,7 +24,52 @@ export interface AdaptiveNotice {
   reason: string
 }
 
-export const useAdaptiveStore = defineStore('adaptive', () => {
+export interface LogLine {
+  /** 毫秒时间戳，渲染时格式化成时分秒。 */
+  at: number
+  level: 'info' | 'warn' | 'bad'
+  text: string
+}
+
+/** 一次重跑请求：面板参数（驼峰）+ 来源。 */
+export interface RerunRequest {
+  /** 面板参数，键与 i18n 映射表一致（如 `workers`）。 */
+  params: Record<string, number | boolean>
+  /** 自定义文本来源。官方网段与远端地址取自配置，不随记录走。 */
+  customText: string
+}
+
+/** 保留的行数上限。日志是给人扫一眼的，不是归档。 */
+const MAX_LINES = 200
+
+export const useScanStore = defineStore('scan', () => {
+  // ---- 动作注册 ----
+  const startScan = ref<ActionHandler | null>(null)
+  const startSpeed = ref<ActionHandler | null>(null)
+
+  /** 页面挂载时注册；返回注销函数，页面卸载时调用。 */
+  function register(name: 'startScan' | 'startSpeed', handler: ActionHandler): () => void {
+    if (name === 'startScan') startScan.value = handler
+    else startSpeed.value = handler
+    return () => {
+      if (name === 'startScan') startScan.value = null
+      else startSpeed.value = null
+    }
+  }
+
+  function runStartScan(): boolean {
+    if (!startScan.value) return false
+    startScan.value()
+    return true
+  }
+
+  function runStartSpeed(): boolean {
+    if (!startSpeed.value) return false
+    startSpeed.value()
+    return true
+  }
+
+  // ---- 自适应 ----
   /** 被自动调整过的参数：key → 调整详情。 */
   const applied = ref<Record<string, AdaptiveNotice>>({})
   /** 只给建议、值未变的参数。 */
@@ -116,7 +160,39 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
     recommending.value = false
   }
 
+  // ---- 运行日志 ----
+  const lines = ref<LogLine[]>([])
+
+  function push(text: string, level: LogLine['level'] = 'info'): void {
+    const next = [...lines.value, { at: Date.now(), level, text }]
+    // 超出上限丢最旧的：滚动区里翻几百行以前的记录没有意义。
+    lines.value = next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next
+  }
+
+  function clear(): void {
+    lines.value = []
+  }
+
+  // ---- 重跑交接 ----
+  const pending = ref<RerunRequest | null>(null)
+
+  function request(payload: RerunRequest): void {
+    pending.value = payload
+  }
+
+  /** 取走待办。取过就清空：同一个请求不该被应用两次。 */
+  function take(): RerunRequest | null {
+    const value = pending.value
+    pending.value = null
+    return value
+  }
+
   return {
+    startScan,
+    startSpeed,
+    register,
+    runStartScan,
+    runStartSpeed,
     applied,
     suggestions,
     visibleSuggestions,
@@ -130,5 +206,18 @@ export const useAdaptiveStore = defineStore('adaptive', () => {
     recommend,
     recommendSettled,
     reasonText,
+    lines,
+    push,
+    clear,
+    pending,
+    request,
+    take,
   }
 })
+
+/** 把时间戳格式化成 HH:MM:SS，日志里不需要日期。 */
+export function formatLogTime(at: number): string {
+  const date = new Date(at)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}

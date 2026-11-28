@@ -33,7 +33,6 @@ beforeEach(() => {
 function config(overrides: Partial<UIConfig> = {}): UIConfig {
   return {
     theme: 'dark',
-    lang: 'zh',
     font_scale: 'medium',
     density: 'advanced',
     table_density: 'normal',
@@ -60,18 +59,6 @@ describe('主题与语言', () => {
     expect(sendCommand).toHaveBeenCalledWith('settings/update', {
       patch: { ui: { theme: 'dark' } },
       origins: { 'ui.theme': 'user' },
-    })
-  })
-
-  it('切语言时同时写回服务端', () => {
-    const ui = useUIStore()
-
-    ui.setLang('en')
-
-    expect(ui.lang).toBe('en')
-    expect(sendCommand).toHaveBeenCalledWith('settings/update', {
-      patch: { ui: { lang: 'en' } },
-      origins: { 'ui.lang': 'user' },
     })
   })
 
@@ -210,10 +197,9 @@ describe('服务端下发的界面配置', () => {
   it('全量替换本地状态', () => {
     const ui = useUIStore()
 
-    ui.applyFromSettings(config({ theme: 'light', lang: 'en', font_scale: 'large', animation: false }))
+    ui.applyFromSettings(config({ theme: 'light', font_scale: 'large', animation: false }))
 
     expect(ui.theme).toBe('light')
-    expect(ui.lang).toBe('en')
     expect(ui.fontScale).toBe('large')
     expect(ui.animation).toBe(false)
   })

@@ -7,17 +7,16 @@
  * 当前页面记在本地，下次打开直接回到上次停留的地方。
  */
 import { CMD } from '@/api/protocol'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import AppShell from '@/components/layout/AppShell.vue'
-import CommandPalette from '@/components/layout/CommandPalette.vue'
 import ToastStack from '@/components/ui/ToastStack.vue'
 import type { NavItem } from '@/components/layout/SideNav.vue'
 import { sendCommand } from '@/api/client'
 import { t } from '@/i18n'
-import { useActionStore } from '@/stores/actions'
+import { useScanStore } from '@/stores/scan'
 import { useResultsStore } from '@/stores/results'
-import { useTaskStore } from '@/stores/task'
+import { useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 import { useHotkeys } from '@/utils/hotkeys'
 
@@ -29,9 +28,7 @@ import SettingsView from '@/views/SettingsView.vue'
 const ui = useUIStore()
 const task = useTaskStore()
 const results = useResultsStore()
-const actions = useActionStore()
-
-const paletteOpen = ref(false)
+const scan = useScanStore()
 
 /** 复制选中的节点，格式为 ip:port。 */
 async function copySelected(): Promise<void> {
@@ -45,31 +42,18 @@ async function copySelected(): Promise<void> {
   }
 }
 
-/**
- * 全局快捷键。
- *
- * Esc 的优先级是「先关浮层、再停任务」：面板开着的时候按 Esc，用户想关的是
- * 面板，而不是把正在跑的任务停掉。
- */
+/** 全局快捷键。Esc 只在任务运行时停任务，没有别的浮层要关。 */
 useHotkeys([
-  { key: 'k', ctrl: true, allowInInput: true, handler: () => (paletteOpen.value = !paletteOpen.value) },
   {
     key: 'enter',
     ctrl: true,
     allowInInput: true,
-    handler: () => {
-      if (paletteOpen.value) return
-      actions.runStartScan()
-    },
+    handler: () => scan.runStartScan(),
   },
   {
     key: 'escape',
     allowInInput: true,
     handler: () => {
-      if (paletteOpen.value) {
-        paletteOpen.value = false
-        return
-      }
       if (task.running) sendCommand(CMD.scanStop)
     },
   },
@@ -109,6 +93,5 @@ const title = computed(() => t(`nav.${activeId.value}` as never))
     <component :is="activeComponent" />
   </AppShell>
   <!-- 浮层挂在外壳之外：它们是全局的，不该被内容区的滚动或布局影响。 -->
-  <CommandPalette v-model="paletteOpen" />
   <ToastStack />
 </template>

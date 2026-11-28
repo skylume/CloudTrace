@@ -7,11 +7,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
-import { UNREACHABLE, type IPRecord, type Summary } from '@/api/types'
+import { CMD } from '@/api/protocol'
+import { sendCommand } from '@/api/client'
+import { api } from '@/api/rest'
+import { UNREACHABLE, type ExportResult, type FieldDef, type IPRecord, type Summary } from '@/api/types'
 import { readPath } from '@/i18n/settingsSchema'
-import { DEFAULT_PRESET, useFieldsStore } from '@/stores/fields'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
+import { pickOutputTarget } from '@/utils/outputTarget'
 
 export type GroupBy = 'none' | 'colo' | 'region' | 'asn'
 
@@ -678,3 +681,344 @@ export function summarize(list: IPRecord[]): Summary {
     total: list.length,
   }
 }
+
+/** 列预设：三档，从「只想挑一个能用就走」到「排查线路问题」。 */
+export type ColumnPresetId = 'brief' | 'standard' | 'full'
+
+export interface ColumnPreset {
+  id: ColumnPresetId
+  /** 预设名走 i18n，这里只存键。 */
+  labelKey: string
+  keys: string[]
+}
+
+/**
+ * 三档列预设。
+ *
+ * `sent` / `recv` / `loc` / `trace` 不进预设：前三个是过程量，`trace` 体量大，
+ * 它们放进行内展开更合适——列宽是稀缺资源，展开是免费的。
+ */
+export const COLUMN_PRESETS: ColumnPreset[] = [
+  {
+    id: 'brief',
+    labelKey: 'columns.brief',
+    keys: ['ip', 'region_name', 'latency', 'loss', 'speed_mbps', 'score'],
+  },
+  {
+    id: 'standard',
+    labelKey: 'columns.standard',
+    keys: ['ip', 'region_name', 'colo', 'latency', 'latency_avg', 'jitter', 'loss', 'use_tls', 'speed_mbps', 'score'],
+  },
+  {
+    id: 'full',
+    labelKey: 'columns.full',
+    keys: [
+      'ip',
+      'region_name',
+      'colo',
+      'latency',
+      'latency_avg',
+      'latency_max',
+      'jitter',
+      'loss',
+      'use_tls',
+      'speed_mbps',
+      'score',
+      'asn',
+      'as_org',
+      'geo_warn',
+    ],
+  },
+]
+
+/** 列设置里可以勾选的键：预设里出现过的都算，其余靠「全部字段」补齐。 */
+export const DEFAULT_PRESET: ColumnPresetId = 'standard'
+
+/** 列宽的本地存储键。与界面偏好分开存：它是表格自己的事。 */
+const WIDTHS_KEY = 'cloudtrace.columnWidths'
+
+/** 可见列与预设的本地存储键。 */
+const COLUMNS_KEY = 'cloudtrace.columns'
+
+/** 列宽下限。再窄就看不出这一列是什么了。 */
+const MIN_COLUMN_WIDTH = 56
+
+/**
+ * 读回用户拖过的列宽。
+ *
+ * 只接受认得出的数字：这份记忆只是省一次拖动，里面混进一个坏值就让整张表
+ * 排版错乱的话，代价远大于收益。
+ */
+function loadWidths(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(WIDTHS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const out: Record<string, number> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= MIN_COLUMN_WIDTH) {
+        out[key] = value
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** 读回用户选过的列与档位。 */
+function loadColumns(): { presetId: ColumnPresetId | 'custom'; visibleKeys: string[] } {
+  const fallback = { presetId: DEFAULT_PRESET as ColumnPresetId | 'custom', visibleKeys: presetKeys(DEFAULT_PRESET) }
+  try {
+    const raw = localStorage.getItem(COLUMNS_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as { presetId?: unknown; visibleKeys?: unknown }
+    const keys = Array.isArray(parsed.visibleKeys)
+      ? parsed.visibleKeys.filter((item): item is string => typeof item === 'string')
+      : []
+    // 一列都不剩说明这份记忆坏了：空表格比「回到默认」更难解释。
+    if (keys.length === 0) return fallback
+    const preset = parsed.presetId
+    return {
+      presetId: preset === 'brief' || preset === 'standard' || preset === 'full' || preset === 'custom' ? preset : 'custom',
+      visibleKeys: keys,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function saveColumns(presetId: ColumnPresetId | 'custom', visibleKeys: string[]): void {
+  try {
+    localStorage.setItem(COLUMNS_KEY, JSON.stringify({ presetId, visibleKeys }))
+  } catch {
+    /* 隐私模式下写不进去，忽略即可 */
+  }
+}
+
+function presetKeys(id: ColumnPresetId): string[] {
+  return COLUMN_PRESETS.find((preset) => preset.id === id)?.keys ?? []
+}
+
+export const useFieldsStore = defineStore('fields', () => {
+  const fields = ref<FieldDef[]>([])
+  const loading = ref(false)
+  const error = ref('')
+
+  const stored = loadColumns()
+
+  /** 当前生效的可见列（按显示顺序）。 */
+  const visibleKeys = ref<string[]>(stored.visibleKeys)
+  const presetId = ref<ColumnPresetId | 'custom'>(stored.presetId)
+
+  /**
+   * 用户拖出来的列宽，按字段键存。
+   *
+   * 没记录过的列返回空字符串，交给浏览器按内容撑开——给十九个字段各写一个
+   * 拍脑袋的默认值，只会让「默认就不好看」变成常态。
+   */
+  const widths = ref<Record<string, number>>(loadWidths())
+
+  function widthOf(key: string): string {
+    const px = widths.value[key]
+    return px ? `${px}px` : ''
+  }
+
+  function setWidth(key: string, px: number): void {
+    widths.value = { ...widths.value, [key]: Math.max(MIN_COLUMN_WIDTH, Math.round(px)) }
+    try {
+      localStorage.setItem(WIDTHS_KEY, JSON.stringify(widths.value))
+    } catch {
+      /* 隐私模式下写不进去，忽略即可 */
+    }
+  }
+
+  /** 清掉全部自定义列宽，回到「按内容撑开」。 */
+  function resetWidths(): void {
+    widths.value = {}
+    try {
+      localStorage.removeItem(WIDTHS_KEY)
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  /** 按 key 快速取字段定义，渲染时用。 */
+  const byKey = computed(() => {
+    const map = new Map<string, FieldDef>()
+    for (const field of fields.value) map.set(field.key, field)
+    return map
+  })
+
+  /** 可见列对应的字段定义。后端没下发某个键时跳过，不让表格崩掉。 */
+  const columns = computed(() =>
+    visibleKeys.value.map((key) => byKey.value.get(key)).filter((field): field is FieldDef => Boolean(field)),
+  )
+
+  async function load(): Promise<void> {
+    if (fields.value.length > 0 || loading.value) return
+    loading.value = true
+    try {
+      const data = await api.exportFields()
+      fields.value = data.fields
+      error.value = ''
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : String(err)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function applyPreset(id: ColumnPresetId): void {
+    presetId.value = id
+    visibleKeys.value = presetKeys(id)
+    saveColumns(presetId.value, visibleKeys.value)
+  }
+
+  /** 手动改列：与任何预设都不一致时记为「自定义」。 */
+  function setVisibleKeys(keys: string[]): void {
+    visibleKeys.value = keys
+    const matched = COLUMN_PRESETS.find(
+      (preset) => preset.keys.length === keys.length && preset.keys.every((key) => keys.includes(key)),
+    )
+    presetId.value = matched ? matched.id : 'custom'
+    saveColumns(presetId.value, keys)
+  }
+
+  function toggleKey(key: string): void {
+    const next = visibleKeys.value.includes(key)
+      ? visibleKeys.value.filter((item) => item !== key)
+      : [...visibleKeys.value, key]
+    // 一列都不剩时不给通过：空表格比缺一列更难理解。
+    if (next.length === 0) return
+    setVisibleKeys(next)
+  }
+
+  /**
+   * 把某一列在可见顺序里前后挪一格。
+   *
+   * 用「上移 / 下移」而不是拖拽：列数最多十几个，两个按钮就能到任何位置，
+   * 而且键盘也能操作——拖拽排序在键盘上等于没有。
+   */
+  function moveKey(key: string, delta: number): void {
+    const keys = [...visibleKeys.value]
+    const from = keys.indexOf(key)
+    if (from < 0) return
+    const to = from + delta
+    if (to < 0 || to >= keys.length) return
+    keys.splice(to, 0, ...keys.splice(from, 1))
+    setVisibleKeys(keys)
+  }
+
+  return {
+    fields,
+    loading,
+    error,
+    byKey,
+    columns,
+    visibleKeys,
+    presetId,
+    widths,
+    widthOf,
+    setWidth,
+    resetWidths,
+    load,
+    applyPreset,
+    setVisibleKeys,
+    toggleKey,
+    moveKey,
+  }
+})
+
+export interface BreakerNotice {
+  message: string
+  /** 当前配置的测速并发，「降低并发」以它为起点。 */
+  concurrency: number
+  /** 当前的测速源模式。 */
+  urlMode: string
+}
+
+export interface SourceDecision {
+  url: string
+  /** 原因标识，与后端 speed.Reason* 常量一致。 */
+  code: string
+  detail?: string
+  mode: string
+}
+
+export const useSpeedStore = defineStore('speed', () => {
+  const breaker = ref<BreakerNotice | null>(null)
+  /** 最近一次自动选源的结果与理由。 */
+  const source = ref<SourceDecision | null>(null)
+
+  function applyBreaker(notice: BreakerNotice): void {
+    breaker.value = notice
+  }
+
+  function dismissBreaker(): void {
+    breaker.value = null
+  }
+
+  function applySource(decision: SourceDecision): void {
+    source.value = decision
+  }
+
+  /**
+   * 建议的并发值。
+   *
+   * 砍半而不是给一个固定数字：用户原本设成 4 或 16 时，「降到 4」这种建议
+   * 要么没变、要么跨度太离谱。砍半在两种情况下都合理，且下限保底为 1。
+   */
+  function suggestedConcurrency(): number {
+    const current = breaker.value?.concurrency ?? 0
+    return Math.max(1, Math.floor(current / 2))
+  }
+
+  return { breaker, source, applyBreaker, dismissBreaker, applySource, suggestedConcurrency }
+})
+
+export const useExportStore = defineStore('export', () => {
+  /** 正在等待后端生成，用于禁用按钮避免重复点击。 */
+  const pending = ref(false)
+
+  /**
+   * 发起一次导出。
+   *
+   * fields 为空表示用后端的默认字段集——前端不猜，字段清单本来就是后端给的。
+   */
+  function request(options: { fields?: string[]; format?: string; id?: string; type?: string }): boolean {
+    pending.value = true
+    const ok = sendCommand(CMD.export, {
+      // 留空表示「最新一份」，优先测速结果——这正是结果页展示的东西。
+      type: options.type ?? '',
+      // 指定某一份历史时按 ID 导出，此时 type 不参与。
+      id: options.id ?? '',
+      fields: options.fields ?? [],
+      format: options.format ?? '',
+    })
+    if (!ok) pending.value = false
+    return ok
+  }
+
+  /**
+   * 收到后端返回的下载地址后立刻触发下载。
+   *
+   * 用 a 标签而不是 fetch：后端已经给了文件名与 Content-Disposition，走浏览器
+   * 原生下载能保留这些信息，也不会把文件内容读进内存。
+   */
+  function applyResult(result: ExportResult): void {
+    pending.value = false
+    if (!result.url) return
+    // 具体怎么交给用户由输出目标决定：桌面是下载，Android 壳可以是系统分享。
+    const file = { name: result.name, url: result.url }
+    pickOutputTarget(file).save(file)
+  }
+
+  /** 后端报错时也要解除等待，否则按钮会一直转下去。 */
+  function fail(): void {
+    pending.value = false
+  }
+
+  return { pending, request, applyResult, fail }
+})
+

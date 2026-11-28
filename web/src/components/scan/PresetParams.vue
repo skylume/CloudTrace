@@ -11,7 +11,7 @@ import { computed } from 'vue'
 
 import { t } from '@/i18n'
 import { SCAN_PARAMS, effectiveMax, type ParamSpec } from '@/i18n/params'
-import { useAdaptiveStore } from '@/stores/adaptive'
+import { useScanStore } from '@/stores/scan'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 
@@ -20,7 +20,7 @@ const params = defineModel<Record<string, number | boolean>>('params', { require
 defineProps<{ disabled?: boolean }>()
 
 const ui = useUIStore()
-const adaptive = useAdaptiveStore()
+const scan = useScanStore()
 const settings = useSettingsStore()
 
 const maxOf = (spec: ParamSpec) => effectiveMax(spec, settings.values ?? {})
@@ -58,11 +58,11 @@ function onNumber(key: string, raw: string, spec: ParamSpec): void {
         {{ t(spec.labelKey as never) }}
         <!-- 被自动调整过的值必须留痕：徽标 + 悬停说明 + 一键还原。 -->
         <button
-          v-if="adaptive.applied[spec.key]"
+          v-if="scan.applied[spec.key]"
           type="button"
           class="badge"
-          :title="adaptive.reasonText(adaptive.applied[spec.key]!.reason)"
-          @click="adaptive.revert(spec.key)"
+          :title="scan.reasonText(scan.applied[spec.key]!.reason)"
+          @click="scan.revert(spec.key)"
         >
           {{ t('adaptive.badge') }}
         </button>

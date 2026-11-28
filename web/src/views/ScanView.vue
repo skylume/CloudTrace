@@ -19,17 +19,12 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { t } from '@/i18n'
 import { DEFAULT_DEPTH, depthValues, type ScanDepth } from '@/i18n/depth'
 import { PARAM_WIRE_KEYS } from '@/i18n/params'
-import { useActionStore } from '@/stores/actions'
-import { useAdaptiveStore } from '@/stores/adaptive'
-import { useGeoStore } from '@/stores/geo'
-import { useLogStore } from '@/stores/log'
-import { useLegacyPresetsStore } from '@/stores/legacyPresets'
-import { useMigrateStore } from '@/stores/migrate'
-import { useRerunStore } from '@/stores/rerun'
+import { useGeoStore } from '@/stores/conn'
 import { useResultsStore } from '@/stores/results'
+import { useScanStore } from '@/stores/scan'
 import { useSettingsStore } from '@/stores/settings'
-import { useSystemStore } from '@/stores/system'
-import { useTaskStore } from '@/stores/task'
+import { useSystemStore } from '@/stores/conn'
+import { useTaskStore } from '@/stores/conn'
 import { useUIStore } from '@/stores/ui'
 import { rememberScanRequest } from '@/utils/lastScan'
 import { parseSourceText, sourceEntryCount } from '@/utils/sourceText'
@@ -43,15 +38,10 @@ import { isUntouchedScan, scanParamsFromConfig } from '@/utils/scanState'
 
 const task = useTaskStore()
 const geo = useGeoStore()
-const log = useLogStore()
 const results = useResultsStore()
 const settings = useSettingsStore()
-const actions = useActionStore()
+const scan = useScanStore()
 const ui = useUIStore()
-const rerun = useRerunStore()
-const adaptive = useAdaptiveStore()
-const migrate = useMigrateStore()
-const legacy = useLegacyPresetsStore()
 const system = useSystemStore()
 
 /**
@@ -86,7 +76,7 @@ function dismissSession(): void {
  * 已经被坑过几次）。
  */
 const migrateOffer = computed(() => {
-  const s = migrate.status
+  const s = settings.migrateStatus
   if (!s) return ''
   const parts: string[] = []
   if (s.settings) parts.push(t('migrate.part.settings'))
@@ -95,7 +85,7 @@ const migrateOffer = computed(() => {
 })
 
 const migrateResult = computed(() => {
-  const r = migrate.justRanReport
+  const r = settings.migrateReport
   if (!r) return ''
   const parts: string[] = []
   if (r.settings) parts.push(t('migrate.part.settings'))
@@ -107,10 +97,10 @@ const migrateResult = computed(() => {
 })
 
 /** 旧档位横幅的文案。同样在脚本里拼，避开模板字面量。 */
-const legacyOffer = computed(() => t('legacy.offer', { count: legacy.status?.presets?.length ?? 0 }))
+const legacyOffer = computed(() => t('legacy.offer', { count: settings.legacyStatus?.presets?.length ?? 0 }))
 
 const legacyResult = computed(() => {
-  const s = legacy.justRanResult
+  const s = settings.legacyResult
   if (!s) return ''
   let text = t('legacy.done', { count: s.imported?.length ?? 0 })
   if (s.skipped && s.skipped.length > 0) text += t('legacy.doneSkipped', { count: s.skipped.length })
@@ -163,7 +153,7 @@ const sourceIssue = computed(() => {
 /**
  * 把「开始扫描」注册给动作注册表。
  *
- * 命令面板与 Ctrl+Enter 都从这里调用，走的是与按钮完全相同的路径——参数、
+ * Ctrl+Enter 与按钮走的是完全相同的路径——参数、
  * 来源合并、日志都一致，不会出现「快捷键启动的任务少带了来源」这种偏差。
  */
 let unregister: (() => void) | null = null
@@ -271,7 +261,7 @@ function applyDepth(id: ScanDepth): void {
  * 历史里记的是「当时扫了什么」，而不是「现在该怎么配来源」。
  */
 function applyRerun(): void {
-  const request = rerun.take()
+  const request = scan.take()
   if (!request) return
   params.value = { ...params.value, ...request.params }
   if (request.customText !== '') source.value = { ...source.value, customText: request.customText }
@@ -280,13 +270,13 @@ function applyRerun(): void {
 onMounted(() => {
   const saved = loadSnapshot()
   if (saved && worthRestoring(saved)) session.value = saved
-  unregister = actions.register('startScan', start)
+  unregister = scan.register('startScan', start)
   syncFromSettings()
   applyRerun()
 })
 
 // 页面可能一直挂着（比如从命令面板跳回来），因此不能只在挂载时取一次。
-watch(() => rerun.pending, applyRerun)
+watch(() => scan.pending, applyRerun)
 
 onBeforeUnmount(() => {
   unregister?.()
@@ -313,19 +303,19 @@ function buildRequest(): Record<string, unknown> {
 function start(): void {
   // 来源不成立时不发请求：让用户改完再跑，比跑完一分钟给个空结果更省事。
   if (sourceIssue.value !== '') {
-    log.push(sourceIssue.value, 'warn')
+    scan.push(sourceIssue.value, 'warn')
     return
   }
   const payload = buildRequest()
   if (!sendCommand(CMD.scanStart, payload)) return
   // 记下这份请求：零结果时结果页要用同一份参数放宽重跑。
   rememberScanRequest(payload)
-  log.push(t('scan.start'))
+  scan.push(t('scan.start'))
 }
 
 function stop(): void {
   sendCommand(CMD.scanStop)
-  log.push(t('scan.stop'), 'warn')
+  scan.push(t('scan.stop'), 'warn')
 }
 </script>
 
@@ -338,29 +328,29 @@ function stop(): void {
       自己的旧配置在不知情的时候变了，而那时他已经记不清原来是什么样。
     -->
     <Banner
-      v-if="migrate.shouldOffer"
+      v-if="settings.migrateShouldOffer"
       tone="info"
       :message="migrateOffer"
-      :action-label="migrate.running ? t('migrate.running') : t('migrate.import')"
-      @action="migrate.run()"
-      @close="migrate.dismiss()"
+      :action-label="settings.migrateRunning ? t('migrate.running') : t('migrate.import')"
+      @action="settings.runMigrate()"
+      @close="settings.dismissMigrate()"
     />
     <!--
       档位已下线，但旧 presets.json 里的自定义档位是用户自己调过的参数：只提示，
       点「设为默认参数」才写配置，点「导出保存」则把原样 JSON 交给他。
     -->
     <Banner
-      v-if="legacy.shouldOffer"
+      v-if="settings.legacyShouldOffer"
       tone="info"
       :message="legacyOffer"
       :note="t('legacy.note')"
-      :action-label="legacy.running ? t('legacy.running') : t('legacy.import')"
+      :action-label="settings.legacyRunning ? t('legacy.running') : t('legacy.import')"
       :action2-label="t('legacy.export')"
-      @action="legacy.run()"
-      @action2="legacy.exportFile()"
-      @close="legacy.dismiss()"
+      @action="settings.runLegacy()"
+      @action2="settings.exportLegacy()"
+      @close="settings.dismissLegacy()"
     />
-    <Banner v-else-if="legacyResult !== ''" tone="ok" :message="legacyResult" @close="legacy.dismiss()" />
+    <Banner v-else-if="legacyResult !== ''" tone="ok" :message="legacyResult" @close="settings.dismissLegacy()" />
     <!--
       上次没跑完的结果：只提示，用户点了才动。扫描要跑一分钟，这期间刷新或
       崩掉就白跑了，而历史只保存已完成的任务——中途的结果按设计不写历史。
@@ -377,7 +367,7 @@ function stop(): void {
       v-else-if="migrateResult !== ''"
       tone="ok"
       :message="migrateResult"
-      @close="migrate.dismiss()"
+      @close="settings.dismissMigrate()"
     />
 
     <!--
@@ -404,11 +394,11 @@ function stop(): void {
       <button
         type="button"
         class="ct-link"
-        :disabled="adaptive.recommending"
+        :disabled="scan.recommending"
         :title="t('adaptive.recommendHint')"
-        @click="adaptive.recommend()"
+        @click="scan.recommend()"
       >
-        {{ adaptive.recommending ? t('adaptive.recommending') : t('adaptive.recommend') }}
+        {{ scan.recommending ? t('adaptive.recommending') : t('adaptive.recommend') }}
       </button>
     </div>
 

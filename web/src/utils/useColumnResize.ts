@@ -7,7 +7,7 @@
  */
 import { onBeforeUnmount, ref } from 'vue'
 
-import { useFieldsStore } from '@/stores/fields'
+import { useFieldsStore } from '@/stores/results'
 
 /** 一次拖动中的上下文。 */
 interface ResizeState {

@@ -12,14 +12,14 @@ import { computed } from 'vue'
 import PresetParams from '@/components/scan/PresetParams.vue'
 import Banner from '@/components/ui/Banner.vue'
 import { t } from '@/i18n'
-import { useAdaptiveStore, type AdaptiveNotice } from '@/stores/adaptive'
+import { useScanStore, type AdaptiveNotice } from '@/stores/scan'
 import { checkScanParams, type ParamWarning } from '@/utils/paramRules'
 
 const params = defineModel<Record<string, number | boolean>>('params', { required: true })
 
 defineProps<{ disabled?: boolean }>()
 
-const adaptive = useAdaptiveStore()
+const scan = useScanStore()
 
 /**
  * 建议的整句话。
@@ -28,7 +28,7 @@ const adaptive = useAdaptiveStore()
  * 已经被坑过三次），而且拼装逻辑放在这里也更好读。
  */
 function suggestionText(item: AdaptiveNotice): string {
-  return adaptive.reasonText(item.reason) + '　' + item.key + ' ' + item.from + ' → ' + item.to
+  return scan.reasonText(item.reason) + '　' + item.key + ' ' + item.from + ' → ' + item.to
 }
 
 /**
@@ -49,16 +49,16 @@ function warningText(item: ParamWarning): string {
   <section class="ct-card">
     <h2 class="ct-card-title">{{ t('param.panel') }}</h2>
 
-    <div v-if="adaptive.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
+    <div v-if="scan.visibleSuggestions.length > 0 || warnings.length > 0" class="notices">
       <!-- 建议：值没有变，等用户自己决定。绝不替他点。 -->
       <Banner
-        v-for="item in adaptive.visibleSuggestions"
+        v-for="item in scan.visibleSuggestions"
         :key="item.key"
         tone="info"
         :message="suggestionText(item)"
         :action-label="t('adaptive.accept')"
-        @action="adaptive.accept(item)"
-        @close="adaptive.dismiss(item.key)"
+        @action="scan.accept(item)"
+        @close="scan.dismiss(item.key)"
       />
 
       <!--
