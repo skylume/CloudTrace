@@ -46,3 +46,6 @@ Thumbs.db
 
 # 本地临时工作目录
 /.agent-teams/
+
+# 内部任务清单
+/CloudTrace重构-可执行任务清单.md
